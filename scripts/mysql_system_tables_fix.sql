@@ -1580,6 +1580,64 @@ ALTER TABLE mysql.columns_priv DROP PRIMARY KEY,
                                ADD PRIMARY KEY (`Host`,`User`,`Db`,`Table_name`,`Column_name`);
 
 ALTER TABLE mysql.procs_priv DROP PRIMARY KEY,
-                             ADD PRIMARY KEY (`Host`,`User`,`Db`,`Routine_name`,`Routine_type`);
+                              ADD PRIMARY KEY (`Host`,`User`,`Db`,`Routine_name`,`Routine_type`);
+
+-- Add DB4AI MaaS system tables during an in-place upgrade. They intentionally
+-- contain configuration metadata and redacted metering only; credentials are
+-- referenced through the keyring.
+SET @cmd = "CREATE TABLE IF NOT EXISTS mysql.alisql_ai_model_config (
+  config_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  config_version BIGINT UNSIGNED NOT NULL,
+  model_name VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  capability ENUM('TEXT_EMBEDDING','TEXT_GENERATION') NOT NULL,
+  provider VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  provider_model_name VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  model_revision VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '',
+  endpoint_type ENUM('HTTPS_JSON') NOT NULL,
+  endpoint VARCHAR(1024) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  dimension INT UNSIGNED DEFAULT NULL,
+  credential_kind ENUM('SECRET_REF','PLAINTEXT_DEV') NOT NULL DEFAULT 'SECRET_REF',
+  credential_ref VARCHAR(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+  api_key_plaintext BLOB DEFAULT NULL,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY(config_id), UNIQUE KEY uq_ai_model_version(model_name, capability, config_version),
+  KEY ix_ai_model_active(model_name, capability, active)) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC TABLESPACE=mysql";
+SET @str = CONCAT(@cmd, " ENCRYPTION='", @is_mysql_encrypted, "'");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @cmd = "CREATE TABLE IF NOT EXISTS mysql.alisql_ai_tenant_binding (
+  tenant_id BIGINT UNSIGNED NOT NULL,
+  model_name VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  capability ENUM('TEXT_EMBEDDING','TEXT_GENERATION') NOT NULL,
+  config_id BIGINT UNSIGNED NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE,
+  PRIMARY KEY(tenant_id, model_name, capability), KEY ix_ai_tenant_config(config_id))
+  ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC TABLESPACE=mysql";
+SET @str = CONCAT(@cmd, " ENCRYPTION='", @is_mysql_encrypted, "'");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+SET @cmd = "CREATE TABLE IF NOT EXISTS mysql.alisql_ai_call_audit (
+  call_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, tenant_id BIGINT UNSIGNED NOT NULL,
+  config_id BIGINT UNSIGNED NOT NULL, config_version BIGINT UNSIGNED NOT NULL,
+  capability ENUM('TEXT_EMBEDDING','TEXT_GENERATION') NOT NULL,
+  status ENUM('STARTED','SUCCEEDED','FAILED') NOT NULL,
+  error_code VARCHAR(64) CHARACTER SET ascii DEFAULT NULL,
+  provider_request_id VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+  prompt_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0, completion_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  reasoning_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0, cached_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  total_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  completed_at TIMESTAMP NULL DEFAULT NULL, PRIMARY KEY(call_id),
+  KEY ix_ai_audit_tenant_created(tenant_id, created_at)) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC TABLESPACE=mysql";
+SET @str = CONCAT(@cmd, " ENCRYPTION='", @is_mysql_encrypted, "'");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
 
 SET @@session.sql_mode = @old_sql_mode;

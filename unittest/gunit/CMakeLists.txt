@@ -120,6 +120,7 @@ ADD_DEFINITIONS(-DDATA_DIR="${CMAKE_CURRENT_BINARY_DIR}")
 # Add tests (link them with gunit/gmock libraries)
 SET(TESTS
   ai_types
+  ai_model_registry
   alignment
   bitmap
   bounds_checked_array
@@ -387,6 +388,9 @@ FOREACH(test ${TESTS})
 ENDFOREACH()
 
 TARGET_SOURCES(ai_types-t PRIVATE ${CMAKE_SOURCE_DIR}/sql/ai/ai_types.cc)
+TARGET_SOURCES(ai_model_registry-t PRIVATE
+  ${CMAKE_SOURCE_DIR}/sql/ai/ai_types.cc
+  ${CMAKE_SOURCE_DIR}/sql/ai/ai_model_registry.cc)
 
 # Disable by default, since it dumps a stack trace.
 # We don't want ppl to think there was a segfault or something.

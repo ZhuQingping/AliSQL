@@ -18,6 +18,9 @@ enum class Ai_error {
   k_dimension_mismatch,
   k_timeout,
   k_provider_error,
+  k_model_not_found,
+  k_credential_unavailable,
+  k_access_denied,
 };
 
 struct Ai_usage {
@@ -35,6 +38,11 @@ struct Ai_resolved_model {
   std::string model_name;
   std::string provider_model_name;
   std::string model_revision;
+  std::string provider;
+  std::string endpoint_type;
+  std::string endpoint;
+  std::string credential_kind;
+  std::string credential_ref;
 };
 
 struct Ai_canonical_request {
