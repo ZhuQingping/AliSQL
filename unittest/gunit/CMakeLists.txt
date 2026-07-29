@@ -121,6 +121,7 @@ ADD_DEFINITIONS(-DDATA_DIR="${CMAKE_CURRENT_BINARY_DIR}")
 SET(TESTS
   ai_types
   ai_model_registry
+  ai_huawei_maas_adapter
   alignment
   bitmap
   bounds_checked_array
@@ -391,6 +392,9 @@ TARGET_SOURCES(ai_types-t PRIVATE ${CMAKE_SOURCE_DIR}/sql/ai/ai_types.cc)
 TARGET_SOURCES(ai_model_registry-t PRIVATE
   ${CMAKE_SOURCE_DIR}/sql/ai/ai_types.cc
   ${CMAKE_SOURCE_DIR}/sql/ai/ai_model_registry.cc)
+TARGET_SOURCES(ai_huawei_maas_adapter-t PRIVATE
+  ${CMAKE_SOURCE_DIR}/sql/ai/ai_types.cc
+  ${CMAKE_SOURCE_DIR}/sql/ai/ai_huawei_maas_adapter.cc)
 
 # Disable by default, since it dumps a stack trace.
 # We don't want ppl to think there was a segfault or something.

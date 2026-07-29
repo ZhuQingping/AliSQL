@@ -342,6 +342,8 @@ SET(SQL_GIS_SOURCES
 SET(SQL_SHARED_SOURCES
   ai/ai_types.cc
   ai/ai_model_registry.cc
+  ai/ai_http_transport.cc
+  ai/ai_huawei_maas_adapter.cc
   auth/auth_acls.cc
   auth/auth_common.cc
   auth/dynamic_privileges_impl.cc
@@ -981,7 +983,7 @@ TARGET_LINK_LIBRARIES(sql_main extra::unordered_dense)
 TARGET_LINK_LIBRARIES(sql_main ${MYSQLD_STATIC_PLUGIN_LIBS}
   mysql_server_component_services mysys strings vio
   binlogevents_static ${LIBWRAP} ${LIBDL} ${SSL_LIBRARIES} ${DUCKDB_LIBRARY}
-  extra::rapidjson)
+  extra::rapidjson ext::curl)
 
 # sql/immutable_string.h uses
 # google::protobuf::io::CodedOutputStream::WriteVarint64ToArray

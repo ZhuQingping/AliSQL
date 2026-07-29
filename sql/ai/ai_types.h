@@ -21,6 +21,7 @@ enum class Ai_error {
   k_model_not_found,
   k_credential_unavailable,
   k_access_denied,
+  k_response_too_large,
 };
 
 struct Ai_usage {
