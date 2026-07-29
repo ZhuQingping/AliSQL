@@ -344,6 +344,7 @@ SET(SQL_SHARED_SOURCES
   ai/ai_model_registry.cc
   ai/ai_http_transport.cc
   ai/ai_huawei_maas_adapter.cc
+  ai/ai_runtime.cc
   auth/auth_acls.cc
   auth/auth_common.cc
   auth/dynamic_privileges_impl.cc
