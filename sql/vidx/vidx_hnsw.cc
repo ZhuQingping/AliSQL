@@ -409,7 +409,7 @@ class MHNSW_Share {
   }
 
   uint lock_node(FVectorNode *ptr) {
-    ulong nr1 = 1, nr2 = 4;
+    uint64 nr1 = 1, nr2 = 4;
     my_hash_sort_bin(0, (const uchar *)&ptr, sizeof(ptr), &nr1, &nr2);
     uint ticket = nr1 % array_elements(node_lock);
     mysql_mutex_lock(node_lock + ticket);

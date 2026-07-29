@@ -785,7 +785,7 @@ static inline bool is_supported_parser_charset(const CHARSET_INFO *cs) {
 }
 
 static inline void my_ci_hash_sort(CHARSET_INFO *ci, const uchar *key,
-                                   size_t len, ulong *nr1, ulong *nr2) {
+                                   size_t len, uint64 *nr1, uint64 *nr2) {
   (ci->coll->hash_sort)(ci, key, len, nr1, nr2);
 }
 

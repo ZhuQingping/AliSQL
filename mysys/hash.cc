@@ -44,7 +44,7 @@ static int hashcmp(const HASH *hash, HASH_LINK *pos, const uchar *key,
 
 my_hash_value_type my_hash_sort(CHARSET_INFO *cs, const uchar *key,
                                 size_t length) {
-  ulong nr1 = 1, nr2 = 4;
+  uint64 nr1 = 1, nr2 = 4;
   my_ci_hash_sort(cs, (uchar *)key, length, &nr1, &nr2);
   return (my_hash_value_type)nr1;
 }

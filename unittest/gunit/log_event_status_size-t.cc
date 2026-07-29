@@ -79,7 +79,8 @@ class LogEventStatusSizeTest : public ::testing::Test {
                        immediate, suppress_use, error, ignore_command);
 
     Binlog_cache_storage os;
-    os.open(50000, 90000);  // random values, bigger than maximal packet size
+    os.open(50000, 90000,
+            using_trans);  // random values, bigger than maximal packet size
 
     // set qe values to simulate maximal size of the status variables
     // artificial data

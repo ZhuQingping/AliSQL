@@ -69,11 +69,13 @@
  */
 
 #include <memory>
+#if defined(__GLIBCXX__) && __GLIBCXX__ < 20170502
 namespace std {
 template <class T>
 struct is_default_constructible<std::unique_ptr<T, void (*)(T *)>>
     : std::false_type {};
 }  // namespace std
+#endif
 
 namespace stdx {
 

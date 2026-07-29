@@ -755,7 +755,7 @@ struct ICUUnixTimestampOperator {
 	template <typename INPUT_TYPE, typename RESULT_TYPE>
 	static RESULT_TYPE Operation(INPUT_TYPE input) {
 		auto end = Timestamp::GetEpochMicroSeconds(input);
-		end = std::max(end, 0L);
+		end = std::max(end, int64_t {0});
 		return static_cast<double>(end) / Interval::MICROS_PER_SEC;
 	}
 };

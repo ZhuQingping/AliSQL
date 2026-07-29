@@ -485,8 +485,10 @@ static void LoadInternal(ExtensionLoader &loader) {
 	}
 	config.AddExtensionOption("TimeZone", "The current time zone", LogicalType::VARCHAR, Value(tz_string),
 	                          SetICUTimeZone);
-	config.AddExtensionOption("timestamp", "timestamp session variable in MySQL", LogicalType::BIGINT, Value(-1L), SetTimestamp);
-	config.AddExtensionOption("default_week_format", "timestamp session variable in MySQL", LogicalType::BIGINT, Value(0L), SetDefualtWeekFormat);
+	config.AddExtensionOption("timestamp", "timestamp session variable in MySQL", LogicalType::BIGINT,
+	                          Value(int64_t {-1}), SetTimestamp);
+	config.AddExtensionOption("default_week_format", "timestamp session variable in MySQL", LogicalType::BIGINT,
+	                          Value(int64_t {0}), SetDefualtWeekFormat);
 
 	RegisterICUCurrentFunctions(loader);
 	RegisterICUDateAddFunctions(loader);
