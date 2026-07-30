@@ -13,8 +13,10 @@ struct Ai_audit_record {
   uint64_t config_version{0};
   Ai_capability capability{Ai_capability::k_text_generation};
   Ai_audit_status status{Ai_audit_status::k_started};
+  Ai_error error{Ai_error::k_ok};
   Ai_usage usage;
   std::string provider_request_id;
+  unsigned int http_status{0};
 };
 class Ai_audit_sink {
  public:

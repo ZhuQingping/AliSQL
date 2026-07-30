@@ -88,6 +88,7 @@ TEST(HuaweiMaaSTest, ChatReasoningOnlyIsIncompleteOutput) {
 TEST(HuaweiMaaSTest, ChatReturnsFinalContentButNeverReasoning) {
   Fake_transport transport;
   transport.next_response.status_code = 200;
+  transport.next_response.request_id = "provider-request-17";
   transport.next_response.body =
       "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"final\",\"reasoning_content\":\"hidden\"}}],\"usage\":{\"completion_tokens\":2}}";
   Huawei_maas_adapter adapter(&transport, "test-token");
@@ -97,6 +98,8 @@ TEST(HuaweiMaaSTest, ChatReturnsFinalContentButNeverReasoning) {
   EXPECT_EQ("final", response.final_content);
   EXPECT_TRUE(response.reasoning_present);
   EXPECT_EQ(2U, response.usage.completion_tokens);
+  EXPECT_EQ("provider-request-17", response.provider_request_id);
+  EXPECT_EQ(200U, response.http_status);
 }
 
 TEST(HuaweiMaaSTest, ChatMapsStableOutputAndTimeoutLimits) {
@@ -117,7 +120,7 @@ TEST(HuaweiMaaSTest, ChatMapsStableOutputAndTimeoutLimits) {
 
 TEST(HuaweiMaaSTest, RejectsNonSuccessWithoutExposingProviderBody) {
   Fake_transport transport;
-  transport.next_response.status_code = 429;
+  transport.next_response.status_code = 500;
   transport.next_response.body = "secret provider error";
   Huawei_maas_adapter adapter(&transport, "test-token");
   Ai_canonical_response response;
@@ -125,6 +128,34 @@ TEST(HuaweiMaaSTest, RejectsNonSuccessWithoutExposingProviderBody) {
   EXPECT_EQ(Ai_error::k_provider_error,
             adapter.Execute(ChatRequest(), &response));
   EXPECT_TRUE(response.final_content.empty());
+}
+
+TEST(HuaweiMaaSTest, ClassifiesProviderAuthorizationAndRateLimitFailures) {
+  Fake_transport transport;
+  Huawei_maas_adapter adapter(&transport, "test-token");
+  Ai_canonical_response response;
+
+  transport.next_response.status_code = 403;
+  transport.next_response.body = "provider details must not escape";
+  EXPECT_EQ(Ai_error::k_access_denied,
+            adapter.Execute(ChatRequest(), &response));
+  EXPECT_TRUE(response.final_content.empty());
+
+  transport.next_response.status_code = 429;
+  EXPECT_EQ(Ai_error::k_rate_limited,
+            adapter.Execute(ChatRequest(), &response));
+}
+
+TEST(HuaweiMaaSTest, RejectsEndpointProtocolMismatchBeforeEgress) {
+  Fake_transport transport;
+  Huawei_maas_adapter adapter(&transport, "test-token");
+  Ai_canonical_request request = ChatRequest();
+  request.model.endpoint = "https://maas.example.invalid/v1/embeddings";
+  Ai_canonical_response response;
+
+  EXPECT_EQ(Ai_error::k_protocol_mismatch,
+            adapter.Execute(request, &response));
+  EXPECT_TRUE(transport.last_request.body.empty());
 }
 
 TEST(HuaweiMaaSTest, RejectsMalformedEmbeddingEntriesWithoutCrashing) {

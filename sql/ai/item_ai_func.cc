@@ -53,6 +53,15 @@ void RaiseAiRuntimeError(Ai_error error) {
     case Ai_error::k_response_too_large:
       detail = "DB4AI provider response is too large";
       break;
+    case Ai_error::k_access_denied:
+      detail = "DB4AI provider credential or account access was denied";
+      break;
+    case Ai_error::k_rate_limited:
+      detail = "DB4AI provider rate limit was exceeded";
+      break;
+    case Ai_error::k_protocol_mismatch:
+      detail = "DB4AI model endpoint is incompatible with its capability";
+      break;
     default:
       break;
   }

@@ -22,6 +22,8 @@ enum class Ai_error {
   k_credential_unavailable,
   k_access_denied,
   k_response_too_large,
+  k_rate_limited,
+  k_protocol_mismatch,
 };
 
 struct Ai_usage {
@@ -59,6 +61,8 @@ struct Ai_canonical_request {
 struct Ai_canonical_response {
   std::string final_content;
   std::string finish_reason;
+  std::string provider_request_id;
+  unsigned int http_status{0};
   std::vector<std::vector<float>> embeddings;
   Ai_usage usage;
   bool response_complete{false};

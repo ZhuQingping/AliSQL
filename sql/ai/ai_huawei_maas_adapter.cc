@@ -38,9 +38,17 @@ Ai_error Post(Ai_http_transport *transport, const Ai_canonical_request &request,
   if (request.timeout_ms != 0) http_request.timeout_ms = request.timeout_ms;
   const Ai_error error = transport->PostJson(http_request, http_response);
   if (error != Ai_error::k_ok) return error;
-  return http_response->status_code >= 200 && http_response->status_code < 300
-             ? Ai_error::k_ok
-             : Ai_error::k_provider_error;
+  if (http_response->status_code >= 200 && http_response->status_code < 300)
+    return Ai_error::k_ok;
+  if (http_response->status_code == 401 || http_response->status_code == 403)
+    return Ai_error::k_access_denied;
+  if (http_response->status_code == 429) return Ai_error::k_rate_limited;
+  if (http_response->status_code == 404) return Ai_error::k_model_not_found;
+  return Ai_error::k_provider_error;
+}
+
+bool HasEndpointPath(const std::string &endpoint, const char *path) {
+  return endpoint.find(path) != std::string::npos;
 }
 
 }  // namespace
@@ -56,6 +64,8 @@ Ai_error Huawei_maas_adapter::Execute(const Ai_canonical_request &request,
 
 Ai_error Huawei_maas_adapter::ExecuteEmbedding(const Ai_canonical_request &request,
                                                Ai_canonical_response *response) {
+  if (!HasEndpointPath(request.model.endpoint, "/v1/embeddings"))
+    return Ai_error::k_protocol_mismatch;
   rapidjson::StringBuffer buffer;
   rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
   writer.StartObject();
@@ -69,6 +79,8 @@ Ai_error Huawei_maas_adapter::ExecuteEmbedding(const Ai_canonical_request &reque
   Ai_http_response http_response;
   const Ai_error error = Post(transport_, request, bearer_token_, buffer.GetString(),
                               &http_response);
+  response->provider_request_id = http_response.request_id;
+  response->http_status = http_response.status_code;
   if (error != Ai_error::k_ok) return error;
 
   rapidjson::Document doc;
@@ -100,6 +112,8 @@ Ai_error Huawei_maas_adapter::ExecuteEmbedding(const Ai_canonical_request &reque
 
 Ai_error Huawei_maas_adapter::ExecuteChat(const Ai_canonical_request &request,
                                           Ai_canonical_response *response) {
+  if (!HasEndpointPath(request.model.endpoint, "/v2/chat/completions"))
+    return Ai_error::k_protocol_mismatch;
   rapidjson::StringBuffer buffer;
   rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
   writer.StartObject();
@@ -120,6 +134,8 @@ Ai_error Huawei_maas_adapter::ExecuteChat(const Ai_canonical_request &request,
   Ai_http_response http_response;
   const Ai_error error = Post(transport_, request, bearer_token_, buffer.GetString(),
                               &http_response);
+  response->provider_request_id = http_response.request_id;
+  response->http_status = http_response.status_code;
   if (error != Ai_error::k_ok) return error;
 
   rapidjson::Document doc;
