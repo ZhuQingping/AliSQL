@@ -69,6 +69,7 @@
 #include "sql/item_sum.h"          // Item_sum_udf_str
 #include "sql/item_timefunc.h"     // Item_func_add_time
 #include "sql/item_xmlfunc.h"      // Item_func_xml_extractvalue
+#include "sql/ai/item_ai_func.h"
 #include "sql/my_decimal.h"
 #include "sql/parse_location.h"
 #include "sql/parse_tree_helpers.h"  // PT_item_list
@@ -1375,6 +1376,9 @@ static const std::pair<const char *, Create_func *> func_array[] = {
     {"ADDTIME", SQL_FN(Item_func_add_time, 2)},
     {"AES_DECRYPT", SQL_FN_V(Item_func_aes_decrypt, 2, 6)},
     {"AES_ENCRYPT", SQL_FN_V(Item_func_aes_encrypt, 2, 6)},
+    {"AI_ANALYZE", SQL_FN_V(alisql::ai::Item_func_ai_analyze, 2, 3)},
+    {"AI_EMBEDDING", SQL_FN_V(alisql::ai::Item_func_ai_embedding, 1, 3)},
+    {"AI_MODEL_INFO", SQL_FN_V(alisql::ai::Item_func_ai_model_info, 0, 1)},
     {"ANY_VALUE", SQL_FN(Item_func_any_value, 1)},
     {"ASIN", SQL_FN(Item_func_asin, 1)},
     {"ATAN", SQL_FN_V(Item_func_atan, 1, 2)},

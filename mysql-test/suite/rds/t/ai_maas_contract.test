@@ -1,0 +1,16 @@
+--echo # AI_EMBEDDING preserves NULL input without egress.
+SELECT AI_EMBEDDING(NULL);
+
+--echo # Registered functions enforce their public arity.
+--error ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT
+SELECT AI_EMBEDDING();
+--error ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT
+SELECT AI_ANALYZE('task');
+--error ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT
+SELECT AI_MODEL_INFO('a', 'b');
+
+--echo # A non-NULL call cannot silently use an unconfigured profile.
+--error ER_NOT_SUPPORTED_YET
+SELECT AI_EMBEDDING('text');
+--error ER_NOT_SUPPORTED_YET
+SELECT AI_ANALYZE('summarize', 'text');

@@ -1,0 +1,16 @@
+# AI_EMBEDDING preserves NULL input without egress.
+SELECT AI_EMBEDDING(NULL);
+AI_EMBEDDING(NULL)
+NULL
+# Registered functions enforce their public arity.
+SELECT AI_EMBEDDING();
+ERROR 42000: Incorrect parameter count in the call to native function 'AI_EMBEDDING'
+SELECT AI_ANALYZE('task');
+ERROR 42000: Incorrect parameter count in the call to native function 'AI_ANALYZE'
+SELECT AI_MODEL_INFO('a', 'b');
+ERROR 42000: Incorrect parameter count in the call to native function 'AI_MODEL_INFO'
+# A non-NULL call cannot silently use an unconfigured profile.
+SELECT AI_EMBEDDING('text');
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI runtime execution'
+SELECT AI_ANALYZE('summarize', 'text');
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI runtime execution'

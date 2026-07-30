@@ -1604,7 +1604,7 @@ SET @cmd = "CREATE TABLE IF NOT EXISTS mysql.alisql_ai_model_config (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY(config_id), UNIQUE KEY uq_ai_model_version(model_name, capability, config_version),
   KEY ix_ai_model_active(model_name, capability, active)) ENGINE=InnoDB
-  DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC TABLESPACE=mysql";
+  DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC";
 SET @str = CONCAT(@cmd, " ENCRYPTION='", @is_mysql_encrypted, "'");
 PREPARE stmt FROM @str;
 EXECUTE stmt;
@@ -1616,7 +1616,7 @@ SET @cmd = "CREATE TABLE IF NOT EXISTS mysql.alisql_ai_tenant_binding (
   capability ENUM('TEXT_EMBEDDING','TEXT_GENERATION') NOT NULL,
   config_id BIGINT UNSIGNED NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE,
   PRIMARY KEY(tenant_id, model_name, capability), KEY ix_ai_tenant_config(config_id))
-  ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC TABLESPACE=mysql";
+  ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC";
 SET @str = CONCAT(@cmd, " ENCRYPTION='", @is_mysql_encrypted, "'");
 PREPARE stmt FROM @str;
 EXECUTE stmt;
@@ -1634,7 +1634,7 @@ SET @cmd = "CREATE TABLE IF NOT EXISTS mysql.alisql_ai_call_audit (
   total_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   completed_at TIMESTAMP NULL DEFAULT NULL, PRIMARY KEY(call_id),
   KEY ix_ai_audit_tenant_created(tenant_id, created_at)) ENGINE=InnoDB
-  DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC TABLESPACE=mysql";
+  DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC";
 SET @str = CONCAT(@cmd, " ENCRYPTION='", @is_mysql_encrypted, "'");
 PREPARE stmt FROM @str;
 EXECUTE stmt;
