@@ -656,8 +656,12 @@ SET @cmd = "CREATE TABLE IF NOT EXISTS alisql_ai_call_audit (
   total_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   completed_at TIMESTAMP NULL DEFAULT NULL,
+  latency_ms BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  http_status INT UNSIGNED NOT NULL DEFAULT 0,
   PRIMARY KEY(call_id),
-  KEY ix_ai_audit_tenant_created(tenant_id, created_at))
+  KEY ix_ai_audit_tenant_created(tenant_id, created_at),
+  KEY ix_ai_audit_config_created(config_id, created_at),
+  KEY ix_ai_audit_status_created(status, created_at))
   DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC";
 SET @str = CONCAT(@cmd, " ENCRYPTION='", @is_mysql_encrypted, "'");
 PREPARE stmt FROM @str;

@@ -84,6 +84,9 @@ void RaiseAiRuntimeError(Ai_error error) {
     case Ai_error::k_protocol_mismatch:
       detail = "DB4AI model endpoint is incompatible with its capability";
       break;
+    case Ai_error::k_audit_unavailable:
+      detail = "DB4AI audit service is unavailable";
+      break;
     default:
       break;
   }
@@ -138,7 +141,8 @@ String *Item_func_ai_embedding::val_str(String *str) {
     dimension = static_cast<uint32_t>(supplied_dimension);
   }
 
-  Ai_runtime runtime(nullptr, nullptr);
+  Ai_system_table_audit_sink audit;
+  Ai_runtime runtime(nullptr, &audit);
   std::string encoded_vector;
   const Ai_error error = runtime.Embed(
       current_thd, std::string(input->ptr(), input->length()), model_name,
@@ -191,7 +195,8 @@ String *Item_func_ai_analyze::val_str(String *str) {
     }
   }
 
-  Ai_runtime runtime(nullptr, nullptr);
+  Ai_system_table_audit_sink audit;
+  Ai_runtime runtime(nullptr, &audit);
   std::string final_content;
   const Ai_error error = runtime.Analyze(
       current_thd, std::string(task->ptr(), task->length()),

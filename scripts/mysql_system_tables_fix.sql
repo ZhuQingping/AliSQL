@@ -1652,12 +1652,21 @@ SET @cmd = "CREATE TABLE IF NOT EXISTS mysql.alisql_ai_call_audit (
   prompt_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0, completion_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
   reasoning_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0, cached_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
   total_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  completed_at TIMESTAMP NULL DEFAULT NULL, PRIMARY KEY(call_id),
-  KEY ix_ai_audit_tenant_created(tenant_id, created_at)) ENGINE=InnoDB
+  completed_at TIMESTAMP NULL DEFAULT NULL, latency_ms BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  http_status INT UNSIGNED NOT NULL DEFAULT 0, PRIMARY KEY(call_id),
+  KEY ix_ai_audit_tenant_created(tenant_id, created_at),
+  KEY ix_ai_audit_config_created(config_id, created_at),
+  KEY ix_ai_audit_status_created(status, created_at)) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC";
 SET @str = CONCAT(@cmd, " ENCRYPTION='", @is_mysql_encrypted, "'");
 PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
+
+ALTER TABLE mysql.alisql_ai_call_audit
+  ADD COLUMN IF NOT EXISTS latency_ms BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS http_status INT UNSIGNED NOT NULL DEFAULT 0,
+  ADD KEY IF NOT EXISTS ix_ai_audit_config_created(config_id, created_at),
+  ADD KEY IF NOT EXISTS ix_ai_audit_status_created(status, created_at);
 
 SET @@session.sql_mode = @old_sql_mode;

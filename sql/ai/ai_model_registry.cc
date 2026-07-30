@@ -167,7 +167,10 @@ Ai_error Ai_model_registry::Resolve(THD *thd, std::string_view model_name,
   std::vector<Ai_model_profile> profiles;
   const Ai_error load_error = LoadProfiles(thd, &profiles);
   if (load_error != Ai_error::k_ok) return load_error;
-  return ResolveProfiles(tenant_id, model_name, capability, profiles, out);
+  const Ai_error result =
+      ResolveProfiles(tenant_id, model_name, capability, profiles, out);
+  if (result == Ai_error::k_ok) out->tenant_id = tenant_id;
+  return result;
 }
 
 Ai_error Ai_model_registry::ResolveTenant(THD *thd, uint64_t *tenant_id) const {
@@ -317,6 +320,7 @@ Ai_error Ai_model_registry::ResolveProfiles(
         profile.endpoint.rfind("https://", 0) != 0)
       continue;
     if (profile.tenant_id == tenant_id) {
+      out->tenant_id = tenant_id;
       out->config_id = profile.config_id;
       out->config_version = profile.config_version;
       out->dimension = profile.dimension;
@@ -338,6 +342,7 @@ Ai_error Ai_model_registry::ResolveProfiles(
   if (fallback == nullptr) return Ai_error::k_model_not_found;
 
   out->config_id = fallback->config_id;
+  out->tenant_id = tenant_id;
   out->config_version = fallback->config_version;
   out->dimension = fallback->dimension;
   out->capability = fallback->capability;

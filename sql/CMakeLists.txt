@@ -344,6 +344,7 @@ SET(SQL_SHARED_SOURCES
   ai/ai_model_registry.cc
   ai/ai_http_transport.cc
   ai/ai_huawei_maas_adapter.cc
+  ai/ai_audit.cc
   ai/ai_runtime.cc
   ai/ai_runtime_server.cc
   ai/ai_vector_codec.cc

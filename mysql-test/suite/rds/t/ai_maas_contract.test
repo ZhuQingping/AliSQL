@@ -84,4 +84,9 @@ SELECT AI_ANALYZE('summarize', 'text');
 SELECT AI_ANALYZE('summarize', 'text',
                   JSON_OBJECT('model_name', 'huawei/glm-5.2',
                               'mode', 'summarize', 'timeout_ms', 15000));
+--echo # Every resolved invocation has a completed redacted audit record.
+SELECT tenant_id, config_id, capability, status, error_code,
+       completed_at IS NOT NULL AS completed, http_status
+  FROM mysql.alisql_ai_call_audit
+ ORDER BY call_id;
 SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/bge-m3'), '$.dimension');

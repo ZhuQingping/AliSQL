@@ -5,6 +5,8 @@
 #include <vector>
 #include "sql/ai/ai_types.h"
 
+class THD;
+
 namespace alisql::ai {
 enum class Ai_audit_status { k_started, k_succeeded, k_failed };
 struct Ai_audit_record {
@@ -18,21 +20,25 @@ struct Ai_audit_record {
   Ai_usage usage;
   std::string provider_request_id;
   unsigned int http_status{0};
+  uint64_t latency_ms{0};
 };
 class Ai_audit_sink {
  public:
   virtual ~Ai_audit_sink() = default;
-  virtual Ai_error Start(const Ai_audit_record &record, uint64_t *call_id) = 0;
-  virtual Ai_error Complete(uint64_t call_id, const Ai_audit_record &record) = 0;
+  virtual Ai_error Start(THD *caller, const Ai_audit_record &record,
+                         uint64_t *call_id) = 0;
+  virtual Ai_error Complete(THD *caller, uint64_t call_id,
+                            const Ai_audit_record &record) = 0;
 };
 class Ai_memory_audit_sink final : public Ai_audit_sink {
  public:
-  Ai_error Start(const Ai_audit_record &, uint64_t *call_id) override {
+  Ai_error Start(THD *, const Ai_audit_record &, uint64_t *call_id) override {
     if (call_id == nullptr) return Ai_error::k_provider_error;
     *call_id = next_call_id_++;
     return Ai_error::k_ok;
   }
-  Ai_error Complete(uint64_t call_id, const Ai_audit_record &record) override {
+  Ai_error Complete(THD *, uint64_t call_id,
+                    const Ai_audit_record &record) override {
     if (call_id == 0) return Ai_error::k_provider_error;
     Ai_audit_record stored = record;
     stored.call_id = call_id;
@@ -43,6 +49,15 @@ class Ai_memory_audit_sink final : public Ai_audit_sink {
  private:
   uint64_t next_call_id_{1};
   std::vector<Ai_audit_record> records_;
+};
+
+/** Writes redacted lifecycle telemetry in an independent system-table transaction. */
+class Ai_system_table_audit_sink final : public Ai_audit_sink {
+ public:
+  Ai_error Start(THD *caller, const Ai_audit_record &record,
+                 uint64_t *call_id) override;
+  Ai_error Complete(THD *caller, uint64_t call_id,
+                    const Ai_audit_record &record) override;
 };
 }  // namespace alisql::ai
 #endif

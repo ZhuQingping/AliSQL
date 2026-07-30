@@ -24,6 +24,7 @@ enum class Ai_error {
   k_response_too_large,
   k_rate_limited,
   k_protocol_mismatch,
+  k_audit_unavailable,
 };
 
 struct Ai_usage {
@@ -35,6 +36,7 @@ struct Ai_usage {
 };
 
 struct Ai_resolved_model {
+  uint64_t tenant_id{0};
   uint64_t config_id{0};
   uint64_t config_version{0};
   uint32_t dimension{0};

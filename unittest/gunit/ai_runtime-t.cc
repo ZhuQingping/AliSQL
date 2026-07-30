@@ -34,8 +34,8 @@ TEST(AiRuntimeTest, RecordsReasoningTokensButNeverReasoningText) {
   uint64_t call_id = 0;
   record.usage.reasoning_tokens = 17;
   record.status = Ai_audit_status::k_succeeded;
-  ASSERT_EQ(Ai_error::k_ok, audit.Start(record, &call_id));
-  ASSERT_EQ(Ai_error::k_ok, audit.Complete(call_id, record));
+  ASSERT_EQ(Ai_error::k_ok, audit.Start(nullptr, record, &call_id));
+  ASSERT_EQ(Ai_error::k_ok, audit.Complete(nullptr, call_id, record));
 
   ASSERT_EQ(1U, audit.records().size());
   EXPECT_EQ(call_id, audit.records().front().call_id);
@@ -48,11 +48,11 @@ TEST(AiRuntimeAuditTest, StartAllocatesCallIdBeforeCompletion) {
   Ai_audit_record record;
   uint64_t call_id = 0;
 
-  ASSERT_EQ(Ai_error::k_ok, audit.Start(record, &call_id));
+  ASSERT_EQ(Ai_error::k_ok, audit.Start(nullptr, record, &call_id));
   EXPECT_NE(0U, call_id);
   record.status = Ai_audit_status::k_succeeded;
   record.usage.total_tokens = 9;
-  ASSERT_EQ(Ai_error::k_ok, audit.Complete(call_id, record));
+  ASSERT_EQ(Ai_error::k_ok, audit.Complete(nullptr, call_id, record));
   ASSERT_EQ(1U, audit.records().size());
   EXPECT_EQ(call_id, audit.records().front().call_id);
   EXPECT_EQ(9U, audit.records().front().usage.total_tokens);
