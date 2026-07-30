@@ -596,6 +596,8 @@ SET @cmd = "CREATE TABLE IF NOT EXISTS alisql_ai_model_config (
   endpoint_type ENUM('HTTPS_JSON') NOT NULL,
   endpoint VARCHAR(1024) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   dimension INT UNSIGNED DEFAULT NULL,
+  embedding_space_id VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '',
+  distance_metric ENUM('COSINE','EUCLIDEAN') NOT NULL DEFAULT 'COSINE',
   credential_kind ENUM('SECRET_REF','PLAINTEXT_DEV') NOT NULL DEFAULT 'SECRET_REF',
   credential_ref VARCHAR(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   api_key_plaintext BLOB DEFAULT NULL,

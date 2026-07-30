@@ -174,7 +174,7 @@ Ai_error Ai_model_registry::LoadProfiles(
 
   Open_tables_backup config_backup;
   TABLE *config_table = nullptr;
-  if (access.open_table(thd, k_mysql_schema, k_model_config_table, 14,
+  if (access.open_table(thd, k_mysql_schema, k_model_config_table, 16,
                         TL_READ, &config_table, &config_backup))
     return Ai_error::k_model_not_found;
   read_error = config_table->file->ha_rnd_init(true) != 0;
@@ -186,7 +186,7 @@ Ai_error Ai_model_registry::LoadProfiles(
       break;
     }
     const uint64_t config_id = static_cast<uint64_t>(config_table->field[0]->val_int());
-    if (config_table->field[13]->val_int() == 0) continue;
+    if (config_table->field[15]->val_int() == 0) continue;
     for (const auto &binding : bindings) {
       if (binding.config_id != config_id) continue;
       Ai_model_profile profile;
@@ -201,8 +201,10 @@ Ai_error Ai_model_registry::LoadProfiles(
       profile.endpoint_type = FieldValue(config_table->field[7]);
       profile.endpoint = FieldValue(config_table->field[8]);
       profile.dimension = config_table->field[9]->is_null() ? 0 : static_cast<uint32_t>(config_table->field[9]->val_int());
-      profile.credential_kind = FieldValue(config_table->field[10]);
-      profile.credential_ref = FieldValue(config_table->field[11]);
+      profile.embedding_space_id = FieldValue(config_table->field[10]);
+      profile.distance_metric = FieldValue(config_table->field[11]);
+      profile.credential_kind = FieldValue(config_table->field[12]);
+      profile.credential_ref = FieldValue(config_table->field[13]);
       profile.active = profile.model_name == binding.model_name && profile.capability == binding.capability;
       if (profile.active) profiles->push_back(std::move(profile));
     }
@@ -247,6 +249,8 @@ Ai_error Ai_model_registry::ResolveProfiles(
       out->model_revision = profile.model_revision;
       out->endpoint_type = profile.endpoint_type;
       out->endpoint = profile.endpoint;
+      out->embedding_space_id = profile.embedding_space_id;
+      out->distance_metric = profile.distance_metric;
       out->credential_kind = profile.credential_kind;
       out->credential_ref = profile.credential_ref;
       return Ai_error::k_ok;
@@ -265,6 +269,8 @@ Ai_error Ai_model_registry::ResolveProfiles(
   out->model_revision = fallback->model_revision;
   out->endpoint_type = fallback->endpoint_type;
   out->endpoint = fallback->endpoint;
+  out->embedding_space_id = fallback->embedding_space_id;
+  out->distance_metric = fallback->distance_metric;
   out->credential_kind = fallback->credential_kind;
   out->credential_ref = fallback->credential_ref;
   return Ai_error::k_ok;

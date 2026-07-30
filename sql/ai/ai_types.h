@@ -45,6 +45,8 @@ struct Ai_resolved_model {
   std::string provider;
   std::string endpoint_type;
   std::string endpoint;
+  std::string embedding_space_id;
+  std::string distance_metric;
   std::string credential_kind;
   std::string credential_ref;
 };

@@ -249,6 +249,10 @@ String *Item_func_ai_model_info::val_str(String *str) {
   writer.String(model.model_revision.c_str(), model.model_revision.size());
   writer.Key("dimension");
   writer.Uint(model.dimension);
+  writer.Key("embedding_space_id");
+  writer.String(model.embedding_space_id.c_str(), model.embedding_space_id.size());
+  writer.Key("distance_metric");
+  writer.String(model.distance_metric.c_str(), model.distance_metric.size());
   writer.EndObject();
   if (buffer.mem_realloc(json.GetSize())) return error_str();
   memcpy(buffer.ptr(), json.GetString(), json.GetSize());
