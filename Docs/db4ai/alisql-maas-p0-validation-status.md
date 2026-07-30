@@ -24,8 +24,11 @@ plaintext fixture 仅触发 Adapter 的本地端点协议拒绝，不会发送�
 生产运维人员已经为服务器配置 keyring `SECRET_REF`，或本地 Debug 运维人员在已授权
 实例中配置临时 `PLAINTEXT_DEV` Profile、批准 endpoint、tenant Profile 和 `AI_INVOKE`
 后执行。它仅输出向量维度和生成长度，不输出 key、prompt、completion 或 embedding。
-真实检查将在完整离线验证后执行；在记录实际结果前，该项仍是**未执行**，不是失败或
-成功。
+2026-07-30 已在隔离的本地 Debug mysqld 完成一次显式授权检查：临时
+`PLAINTEXT_DEV` embedding 与 generation Profile 仅在该实例中存在，执行
+`scripts/db4ai_maas_smoke.sh` 后得到向量维度 `1024` 和非空生成长度 `38`。检查前已
+完成全部离线 GUnit/MTR；检查后已删除临时 Profile、binding 和测试 schema，并移除
+临时数据目录。该结果只验证当前凭据的 MaaS 可达性和协议兼容性，不构成生产部署验收。
 
 ## 明确未完成的生产门禁
 
