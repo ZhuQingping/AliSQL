@@ -41,6 +41,23 @@ INSERT INTO mysql.alisql_ai_tenant_account
   (account_user, account_host, tenant_id, active)
 VALUES ('root', 'localhost', 77, TRUE);
 
+--echo # Debug plaintext profiles resolve the exact active config before HTTP dispatch.
+--disable_query_log
+INSERT INTO mysql.alisql_ai_model_config
+  (config_version, model_name, capability, provider, provider_model_name,
+   endpoint_type, endpoint, credential_kind, api_key_plaintext, dimension, active)
+VALUES
+  (3, 'huawei/bge-m3', 'TEXT_EMBEDDING', 'huawei', 'bge-m3',
+   'HTTPS_JSON', 'https://maas.example.invalid/v1/not-embeddings',
+   'PLAINTEXT_DEV', UNHEX('00'), 1024, TRUE);
+INSERT INTO mysql.alisql_ai_tenant_binding
+  (tenant_id, model_name, capability, config_id, active)
+VALUES (78, 'huawei/bge-m3', 'TEXT_EMBEDDING', LAST_INSERT_ID(), TRUE);
+UPDATE mysql.alisql_ai_tenant_account
+   SET tenant_id = 78
+ WHERE account_user = 'root' AND account_host = 'localhost';
+--enable_query_log
+
 --echo # Registered functions enforce their public arity.
 --error ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT
 SELECT AI_EMBEDDING();
@@ -52,6 +69,13 @@ SELECT AI_MODEL_INFO('a', 'b');
 --echo # A non-NULL call cannot silently use an unconfigured profile.
 GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
 GRANT AI_AUDIT_VIEWER ON *.* TO 'root'@'localhost';
+--error ER_NOT_SUPPORTED_YET
+SELECT AI_EMBEDDING('text');
+--disable_query_log
+UPDATE mysql.alisql_ai_tenant_account
+   SET tenant_id = 77
+ WHERE account_user = 'root' AND account_host = 'localhost';
+--enable_query_log
 --error ER_NOT_SUPPORTED_YET
 SELECT AI_EMBEDDING('text');
 --error ER_NOT_SUPPORTED_YET

@@ -41,6 +41,7 @@ VALUES (77, 'huawei/bge-m3', 'TEXT_EMBEDDING', LAST_INSERT_ID(), TRUE);
 INSERT INTO mysql.alisql_ai_tenant_account
 (account_user, account_host, tenant_id, active)
 VALUES ('root', 'localhost', 77, TRUE);
+# Debug plaintext profiles resolve the exact active config before HTTP dispatch.
 # Registered functions enforce their public arity.
 SELECT AI_EMBEDDING();
 ERROR 42000: Incorrect parameter count in the call to native function 'AI_EMBEDDING'
@@ -51,6 +52,8 @@ ERROR 42000: Incorrect parameter count in the call to native function 'AI_MODEL_
 # A non-NULL call cannot silently use an unconfigured profile.
 GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
 GRANT AI_AUDIT_VIEWER ON *.* TO 'root'@'localhost';
+SELECT AI_EMBEDDING('text');
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI model endpoint is incompatible with its capability'
 SELECT AI_EMBEDDING('text');
 ERROR 42000: This version of MySQL doesn't yet support 'DB4AI embedding dimension is incompatible with the model'
 SELECT AI_ANALYZE('summarize', 'text');

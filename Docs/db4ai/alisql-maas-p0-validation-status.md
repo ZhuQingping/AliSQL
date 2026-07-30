@@ -9,21 +9,23 @@ mock 或成功编译替代真实云端验收。
 |---|---|---|
 | Debug 服务端 | `cmake --build build-debug --target mysqld --parallel 8` | 通过 |
 | 规范响应 | `runtime_output_directory/ai_types-t` | reasoning-only、length finish 和空 final 均拒绝 |
-| Profile 解析 | `runtime_output_directory/ai_model_registry-t` | active/capability/tenant 优先级、1024 维 bge-m3、端点和凭据 fail-closed 均覆盖 |
+| Profile 解析 | `runtime_output_directory/ai_model_registry-t` | active/capability/tenant 优先级、1024 维 bge-m3、端点、Debug plaintext 策略和凭据 fail-closed 均覆盖 |
 | Huawei Adapter | `runtime_output_directory/ai_huawei_maas_adapter-t` | embedding/chat payload、final-only、超时/输出限制、HTTP 403/429/404 分类、协议不匹配和 request ID 覆盖 |
 | Runtime options | `runtime_output_directory/ai_runtime-t` | 白名单选项和私有厂商参数拒绝覆盖 |
 | VECTOR 编码 | `runtime_output_directory/ai_vector_codec-t` | native float VECTOR 编码、维度和非有限数拒绝覆盖 |
-| SQL/MTR 契约 | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_contract` | SQL arity、NULL 无 egress、`AI_INVOKE`、tenant account→Profile 优先级、维度失败、无凭据失败、脱敏 model metadata 覆盖 |
+| SQL/MTR 契约 | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_contract` | SQL arity、NULL 无 egress、`AI_INVOKE`、tenant account→Profile 优先级、Debug plaintext 精确 Profile 读取后本地协议拒绝、维度失败、无凭据失败、脱敏 model metadata 覆盖 |
 
-默认测试均使用 mock transport 或不存在的 `SECRET_REF`；不会发送真实 HTTP 请求。
+默认测试均使用 mock transport、不存在的 `SECRET_REF` 或不回显的 Debug fixture；
+plaintext fixture 仅触发 Adapter 的本地端点协议拒绝，不会发送真实 HTTP 请求。
 
 ## 真实 MaaS 的 opt-in 检查
 
 脚本 [`scripts/db4ai_maas_smoke.sh`](../../scripts/db4ai_maas_smoke.sh) 只在
-运维人员已经为服务器配置 keyring `SECRET_REF`、批准 endpoint、tenant Profile 和
-`AI_INVOKE` 后执行。它仅输出向量维度和生成长度，不输出 key、prompt、completion
-或 embedding。当前环境没有可用于执行该检查的云端凭据，因此该项是**未执行**，
-不是失败或成功。
+生产运维人员已经为服务器配置 keyring `SECRET_REF`，或本地 Debug 运维人员在已授权
+实例中配置临时 `PLAINTEXT_DEV` Profile、批准 endpoint、tenant Profile 和 `AI_INVOKE`
+后执行。它仅输出向量维度和生成长度，不输出 key、prompt、completion 或 embedding。
+真实检查将在完整离线验证后执行；在记录实际结果前，该项仍是**未执行**，不是失败或
+成功。
 
 ## 明确未完成的生产门禁
 
@@ -35,6 +37,8 @@ mock 或成功编译替代真实云端验收。
   示例中强制过滤；服务器尚未把它们做成 Profile 元数据和通用写入时强制校验。
 - 百炼、Bedrock、方舟 Adapter 仅由 canonical Adapter 边界预留，P0 只实现华为
   MaaS HTTPS JSON embedding 与 V2 Chat。
+- `PLAINTEXT_DEV` 仅限 Debug 本地联调且不提供静态加密、轮换或生产安全保证；Release
+  构建拒绝该 kind，生产凭据仍需要 keyring `SECRET_REF`。
 - PolarDB MySQL 的比较只陈述本分支可验证的 AliSQL 证据，未进行外部实测，不做
   兼容性或性能等价声明。
 

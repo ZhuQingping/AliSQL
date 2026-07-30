@@ -1,7 +1,7 @@
 # AliSQL DB4AI MaaS P0：运维与可复现实例
 
 本文档是 `AI_EMBEDDING` 和 `AI_ANALYZE` 的交付使用说明。它只描述当前
-AliSQL 分支已经具备的内置函数、VECTOR 索引和离线验证；真实 MaaS 请求必须由
+AliSQL 分支已经具备的内置函数、VECTOR 索引和离线验证；生产真实 MaaS 请求必须由
 管理员显式配置受控的 keyring 引用，默认 MTR 不会访问任何云端。
 
 ## 1. 上线前配置和权限
@@ -43,6 +43,19 @@ GRANT AI_INVOKE ON *.* TO 'rag_app'@'%';
 network egress. A missing profile, unsupported endpoint, missing keyring
 reader or missing secret fails closed. Keys are neither SQL arguments nor MTR
 fixtures. `PLAINTEXT_DEV` is not a production configuration path.
+
+### Debug-only 明文凭据
+
+本地 Debug 构建可在受控的 `mysql.alisql_ai_model_config` 行中使用
+`credential_kind='PLAINTEXT_DEV'` 和 `api_key_plaintext` 做短期联调。该路径仍不向
+`AI_EMBEDDING`、`AI_ANALYZE`、`AI_MODEL_INFO` 添加任何密钥参数或输出：runtime 只按
+已解析 Profile 的 config id/version 在 dispatch 前读取该字段，值仅存在于短生命周期的
+内存 `Secure_string`。Release 构建拒绝 `PLAINTEXT_DEV`，生产必须使用 `SECRET_REF`。
+
+不要把明文值写进 SQL 历史、general log、slow log、支持包、MTR fixture、文档、shell
+history 或 Git。Debug 配置必须使用 Huawei 的 embedding
+`/v1/embeddings` 与 V2 Chat `/v2/chat/completions` 路径；当前生成逻辑模型为
+`huawei/glm-5.2`。完成联调后立即删除临时 Profile、tenant binding 和账号映射。
 
 The resolver uses the authenticated MySQL `user@host` identity to look up
 `alisql_ai_tenant_account`, then resolves the matching tenant Profile. An
@@ -169,13 +182,14 @@ selection, `AI_INVOKE`, absent credentials and no accidental real egress. Unit
 tests cover Huawei payload conversion, stable limits, non-2xx redaction,
 malformed data, response completeness and the bge-m3 dimension guard.
 
-A real smoke invocation is opt-in: provision the keyring secret outside the
-repository, replace `<approved-maas-host>`, grant a disposable principal
-`AI_INVOKE`, then run `scripts/db4ai_maas_smoke.sh`. Set `DB4AI_MYSQL` to the
-client command/path and `DB4AI_DATABASE` to a simple application schema; the
-optional model-name variables select logical Profiles. Do not run it in default
-CI. It emits only the vector dimension and completion length, never token,
-prompt, completion or embedding.
+A real smoke invocation is opt-in: production operators provision a keyring
+secret outside the repository, while local Debug operators may create a
+temporary `PLAINTEXT_DEV` Profile. Configure the approved host, grant a
+disposable principal `AI_INVOKE`, then run `scripts/db4ai_maas_smoke.sh`. Set
+`DB4AI_MYSQL` to the client command/path and `DB4AI_DATABASE` to a simple
+application schema; the optional model-name variables select logical Profiles.
+Do not run it in default CI. It emits only the vector dimension and completion
+length, never token, prompt, completion or embedding.
 
 Current hard boundaries are a 1 MiB HTTP response cap and a default 30-second
 request timeout (overridable only downward/upward through the stable
