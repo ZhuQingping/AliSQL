@@ -193,11 +193,12 @@ increasing concurrency.
 | Multi-cloud evolution | Profile/version plus canonical request/response and Adapter boundary | AliSQL design advantage; provider additions need Adapter tests. |
 | Vector/RAG governance | Native VECTOR and VECTOR INDEX; SQL retains tenant/scalar filters and sources | Demonstrated by the schema/query above; benchmark comparison remains future work. |
 | Data egress and errors | `AI_INVOKE`, keyring `SECRET_REF`, endpoint allow-list, redacted failures | No external PolarDB validation was run in this branch. |
-| Audit/operations | Audit table schema and in-memory audit contract exist | Persistent independent audit writer and audit-view enforcement are follow-up work, not claimed complete. |
+| Audit/operations | Audit table schema, runtime audit records and provider request telemetry exist | Persistent independent audit writer and audit-view enforcement are follow-up work, not claimed complete. |
 
-The remaining implementation work is intentionally visible: session tenant
-resolution currently uses the explicitly configured global tenant fallback;
-persistent independent audit writes, AI_ADMIN management surfaces,
-AI_AUDIT_VIEWER query surfaces, configured embedding-space metadata enforcement
-and default-off opt-in smoke automation remain before a production-complete
-P0 declaration.
+The remaining implementation work is intentionally visible: authenticated
+account-to-tenant resolution is implemented, with tenant `0` retained only as
+an explicit global fallback. Persistent independent audit writes, AI_ADMIN
+management surfaces, AI_AUDIT_VIEWER query surfaces, configured
+embedding-space metadata enforcement and real MaaS smoke execution with an
+operator-provided keyring secret remain before a production-complete P0
+declaration.

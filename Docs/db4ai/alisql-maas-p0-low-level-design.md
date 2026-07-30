@@ -105,7 +105,10 @@ alisql_ai_model_config
   status, config_version, is_builtin, created_at, updated_at
 
 alisql_ai_tenant_binding
-  user, host, tenant_id, status, created_at, updated_at
+  tenant_id, model_name, capability, config_id, active
+
+alisql_ai_tenant_account
+  account_user, account_host, tenant_id, active
 
 alisql_ai_call_audit
   request_id, provider_request_id, db_user, tenant_id, capability,
@@ -115,9 +118,10 @@ alisql_ai_call_audit
   total_tokens, latency_ms, http_status, error_code, state, created_at
 ```
 
-Model resolution selects an `ACTIVE` Profile for the authenticated account's
-tenant, then falls back to tenant `0` only when the Profile explicitly permits
-that fallback. The result is a fixed `(id, config_version)` for the call.
+Model resolution uses `alisql_ai_tenant_account` to select an `ACTIVE` Profile
+for the authenticated account's tenant, then falls back to tenant `0` only
+when no account mapping exists and a global Profile is explicitly configured.
+The result is a fixed `(id, config_version)` for the call.
 `status='ACTIVE'` means configuration lifecycle only; it is distinct from model
 visibility, account entitlement, successful inference and complete response.
 
