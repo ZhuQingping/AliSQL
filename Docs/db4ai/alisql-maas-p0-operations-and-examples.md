@@ -29,6 +29,12 @@ SELECT 42, model_name, capability, config_id, TRUE
   FROM mysql.alisql_ai_model_config
  WHERE config_version = 1;
 
+-- Authentication identity is resolved by the server; applications cannot
+-- supply or override tenant_id in either AI function.
+INSERT INTO mysql.alisql_ai_tenant_account
+  (account_user, account_host, tenant_id, active)
+VALUES ('rag_app', '%', 42, TRUE);
+
 GRANT AI_INVOKE ON *.* TO 'rag_app'@'%';
 ```
 
@@ -36,6 +42,12 @@ GRANT AI_INVOKE ON *.* TO 'rag_app'@'%';
 network egress. A missing profile, unsupported endpoint, missing keyring
 reader or missing secret fails closed. Keys are neither SQL arguments nor MTR
 fixtures. `PLAINTEXT_DEV` is not a production configuration path.
+
+The resolver uses the authenticated MySQL `user@host` identity to look up
+`alisql_ai_tenant_account`, then resolves the matching tenant Profile. An
+account with no mapping can use only a deliberately configured tenant `0`
+global fallback. It cannot select a tenant through session variables or SQL
+function arguments.
 
 Current P0 supports Huawei HTTPS JSON profiles. The runtime resolves a
 profile by capability and logical model, freezes its `config_id` and
