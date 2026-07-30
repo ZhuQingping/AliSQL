@@ -1,5 +1,7 @@
 /* Copyright (c) 2026, Alibaba and/or its affiliates. All rights reserved. */
 
+#include "my_cleanse.h"
+
 #include "sql/ai/ai_huawei_maas_adapter.h"
 
 #include <my_rapidjson_size_t.h>
@@ -11,6 +13,11 @@
 namespace alisql::ai {
 
 namespace {
+
+void ClearSensitiveString(std::string *value) {
+  if (!value->empty()) my_cleanse(value->data(), value->size());
+  value->clear();
+}
 
 void AddUsage(const rapidjson::Value &usage, Ai_usage *out) {
   if (!usage.IsObject()) return;
@@ -26,17 +33,20 @@ void AddUsage(const rapidjson::Value &usage, Ai_usage *out) {
 }
 
 Ai_error Post(Ai_http_transport *transport, const Ai_canonical_request &request,
-              const std::string &token, const std::string &body,
+              std::string_view token, const std::string &body,
               Ai_http_response *http_response) {
   if (transport == nullptr || token.empty() || request.model.provider != "huawei" ||
       request.model.endpoint_type != "HTTPS_JSON")
     return Ai_error::k_provider_error;
   Ai_http_request http_request;
   http_request.endpoint = request.model.endpoint;
-  http_request.authorization = "Bearer " + token;
+  std::string authorization = "Bearer ";
+  authorization.append(token.data(), token.size());
+  http_request.authorization = authorization;
   http_request.body = body;
   if (request.timeout_ms != 0) http_request.timeout_ms = request.timeout_ms;
   const Ai_error error = transport->PostJson(http_request, http_response);
+  ClearSensitiveString(&authorization);
   if (error != Ai_error::k_ok) return error;
   if (http_response->status_code >= 200 && http_response->status_code < 300)
     return Ai_error::k_ok;
@@ -54,15 +64,17 @@ bool HasEndpointPath(const std::string &endpoint, const char *path) {
 }  // namespace
 
 Ai_error Huawei_maas_adapter::Execute(const Ai_canonical_request &request,
+                                      std::string_view credential,
                                       Ai_canonical_response *response) {
   if (response == nullptr) return Ai_error::k_provider_error;
   *response = Ai_canonical_response{};
   if (request.capability == Ai_capability::k_text_embedding)
-    return ExecuteEmbedding(request, response);
-  return ExecuteChat(request, response);
+    return ExecuteEmbedding(request, credential, response);
+  return ExecuteChat(request, credential, response);
 }
 
 Ai_error Huawei_maas_adapter::ExecuteEmbedding(const Ai_canonical_request &request,
+                                               std::string_view credential,
                                                Ai_canonical_response *response) {
   if (!HasEndpointPath(request.model.endpoint, "/v1/embeddings"))
     return Ai_error::k_protocol_mismatch;
@@ -77,7 +89,7 @@ Ai_error Huawei_maas_adapter::ExecuteEmbedding(const Ai_canonical_request &reque
   writer.String("float");
   writer.EndObject();
   Ai_http_response http_response;
-  const Ai_error error = Post(transport_, request, bearer_token_, buffer.GetString(),
+  const Ai_error error = Post(transport_, request, credential, buffer.GetString(),
                               &http_response);
   response->provider_request_id = http_response.request_id;
   response->http_status = http_response.status_code;
@@ -111,6 +123,7 @@ Ai_error Huawei_maas_adapter::ExecuteEmbedding(const Ai_canonical_request &reque
 }
 
 Ai_error Huawei_maas_adapter::ExecuteChat(const Ai_canonical_request &request,
+                                          std::string_view credential,
                                           Ai_canonical_response *response) {
   if (!HasEndpointPath(request.model.endpoint, "/v2/chat/completions"))
     return Ai_error::k_protocol_mismatch;
@@ -132,7 +145,7 @@ Ai_error Huawei_maas_adapter::ExecuteChat(const Ai_canonical_request &request,
   }
   writer.EndObject();
   Ai_http_response http_response;
-  const Ai_error error = Post(transport_, request, bearer_token_, buffer.GetString(),
+  const Ai_error error = Post(transport_, request, credential, buffer.GetString(),
                               &http_response);
   response->provider_request_id = http_response.request_id;
   response->http_status = http_response.status_code;

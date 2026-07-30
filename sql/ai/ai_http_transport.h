@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "sql/ai/ai_types.h"
@@ -15,7 +16,8 @@ constexpr size_t k_ai_max_http_response_bytes = 1024 * 1024;
 
 struct Ai_http_request {
   std::string endpoint;
-  std::string authorization;
+  // This view is consumed synchronously by PostJson and must not be retained.
+  std::string_view authorization;
   std::string body;
   uint32_t connect_timeout_ms{5000};
   uint32_t timeout_ms{30000};

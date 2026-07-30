@@ -127,6 +127,16 @@ TEST(AiCredentialResolverTest, PlaintextDevReturnsOnlyNonemptyValue) {
   EXPECT_EQ("unit-token", credential.view());
 }
 
+TEST(AiCredentialResolverTest, PlaintextDevRejectsEmptyValue) {
+  Ai_credential_resolver resolver;
+  Secure_string credential;
+
+  EXPECT_EQ(Ai_error::k_credential_unavailable,
+            resolver.ReadPlaintextDevForTest(true, "PLAINTEXT_DEV", "",
+                                             &credential));
+  EXPECT_TRUE(credential.empty());
+}
+
 TEST(AiCredentialResolverTest, PlaintextDevRequiresExactActiveConfig) {
   Ai_credential_resolver resolver;
 

@@ -69,13 +69,13 @@ Ai_error Ai_runtime::Embed(THD *thd, const std::string &text,
     return CompleteInvocation(audit_, model, Ai_capability::k_text_embedding,
                               nullptr, Ai_error::k_provider_error);
   Curl_ai_http_transport transport({authority});
-  Huawei_maas_adapter adapter(&transport, std::string(credential.view()));
+  Huawei_maas_adapter adapter(&transport);
   Ai_canonical_request request;
   request.capability = Ai_capability::k_text_embedding;
   request.model = model;
   request.input = text;
   Ai_canonical_response response;
-  const Ai_error execute = adapter.Execute(request, &response);
+  const Ai_error execute = adapter.Execute(request, credential.view(), &response);
   if (execute != Ai_error::k_ok || response.embeddings.size() != 1)
     return CompleteInvocation(
         audit_, model, Ai_capability::k_text_embedding, &response,
@@ -113,7 +113,7 @@ Ai_error Ai_runtime::Analyze(THD *thd, const std::string &task,
     return CompleteInvocation(audit_, model, Ai_capability::k_text_generation,
                               nullptr, Ai_error::k_provider_error);
   Curl_ai_http_transport transport({authority});
-  Huawei_maas_adapter adapter(&transport, std::string(credential.view()));
+  Huawei_maas_adapter adapter(&transport);
   Ai_canonical_request request;
   request.capability = Ai_capability::k_text_generation;
   request.model = model;
@@ -122,7 +122,7 @@ Ai_error Ai_runtime::Analyze(THD *thd, const std::string &task,
   request.max_output_tokens = options.max_output_tokens;
   request.timeout_ms = options.timeout_ms;
   Ai_canonical_response response;
-  const Ai_error execute = adapter.Execute(request, &response);
+  const Ai_error execute = adapter.Execute(request, credential.view(), &response);
   if (execute != Ai_error::k_ok)
     return CompleteInvocation(audit_, model, Ai_capability::k_text_generation,
                               &response, execute);

@@ -33,7 +33,7 @@ TEST(AiTypesTest, AcceptsNonEmptyFinalCompletion) {
 
 class EchoAdapter final : public Ai_provider_adapter {
  public:
-  Ai_error Execute(const Ai_canonical_request &request,
+  Ai_error Execute(const Ai_canonical_request &request, std::string_view,
                    Ai_canonical_response *response) override {
     response->final_content = request.input;
     response->finish_reason = "stop";
@@ -48,7 +48,7 @@ TEST(AiTypesTest, AdapterUsesCanonicalRequestAndResponse) {
   Ai_canonical_response response;
   EchoAdapter adapter;
 
-  EXPECT_EQ(Ai_error::k_ok, adapter.Execute(request, &response));
+  EXPECT_EQ(Ai_error::k_ok, adapter.Execute(request, "unit-token", &response));
   EXPECT_EQ("canonical input", response.final_content);
   EXPECT_EQ(Ai_error::k_ok, response.ValidateChatCompletion());
 }

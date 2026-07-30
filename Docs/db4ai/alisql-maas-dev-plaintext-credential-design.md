@@ -25,11 +25,13 @@ MaaS embedding 和 V2 Chat。该路径不改变客户 SQL 接口：客户仍只�
 4. 对 Debug `PLAINTEXT_DEV`，resolver 通过受控系统表访问精确读取同一 active
    config row 的 `api_key_plaintext`，验证非空及 kind/config-version 一致后，写入
    自动清零的 `Secure_string`。
-5. Adapter 仅从该短生命周期的 `Secure_string` 构造内存中的 Authorization header。
-   审计只记录已存在的 config、HTTP 状态、用量和 provider request id。
+5. Adapter 只在单次同步 dispatch 期间借用该短生命周期的 `Secure_string`，不跨调用
+   保存凭据；构造临时 Authorization header 后用 `my_cleanse` 清零。HTTP transport
+   在完成 curl 调用后也用 `my_cleanse` 清零临时 header 和 curl header 副本。审计只
+   记录已存在的 config、HTTP 状态、用量和 provider request id。
 
-`Ai_resolved_model` 和 `Ai_canonical_request` 不持有明文值，避免请求复制、metadata
-渲染或诊断路径意外携带密钥。
+`Ai_resolved_model` 和 `Ai_canonical_request` 不持有明文值；HTTP request 仅在同步调用
+期间借用 header 的视图，避免请求复制、metadata 渲染或诊断路径意外携带密钥。
 
 ## 失败语义
 

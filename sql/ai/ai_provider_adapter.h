@@ -1,6 +1,8 @@
 #ifndef SQL_AI_AI_PROVIDER_ADAPTER_H
 #define SQL_AI_AI_PROVIDER_ADAPTER_H
 
+#include <string_view>
+
 #include "sql/ai/ai_types.h"
 
 namespace alisql::ai {
@@ -16,7 +18,9 @@ class Ai_provider_adapter {
  public:
   virtual ~Ai_provider_adapter() = default;
 
+  // credential is borrowed only for this synchronous invocation.
   virtual Ai_error Execute(const Ai_canonical_request &request,
+                           std::string_view credential,
                            Ai_canonical_response *response) = 0;
 };
 

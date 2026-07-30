@@ -1,5 +1,7 @@
 /* Copyright (c) 2026, Alibaba and/or its affiliates. All rights reserved. */
 
+#include "my_cleanse.h"
+
 #include "sql/ai/ai_model_registry.h"
 
 #include <algorithm>
@@ -75,7 +77,7 @@ void Secure_string::Assign(std::string value) {
 }
 
 void Secure_string::Clear() {
-  std::fill(value_.begin(), value_.end(), '\0');
+  if (!value_.empty()) my_cleanse(value_.data(), value_.size());
   value_.clear();
 }
 

@@ -1,5 +1,7 @@
 /* Copyright (c) 2026, Alibaba and/or its affiliates. All rights reserved. */
 
+#include "my_cleanse.h"
+
 #include "sql/ai/ai_http_transport.h"
 
 #include <algorithm>
@@ -10,6 +12,17 @@
 namespace alisql::ai {
 
 namespace {
+
+void ClearSensitiveString(std::string *value) {
+  if (!value->empty()) my_cleanse(value->data(), value->size());
+  value->clear();
+}
+
+void ClearCurlHeaders(struct curl_slist *headers) {
+  for (auto *header = headers; header != nullptr; header = header->next) {
+    if (header->data != nullptr) my_cleanse(header->data, std::strlen(header->data));
+  }
+}
 
 struct Response_collector {
   std::string *body;
@@ -74,9 +87,12 @@ Ai_error Curl_ai_http_transport::PostJson(const Ai_http_request &request,
   if (curl == nullptr) return Ai_error::k_provider_error;
   struct curl_slist *headers = nullptr;
   headers = curl_slist_append(headers, "Content-Type: application/json");
+  std::string authorization_header;
   if (!request.authorization.empty()) {
-    const std::string header = "Authorization: " + request.authorization;
-    headers = curl_slist_append(headers, header.c_str());
+    authorization_header = "Authorization: ";
+    authorization_header.append(request.authorization.data(),
+                                request.authorization.size());
+    headers = curl_slist_append(headers, authorization_header.c_str());
   }
   Response_collector collector{&response->body};
   curl_easy_setopt(curl, CURLOPT_URL, request.endpoint.c_str());
@@ -96,8 +112,10 @@ Ai_error Curl_ai_http_transport::PostJson(const Ai_http_request &request,
   const CURLcode status = curl_easy_perform(curl);
   if (status == CURLE_OK)
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response->status_code);
+  ClearCurlHeaders(headers);
   curl_slist_free_all(headers);
   curl_easy_cleanup(curl);
+  ClearSensitiveString(&authorization_header);
   if (collector.exceeded_limit) return Ai_error::k_response_too_large;
   if (status == CURLE_OPERATION_TIMEDOUT) return Ai_error::k_timeout;
   return status == CURLE_OK ? Ai_error::k_ok : Ai_error::k_provider_error;

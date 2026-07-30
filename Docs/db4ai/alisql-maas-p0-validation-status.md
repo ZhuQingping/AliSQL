@@ -14,6 +14,7 @@ mock 或成功编译替代真实云端验收。
 | Runtime options | `runtime_output_directory/ai_runtime-t` | 白名单选项和私有厂商参数拒绝覆盖 |
 | VECTOR 编码 | `runtime_output_directory/ai_vector_codec-t` | native float VECTOR 编码、维度和非有限数拒绝覆盖 |
 | SQL/MTR 契约 | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_contract` | SQL arity、NULL 无 egress、`AI_INVOKE`、tenant account→Profile 优先级、Debug plaintext 精确 Profile 读取后本地协议拒绝、维度失败、无凭据失败、脱敏 model metadata 覆盖 |
+| Release 明文门禁 | 临时 Release `mysqld` 隔离实例，含 `PLAINTEXT_DEV` fixture 的 `AI_EMBEDDING` | 调用前返回 `DB4AI credential is unavailable`；未发生 HTTP 请求 |
 
 默认测试均使用 mock transport、不存在的 `SECRET_REF` 或不回显的 Debug fixture；
 plaintext fixture 仅触发 Adapter 的本地端点协议拒绝，不会发送真实 HTTP 请求。
@@ -57,3 +58,17 @@ build-debug/runtime_output_directory/ai_runtime-t
 build-debug/runtime_output_directory/ai_vector_codec-t
 cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_contract
 ```
+
+## Release 明文门禁复验
+
+以 `-DCMAKE_BUILD_TYPE=Release` 配置一个仓库外临时构建目录（并指定本仓库
+`extra/boost` 和系统 curl），构建 `mysqld`。在 `--skip-networking` 的临时 datadir
+初始化该服务器，插入仅含 `UNHEX('00')` fixture 的 `PLAINTEXT_DEV` embedding Profile、
+tenant binding、`root@localhost` tenant account 与 `AI_INVOKE` 授权，然后执行：
+
+```text
+SELECT AI_EMBEDDING('release-gate');
+```
+
+期望在调用前得到 `DB4AI credential is unavailable`，不配置真实 endpoint 或密钥，
+并在验证结束后关闭临时服务器、删除 datadir 和构建目录。
