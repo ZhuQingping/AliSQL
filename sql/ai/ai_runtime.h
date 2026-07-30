@@ -6,6 +6,8 @@
 #include "sql/ai/ai_audit.h"
 #include "sql/ai/ai_provider_adapter.h"
 
+class THD;
+
 namespace alisql::ai {
 struct Ai_analyze_options {
   std::string model_name;
@@ -20,6 +22,12 @@ class Ai_runtime {
   Ai_runtime(Ai_provider_adapter *adapter, Ai_audit_sink *audit)
       : adapter_(adapter), audit_(audit) {}
   Ai_error ParseAnalyzeOptions(const std::string &json, Ai_analyze_options *out) const;
+  Ai_error Embed(THD *thd, const std::string &text,
+                 const std::string &model_name, uint32_t dimension,
+                 std::string *encoded_vector) const;
+  Ai_error Analyze(THD *thd, const std::string &task, const std::string &input,
+                   const Ai_analyze_options &options,
+                   std::string *final_content) const;
  private:
   Ai_provider_adapter *adapter_;
   Ai_audit_sink *audit_;

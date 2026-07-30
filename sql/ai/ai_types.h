@@ -35,6 +35,7 @@ struct Ai_usage {
 struct Ai_resolved_model {
   uint64_t config_id{0};
   uint64_t config_version{0};
+  uint32_t dimension{0};
   Ai_capability capability{Ai_capability::k_text_generation};
   std::string model_name;
   std::string provider_model_name;
@@ -51,6 +52,8 @@ struct Ai_canonical_request {
   Ai_resolved_model model;
   std::string task;
   std::string input;
+  uint32_t max_output_tokens{0};
+  uint32_t timeout_ms{0};
 };
 
 struct Ai_canonical_response {

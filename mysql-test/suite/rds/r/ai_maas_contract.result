@@ -17,6 +17,16 @@ SELECT config_version, dimension FROM mysql.alisql_ai_model_config
 WHERE model_name = 'huawei/bge-m3';
 config_version	dimension
 1	1024
+INSERT INTO mysql.alisql_ai_model_config
+(config_version, model_name, capability, provider, provider_model_name,
+endpoint_type, endpoint, credential_kind, credential_ref, active)
+VALUES
+(1, 'huawei/glm-5.2', 'TEXT_GENERATION', 'huawei', 'glm-5.2',
+'HTTPS_JSON', 'https://maas.example.invalid/v2/chat/completions',
+'SECRET_REF', 'mtr/does-not-exist', TRUE);
+INSERT INTO mysql.alisql_ai_tenant_binding
+(tenant_id, model_name, capability, config_id, active)
+VALUES (0, 'huawei/glm-5.2', 'TEXT_GENERATION', LAST_INSERT_ID(), TRUE);
 # Registered functions enforce their public arity.
 SELECT AI_EMBEDDING();
 ERROR 42000: Incorrect parameter count in the call to native function 'AI_EMBEDDING'
@@ -25,7 +35,8 @@ ERROR 42000: Incorrect parameter count in the call to native function 'AI_ANALYZ
 SELECT AI_MODEL_INFO('a', 'b');
 ERROR 42000: Incorrect parameter count in the call to native function 'AI_MODEL_INFO'
 # A non-NULL call cannot silently use an unconfigured profile.
+GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
 SELECT AI_EMBEDDING('text');
-ERROR 42000: This version of MySQL doesn't yet support 'DB4AI runtime execution'
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI credential is unavailable'
 SELECT AI_ANALYZE('summarize', 'text');
-ERROR 42000: This version of MySQL doesn't yet support 'DB4AI runtime execution'
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI credential is unavailable'

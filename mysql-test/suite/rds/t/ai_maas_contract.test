@@ -15,6 +15,17 @@ VALUES (0, 'huawei/bge-m3', 'TEXT_EMBEDDING', LAST_INSERT_ID(), TRUE);
 SELECT config_version, dimension FROM mysql.alisql_ai_model_config
   WHERE model_name = 'huawei/bge-m3';
 
+INSERT INTO mysql.alisql_ai_model_config
+  (config_version, model_name, capability, provider, provider_model_name,
+   endpoint_type, endpoint, credential_kind, credential_ref, active)
+VALUES
+  (1, 'huawei/glm-5.2', 'TEXT_GENERATION', 'huawei', 'glm-5.2',
+   'HTTPS_JSON', 'https://maas.example.invalid/v2/chat/completions',
+   'SECRET_REF', 'mtr/does-not-exist', TRUE);
+INSERT INTO mysql.alisql_ai_tenant_binding
+  (tenant_id, model_name, capability, config_id, active)
+VALUES (0, 'huawei/glm-5.2', 'TEXT_GENERATION', LAST_INSERT_ID(), TRUE);
+
 --echo # Registered functions enforce their public arity.
 --error ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT
 SELECT AI_EMBEDDING();
@@ -24,6 +35,7 @@ SELECT AI_ANALYZE('task');
 SELECT AI_MODEL_INFO('a', 'b');
 
 --echo # A non-NULL call cannot silently use an unconfigured profile.
+GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
 --error ER_NOT_SUPPORTED_YET
 SELECT AI_EMBEDDING('text');
 --error ER_NOT_SUPPORTED_YET

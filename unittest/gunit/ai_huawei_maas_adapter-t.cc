@@ -99,6 +99,22 @@ TEST(HuaweiMaaSTest, ChatReturnsFinalContentButNeverReasoning) {
   EXPECT_EQ(2U, response.usage.completion_tokens);
 }
 
+TEST(HuaweiMaaSTest, ChatMapsStableOutputAndTimeoutLimits) {
+  Fake_transport transport;
+  transport.next_response.status_code = 200;
+  transport.next_response.body =
+      "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"final\"}}]}";
+  Huawei_maas_adapter adapter(&transport, "test-token");
+  Ai_canonical_request request = ChatRequest();
+  request.max_output_tokens = 128;
+  request.timeout_ms = 2345;
+  Ai_canonical_response response;
+
+  ASSERT_EQ(Ai_error::k_ok, adapter.Execute(request, &response));
+  EXPECT_NE(std::string::npos, transport.last_request.body.find("\"max_tokens\":128"));
+  EXPECT_EQ(2345U, transport.last_request.timeout_ms);
+}
+
 TEST(HuaweiMaaSTest, RejectsNonSuccessWithoutExposingProviderBody) {
   Fake_transport transport;
   transport.next_response.status_code = 429;

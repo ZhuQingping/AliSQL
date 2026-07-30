@@ -397,7 +397,8 @@ TARGET_SOURCES(ai_model_registry-t PRIVATE
 TARGET_SOURCES(ai_huawei_maas_adapter-t PRIVATE
   ${CMAKE_SOURCE_DIR}/sql/ai/ai_types.cc
   ${CMAKE_SOURCE_DIR}/sql/ai/ai_huawei_maas_adapter.cc)
-TARGET_SOURCES(ai_runtime-t PRIVATE ${CMAKE_SOURCE_DIR}/sql/ai/ai_runtime.cc)
+TARGET_SOURCES(ai_runtime-t PRIVATE
+  ${CMAKE_SOURCE_DIR}/sql/ai/ai_runtime.cc)
 TARGET_SOURCES(ai_vector_codec-t PRIVATE
   ${CMAKE_SOURCE_DIR}/sql/ai/ai_vector_codec.cc)
 

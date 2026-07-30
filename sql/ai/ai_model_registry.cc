@@ -5,22 +5,22 @@
 #include <algorithm>
 #include <utility>
 
+#ifndef EXTRA_CODE_FOR_UNIT_TESTING
 #include "sql/handler.h"
 #include "sql/field.h"
+#include "keyring_operations_helper.h"
 #include "sql/rpl_table_access.h"
+#include "sql/server_component/mysql_server_keyring_lockable_imp.h"
 #include "sql/sql_base.h"
 #include "sql/sql_class.h"
 #include "sql/table.h"
-
-#ifndef EXTRA_CODE_FOR_UNIT_TESTING
-#include "keyring_operations_helper.h"
-#include "sql/server_component/mysql_server_keyring_lockable_imp.h"
 #endif
 
 namespace alisql::ai {
 
 namespace {
 
+#ifndef EXTRA_CODE_FOR_UNIT_TESTING
 class Ai_system_table_access final : public System_table_access {
  public:
   void before_open(THD *) override {
@@ -46,6 +46,7 @@ Ai_capability CapabilityFromEnum(longlong value) {
   return value == 1 ? Ai_capability::k_text_embedding
                     : Ai_capability::k_text_generation;
 }
+#endif
 
 }  // namespace
 
@@ -89,6 +90,12 @@ Ai_error Ai_model_registry::Resolve(THD *thd, std::string_view model_name,
 
 Ai_error Ai_model_registry::LoadProfiles(
     THD *thd, std::vector<Ai_model_profile> *profiles) const {
+#ifdef EXTRA_CODE_FOR_UNIT_TESTING
+  (void)thd;
+  (void)profiles;
+  // GUnit runs offline and deliberately has no table handler linkage.
+  return Ai_error::k_model_not_found;
+#else
   if (profiles == nullptr) return Ai_error::k_provider_error;
   Ai_system_table_access access;
   Open_tables_backup binding_backup;
@@ -146,6 +153,7 @@ Ai_error Ai_model_registry::LoadProfiles(
   if (access.close_table(thd, config_table, &config_backup, read_error, false))
     return Ai_error::k_model_not_found;
   return read_error ? Ai_error::k_model_not_found : Ai_error::k_ok;
+#endif
 }
 
 void Ai_model_registry::AddProfileForTest(const Ai_model_profile &profile) {
@@ -173,6 +181,7 @@ Ai_error Ai_model_registry::ResolveProfiles(
     if (profile.tenant_id == tenant_id) {
       out->config_id = profile.config_id;
       out->config_version = profile.config_version;
+      out->dimension = profile.dimension;
       out->capability = profile.capability;
       out->model_name = profile.model_name;
       out->provider = profile.provider;
@@ -190,6 +199,7 @@ Ai_error Ai_model_registry::ResolveProfiles(
 
   out->config_id = fallback->config_id;
   out->config_version = fallback->config_version;
+  out->dimension = fallback->dimension;
   out->capability = fallback->capability;
   out->model_name = fallback->model_name;
   out->provider = fallback->provider;

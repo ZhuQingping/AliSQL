@@ -35,6 +35,7 @@ Ai_error Post(Ai_http_transport *transport, const Ai_canonical_request &request,
   http_request.endpoint = request.model.endpoint;
   http_request.authorization = "Bearer " + token;
   http_request.body = body;
+  if (request.timeout_ms != 0) http_request.timeout_ms = request.timeout_ms;
   const Ai_error error = transport->PostJson(http_request, http_response);
   if (error != Ai_error::k_ok) return error;
   return http_response->status_code >= 200 && http_response->status_code < 300
@@ -111,6 +112,10 @@ Ai_error Huawei_maas_adapter::ExecuteChat(const Ai_canonical_request &request,
   writer.StartObject(); writer.Key("role"); writer.String("user");
   writer.Key("content"); writer.String(request.input.c_str()); writer.EndObject();
   writer.EndArray();
+  if (request.max_output_tokens != 0) {
+    writer.Key("max_tokens");
+    writer.Uint(request.max_output_tokens);
+  }
   writer.EndObject();
   Ai_http_response http_response;
   const Ai_error error = Post(transport_, request, bearer_token_, buffer.GetString(),
