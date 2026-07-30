@@ -158,9 +158,11 @@ malformed data, response completeness and the bge-m3 dimension guard.
 
 A real smoke invocation is opt-in: provision the keyring secret outside the
 repository, replace `<approved-maas-host>`, grant a disposable principal
-`AI_INVOKE`, then run one embedding and one analyze SQL statement. Do not run
-it in default CI and do not capture token, prompt, completion or embedding in
-test artifacts.
+`AI_INVOKE`, then run `scripts/db4ai_maas_smoke.sh`. Set `DB4AI_MYSQL` to the
+client command/path and `DB4AI_DATABASE` to a simple application schema; the
+optional model-name variables select logical Profiles. Do not run it in default
+CI. It emits only the vector dimension and completion length, never token,
+prompt, completion or embedding.
 
 Current hard boundaries are a 1 MiB HTTP response cap and a default 30-second
 request timeout (overridable only downward/upward through the stable
