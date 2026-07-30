@@ -76,6 +76,7 @@ class Ai_model_registry {
                           Ai_capability capability,
                           const std::vector<Ai_model_profile> &profiles,
                           Ai_resolved_model *out) const;
+  Ai_error LoadProfiles(THD *thd, std::vector<Ai_model_profile> *profiles) const;
   std::vector<Ai_model_profile> test_profiles_;
 };
 

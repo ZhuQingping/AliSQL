@@ -1,6 +1,20 @@
 --echo # AI_EMBEDDING preserves NULL input without egress.
 SELECT AI_EMBEDDING(NULL);
 
+--echo # Protected profiles are created by bootstrap and accept only metadata.
+INSERT INTO mysql.alisql_ai_model_config
+  (config_version, model_name, capability, provider, provider_model_name,
+   endpoint_type, endpoint, credential_kind, credential_ref, dimension, active)
+VALUES
+  (1, 'huawei/bge-m3', 'TEXT_EMBEDDING', 'huawei', 'bge-m3',
+   'HTTPS_JSON', 'https://maas.example.invalid/v1/embeddings',
+   'SECRET_REF', 'mtr/does-not-exist', 1024, TRUE);
+INSERT INTO mysql.alisql_ai_tenant_binding
+  (tenant_id, model_name, capability, config_id, active)
+VALUES (0, 'huawei/bge-m3', 'TEXT_EMBEDDING', LAST_INSERT_ID(), TRUE);
+SELECT config_version, dimension FROM mysql.alisql_ai_model_config
+  WHERE model_name = 'huawei/bge-m3';
+
 --echo # Registered functions enforce their public arity.
 --error ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT
 SELECT AI_EMBEDDING();

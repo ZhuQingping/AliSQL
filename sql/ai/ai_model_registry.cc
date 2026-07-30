@@ -5,12 +5,49 @@
 #include <algorithm>
 #include <utility>
 
+#include "sql/handler.h"
+#include "sql/field.h"
+#include "sql/rpl_table_access.h"
+#include "sql/sql_base.h"
+#include "sql/sql_class.h"
+#include "sql/table.h"
+
 #ifndef EXTRA_CODE_FOR_UNIT_TESTING
 #include "keyring_operations_helper.h"
 #include "sql/server_component/mysql_server_keyring_lockable_imp.h"
 #endif
 
 namespace alisql::ai {
+
+namespace {
+
+class Ai_system_table_access final : public System_table_access {
+ public:
+  void before_open(THD *) override {
+    m_flags = MYSQL_OPEN_IGNORE_GLOBAL_READ_LOCK | MYSQL_OPEN_IGNORE_FLUSH |
+              MYSQL_LOCK_IGNORE_TIMEOUT;
+  }
+};
+
+const LEX_CSTRING k_mysql_schema = {STRING_WITH_LEN("mysql")};
+const LEX_CSTRING k_tenant_binding_table = {
+    STRING_WITH_LEN("alisql_ai_tenant_binding")};
+const LEX_CSTRING k_model_config_table = {
+    STRING_WITH_LEN("alisql_ai_model_config")};
+
+std::string FieldValue(Field *field) {
+  if (field->is_null()) return {};
+  String value;
+  field->val_str(&value, &value);
+  return std::string(value.ptr(), value.length());
+}
+
+Ai_capability CapabilityFromEnum(longlong value) {
+  return value == 1 ? Ai_capability::k_text_embedding
+                    : Ai_capability::k_text_generation;
+}
+
+}  // namespace
 
 Secure_string::Secure_string(Secure_string &&other) noexcept
     : value_(std::move(other.value_)) {
@@ -38,12 +75,77 @@ void Secure_string::Clear() {
   value_.clear();
 }
 
-Ai_error Ai_model_registry::Resolve(THD *, std::string_view,
-                                    Ai_capability,
-                                    Ai_resolved_model *) const {
-  // Callers must never substitute an untrusted SQL argument for a configured
-  // model. Until the protected-table loader supplies a profile, fail closed.
-  return Ai_error::k_model_not_found;
+Ai_error Ai_model_registry::Resolve(THD *thd, std::string_view model_name,
+                                    Ai_capability capability,
+                                    Ai_resolved_model *out) const {
+  if (thd == nullptr) return Ai_error::k_model_not_found;
+  std::vector<Ai_model_profile> profiles;
+  const Ai_error load_error = LoadProfiles(thd, &profiles);
+  if (load_error != Ai_error::k_ok) return load_error;
+  // Tenant 0 is the explicitly configured global fallback. A session tenant
+  // resolver will be added before non-default tenant profiles are exposed.
+  return ResolveProfiles(0, model_name, capability, profiles, out);
+}
+
+Ai_error Ai_model_registry::LoadProfiles(
+    THD *thd, std::vector<Ai_model_profile> *profiles) const {
+  if (profiles == nullptr) return Ai_error::k_provider_error;
+  Ai_system_table_access access;
+  Open_tables_backup binding_backup;
+  TABLE *binding_table = nullptr;
+  if (access.open_table(thd, k_mysql_schema, k_tenant_binding_table, 5,
+                        TL_READ, &binding_table, &binding_backup))
+    return Ai_error::k_model_not_found;
+
+  struct Binding { uint64_t tenant_id; std::string model_name; Ai_capability capability; uint64_t config_id; };
+  std::vector<Binding> bindings;
+  bool read_error = binding_table->file->ha_rnd_init(true) != 0;
+  while (!read_error &&
+         binding_table->file->ha_rnd_next(binding_table->record[0]) != HA_ERR_END_OF_FILE) {
+    if (binding_table->field[4]->val_int() == 0) continue;
+    bindings.push_back({static_cast<uint64_t>(binding_table->field[0]->val_int()),
+                        FieldValue(binding_table->field[1]),
+                        CapabilityFromEnum(binding_table->field[2]->val_int()),
+                        static_cast<uint64_t>(binding_table->field[3]->val_int())});
+  }
+  if (!read_error) binding_table->file->ha_rnd_end();
+  if (access.close_table(thd, binding_table, &binding_backup, read_error, false))
+    return Ai_error::k_model_not_found;
+
+  Open_tables_backup config_backup;
+  TABLE *config_table = nullptr;
+  if (access.open_table(thd, k_mysql_schema, k_model_config_table, 14,
+                        TL_READ, &config_table, &config_backup))
+    return Ai_error::k_model_not_found;
+  read_error = config_table->file->ha_rnd_init(true) != 0;
+  while (!read_error &&
+         config_table->file->ha_rnd_next(config_table->record[0]) != HA_ERR_END_OF_FILE) {
+    const uint64_t config_id = static_cast<uint64_t>(config_table->field[0]->val_int());
+    if (config_table->field[13]->val_int() == 0) continue;
+    for (const auto &binding : bindings) {
+      if (binding.config_id != config_id) continue;
+      Ai_model_profile profile;
+      profile.tenant_id = binding.tenant_id;
+      profile.config_id = config_id;
+      profile.config_version = static_cast<uint64_t>(config_table->field[1]->val_int());
+      profile.model_name = FieldValue(config_table->field[2]);
+      profile.capability = CapabilityFromEnum(config_table->field[3]->val_int());
+      profile.provider = FieldValue(config_table->field[4]);
+      profile.provider_model_name = FieldValue(config_table->field[5]);
+      profile.model_revision = FieldValue(config_table->field[6]);
+      profile.endpoint_type = FieldValue(config_table->field[7]);
+      profile.endpoint = FieldValue(config_table->field[8]);
+      profile.dimension = config_table->field[9]->is_null() ? 0 : static_cast<uint32_t>(config_table->field[9]->val_int());
+      profile.credential_kind = FieldValue(config_table->field[10]);
+      profile.credential_ref = FieldValue(config_table->field[11]);
+      profile.active = profile.model_name == binding.model_name && profile.capability == binding.capability;
+      if (profile.active) profiles->push_back(std::move(profile));
+    }
+  }
+  if (!read_error) config_table->file->ha_rnd_end();
+  if (access.close_table(thd, config_table, &config_backup, read_error, false))
+    return Ai_error::k_model_not_found;
+  return read_error ? Ai_error::k_model_not_found : Ai_error::k_ok;
 }
 
 void Ai_model_registry::AddProfileForTest(const Ai_model_profile &profile) {
