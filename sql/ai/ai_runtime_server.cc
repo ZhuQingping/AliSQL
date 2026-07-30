@@ -17,6 +17,26 @@ std::string EndpointAuthority(const std::string &endpoint) {
   return endpoint.substr(start, end - start);
 }
 
+Ai_error CompleteInvocation(Ai_audit_sink *sink, const Ai_resolved_model &model,
+                            Ai_capability capability,
+                            const Ai_canonical_response *response,
+                            Ai_error result) {
+  Ai_audit_record record;
+  record.config_id = model.config_id;
+  record.config_version = model.config_version;
+  record.capability = capability;
+  record.status = result == Ai_error::k_ok ? Ai_audit_status::k_succeeded
+                                            : Ai_audit_status::k_failed;
+  record.error = result;
+  if (response != nullptr) {
+    record.usage = response->usage;
+    record.provider_request_id = response->provider_request_id;
+    record.http_status = response->http_status;
+  }
+  if (sink != nullptr) sink->Complete(record);
+  return result;
+}
+
 }  // namespace
 
 Ai_error Ai_runtime::Embed(THD *thd, const std::string &text,
@@ -39,10 +59,14 @@ Ai_error Ai_runtime::Embed(THD *thd, const std::string &text,
   Ai_credential_resolver credential_resolver;
   Secure_string credential;
   const Ai_error credential_error = credential_resolver.ReadSecret(model, &credential);
-  if (credential_error != Ai_error::k_ok) return credential_error;
+  if (credential_error != Ai_error::k_ok)
+    return CompleteInvocation(audit_, model, Ai_capability::k_text_embedding,
+                              nullptr, credential_error);
 
   const std::string authority = EndpointAuthority(model.endpoint);
-  if (authority.empty()) return Ai_error::k_provider_error;
+  if (authority.empty())
+    return CompleteInvocation(audit_, model, Ai_capability::k_text_embedding,
+                              nullptr, Ai_error::k_provider_error);
   Curl_ai_http_transport transport({authority});
   Huawei_maas_adapter adapter(&transport, std::string(credential.view()));
   Ai_canonical_request request;
@@ -52,9 +76,14 @@ Ai_error Ai_runtime::Embed(THD *thd, const std::string &text,
   Ai_canonical_response response;
   const Ai_error execute = adapter.Execute(request, &response);
   if (execute != Ai_error::k_ok || response.embeddings.size() != 1)
-    return execute == Ai_error::k_ok ? Ai_error::k_provider_error : execute;
-  return Ai_vector_codec::Encode(response.embeddings.front(), expected_dimension,
-                                 encoded_vector);
+    return CompleteInvocation(
+        audit_, model, Ai_capability::k_text_embedding, &response,
+        execute == Ai_error::k_ok ? Ai_error::k_provider_error : execute);
+  const Ai_error encode = Ai_vector_codec::Encode(response.embeddings.front(),
+                                                  expected_dimension,
+                                                  encoded_vector);
+  return CompleteInvocation(audit_, model, Ai_capability::k_text_embedding,
+                            &response, encode);
 }
 
 Ai_error Ai_runtime::Analyze(THD *thd, const std::string &task,
@@ -73,10 +102,14 @@ Ai_error Ai_runtime::Analyze(THD *thd, const std::string &task,
   Ai_credential_resolver credential_resolver;
   Secure_string credential;
   const Ai_error credential_error = credential_resolver.ReadSecret(model, &credential);
-  if (credential_error != Ai_error::k_ok) return credential_error;
+  if (credential_error != Ai_error::k_ok)
+    return CompleteInvocation(audit_, model, Ai_capability::k_text_generation,
+                              nullptr, credential_error);
 
   const std::string authority = EndpointAuthority(model.endpoint);
-  if (authority.empty()) return Ai_error::k_provider_error;
+  if (authority.empty())
+    return CompleteInvocation(audit_, model, Ai_capability::k_text_generation,
+                              nullptr, Ai_error::k_provider_error);
   Curl_ai_http_transport transport({authority});
   Huawei_maas_adapter adapter(&transport, std::string(credential.view()));
   Ai_canonical_request request;
@@ -88,9 +121,12 @@ Ai_error Ai_runtime::Analyze(THD *thd, const std::string &task,
   request.timeout_ms = options.timeout_ms;
   Ai_canonical_response response;
   const Ai_error execute = adapter.Execute(request, &response);
-  if (execute != Ai_error::k_ok) return execute;
+  if (execute != Ai_error::k_ok)
+    return CompleteInvocation(audit_, model, Ai_capability::k_text_generation,
+                              &response, execute);
   *final_content = std::move(response.final_content);
-  return Ai_error::k_ok;
+  return CompleteInvocation(audit_, model, Ai_capability::k_text_generation,
+                            &response, Ai_error::k_ok);
 }
 
 }  // namespace alisql::ai
