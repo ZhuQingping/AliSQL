@@ -14,19 +14,24 @@
 
 namespace alisql::ai {
 namespace {
-bool ResolveStringArguments(THD *thd, Item_func *item, uint min_args,
-                            uint max_args) {
+bool ResolveAnalyzeArguments(THD *thd, Item_func *item) {
   (void)thd;
-  if (item->arg_count < min_args || item->arg_count > max_args) {
+  if (item->arg_count < 2 || item->arg_count > 3) {
     my_error(ER_WRONG_ARGUMENTS, MYF(0), item->func_name());
     return true;
   }
-  for (uint i = 0; i < item->arg_count; ++i) {
+  for (uint i = 0; i < 2; ++i) {
     if (item->get_arg(i)->result_type() != STRING_RESULT ||
         item->get_arg(i)->data_type() == MYSQL_TYPE_JSON) {
       my_error(ER_WRONG_ARGUMENTS, MYF(0), item->func_name());
       return true;
     }
+  }
+  if (item->arg_count == 3 &&
+      item->get_arg(2)->result_type() != STRING_RESULT &&
+      item->get_arg(2)->data_type() != MYSQL_TYPE_JSON) {
+    my_error(ER_WRONG_ARGUMENTS, MYF(0), item->func_name());
+    return true;
   }
   return false;
 }
@@ -149,7 +154,7 @@ String *Item_func_ai_embedding::val_str(String *str) {
 }
 
 bool Item_func_ai_analyze::resolve_type(THD *thd) {
-  if (ResolveStringArguments(thd, this, 2, 3)) return true;
+  if (ResolveAnalyzeArguments(thd, this)) return true;
   set_data_type_string(1024 * 1024, &my_charset_utf8mb4_0900_ai_ci);
   return false;
 }

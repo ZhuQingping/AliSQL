@@ -58,6 +58,10 @@ SELECT AI_EMBEDDING('text');
 ERROR 42000: This version of MySQL doesn't yet support 'DB4AI embedding dimension is incompatible with the model'
 SELECT AI_ANALYZE('summarize', 'text');
 ERROR 42000: This version of MySQL doesn't yet support 'DB4AI credential is unavailable'
+SELECT AI_ANALYZE('summarize', 'text',
+JSON_OBJECT('model_name', 'huawei/glm-5.2',
+'mode', 'summarize', 'timeout_ms', 15000));
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI credential is unavailable'
 SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/bge-m3'), '$.dimension');
 JSON_EXTRACT(AI_MODEL_INFO('huawei/bge-m3'), '$.dimension')
 512

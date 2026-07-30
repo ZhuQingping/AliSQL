@@ -80,4 +80,8 @@ UPDATE mysql.alisql_ai_tenant_account
 SELECT AI_EMBEDDING('text');
 --error ER_NOT_SUPPORTED_YET
 SELECT AI_ANALYZE('summarize', 'text');
+--error ER_NOT_SUPPORTED_YET
+SELECT AI_ANALYZE('summarize', 'text',
+                  JSON_OBJECT('model_name', 'huawei/glm-5.2',
+                              'mode', 'summarize', 'timeout_ms', 15000));
 SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/bge-m3'), '$.dimension');
