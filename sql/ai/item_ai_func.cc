@@ -1,6 +1,10 @@
 /* Copyright (c) 2026, Alibaba and/or its affiliates. All rights reserved. */
 #include "sql/ai/item_ai_func.h"
 
+#include <my_rapidjson_size_t.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
+
 #include "mysqld_error.h"
 #include "sql/ai/ai_model_registry.h"
 #include "sql/ai/ai_runtime.h"
@@ -232,15 +236,23 @@ String *Item_func_ai_model_info::val_str(String *str) {
     RaiseAiRuntimeError(error);
     return error_str();
   }
-  const std::string result =
-      "{\"model_name\":\"" + model.model_name + "\",\"config_id\":" +
-      std::to_string(model.config_id) + ",\"config_version\":" +
-      std::to_string(model.config_version) + ",\"model_revision\":\"" +
-      model.model_revision + "\",\"dimension\":" +
-      std::to_string(model.dimension) + "}";
-  if (buffer.mem_realloc(result.size())) return error_str();
-  memcpy(buffer.ptr(), result.data(), result.size());
-  buffer.length(result.size());
+  rapidjson::StringBuffer json;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(json);
+  writer.StartObject();
+  writer.Key("model_name");
+  writer.String(model.model_name.c_str(), model.model_name.size());
+  writer.Key("config_id");
+  writer.Uint64(model.config_id);
+  writer.Key("config_version");
+  writer.Uint64(model.config_version);
+  writer.Key("model_revision");
+  writer.String(model.model_revision.c_str(), model.model_revision.size());
+  writer.Key("dimension");
+  writer.Uint(model.dimension);
+  writer.EndObject();
+  if (buffer.mem_realloc(json.GetSize())) return error_str();
+  memcpy(buffer.ptr(), json.GetString(), json.GetSize());
+  buffer.length(json.GetSize());
   buffer.set_charset(&my_charset_utf8mb4_0900_ai_ci);
   return &buffer;
 }
