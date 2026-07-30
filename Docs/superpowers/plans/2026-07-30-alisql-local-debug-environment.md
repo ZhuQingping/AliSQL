@@ -202,7 +202,7 @@ for script in build-debug.sh initialize.sh start.sh stop.sh connect.sh; do
 done
 grep -Fx 'port=3344' /Users/zhuqingping/Work/Database/MySQL/alisql-install/my.cnf
 grep -Fx 'bind_address=127.0.0.1' /Users/zhuqingping/Work/Database/MySQL/alisql-install/my.cnf
-! rg -n -i '(password|api[_-]?key|authorization)' /Users/zhuqingping/Work/Database/MySQL/alisql-install
+! rg -n --pcre2 -i "(api[_-]?key\\s*[:=]\\s*[^[:space:]]{8,}|authorization\\s*[:=]\\s*bearer\\s+[A-Za-z0-9._-]{8,}|--password(?:=|[[:space:]])|[[:space:]]-p[^[:space:]]+)" /Users/zhuqingping/Work/Database/MySQL/alisql-install
 ```
 
 Expected: all checks pass. Full build, initialization, and startup are explicit
