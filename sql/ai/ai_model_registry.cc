@@ -107,8 +107,13 @@ Ai_error Ai_model_registry::LoadProfiles(
   struct Binding { uint64_t tenant_id; std::string model_name; Ai_capability capability; uint64_t config_id; };
   std::vector<Binding> bindings;
   bool read_error = binding_table->file->ha_rnd_init(true) != 0;
-  while (!read_error &&
-         binding_table->file->ha_rnd_next(binding_table->record[0]) != HA_ERR_END_OF_FILE) {
+  while (!read_error) {
+    const int scan = binding_table->file->ha_rnd_next(binding_table->record[0]);
+    if (scan == HA_ERR_END_OF_FILE) break;
+    if (scan != 0) {
+      read_error = true;
+      break;
+    }
     if (binding_table->field[4]->val_int() == 0) continue;
     bindings.push_back({static_cast<uint64_t>(binding_table->field[0]->val_int()),
                         FieldValue(binding_table->field[1]),
@@ -125,8 +130,13 @@ Ai_error Ai_model_registry::LoadProfiles(
                         TL_READ, &config_table, &config_backup))
     return Ai_error::k_model_not_found;
   read_error = config_table->file->ha_rnd_init(true) != 0;
-  while (!read_error &&
-         config_table->file->ha_rnd_next(config_table->record[0]) != HA_ERR_END_OF_FILE) {
+  while (!read_error) {
+    const int scan = config_table->file->ha_rnd_next(config_table->record[0]);
+    if (scan == HA_ERR_END_OF_FILE) break;
+    if (scan != 0) {
+      read_error = true;
+      break;
+    }
     const uint64_t config_id = static_cast<uint64_t>(config_table->field[0]->val_int());
     if (config_table->field[13]->val_int() == 0) continue;
     for (const auto &binding : bindings) {
