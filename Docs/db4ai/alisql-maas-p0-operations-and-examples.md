@@ -14,14 +14,15 @@ endpoint、API Key、provider JSON、厂商模型 ID 或 Adapter 名称。
 INSERT INTO mysql.alisql_ai_model_config
   (config_version, model_name, capability, provider, provider_model_name,
    model_revision, endpoint_type, endpoint, dimension,
-   credential_kind, credential_ref, active)
+   embedding_space_id, distance_metric, credential_kind, credential_ref, active)
 VALUES
   (1, 'huawei/bge-m3', 'TEXT_EMBEDDING', 'huawei', 'bge-m3',
    'current', 'HTTPS_JSON', 'https://<approved-maas-host>/v1/embeddings', 1024,
+   'huawei/bge-m3/current/1024/cosine', 'COSINE',
    'SECRET_REF', 'prod/huawei-maas/token', TRUE),
   (1, 'huawei/glm-5.2', 'TEXT_GENERATION', 'huawei', 'glm-5.2',
    'current', 'HTTPS_JSON', 'https://<approved-maas-host>/v2/chat/completions', NULL,
-   'SECRET_REF', 'prod/huawei-maas/token', TRUE);
+   '', 'COSINE', 'SECRET_REF', 'prod/huawei-maas/token', TRUE);
 
 INSERT INTO mysql.alisql_ai_tenant_binding
   (tenant_id, model_name, capability, config_id, active)
