@@ -1,0 +1,30 @@
+# AI_AUDIT_INFO requires an audit-specific dynamic privilege.
+CREATE USER 'ai_audit_reader'@'localhost';
+SELECT AI_AUDIT_INFO();
+ERROR 42000: Access denied; you need (at least one of) the AI_AUDIT_VIEWER privilege(s) for this operation
+INSERT INTO mysql.alisql_ai_tenant_account
+(account_user, account_host, tenant_id, active)
+VALUES ('ai_audit_reader', 'localhost', 42, TRUE);
+INSERT INTO mysql.alisql_ai_call_audit
+(tenant_id, config_id, config_version, capability, status, error_code,
+prompt_tokens, completion_tokens, total_tokens, latency_ms, http_status)
+VALUES (77, 9, 2, 'TEXT_GENERATION', 'FAILED', 'ACCESS_DENIED',
+3, 4, 7, 5, 403),
+(42, 8, 1, 'TEXT_EMBEDDING', 'SUCCEEDED', 'OK',
+2, 0, 2, 3, 200);
+GRANT AI_AUDIT_VIEWER ON *.* TO 'ai_audit_reader'@'localhost';
+# An audit viewer gets its own tenant's allowlisted telemetry only.
+SELECT JSON_UNQUOTE(JSON_EXTRACT(AI_AUDIT_INFO(1), '$[0].tenant_id')),
+JSON_UNQUOTE(JSON_EXTRACT(AI_AUDIT_INFO(1), '$[0].status')),
+JSON_EXTRACT(AI_AUDIT_INFO(1), '$[0].total_tokens'),
+JSON_CONTAINS_PATH(AI_AUDIT_INFO(1), 'one', '$[0].endpoint',
+'$[0].credential_ref', '$[0].input');
+JSON_UNQUOTE(JSON_EXTRACT(AI_AUDIT_INFO(1), '$[0].tenant_id'))	JSON_UNQUOTE(JSON_EXTRACT(AI_AUDIT_INFO(1), '$[0].status'))	JSON_EXTRACT(AI_AUDIT_INFO(1), '$[0].total_tokens')	JSON_CONTAINS_PATH(AI_AUDIT_INFO(1), 'one', '$[0].endpoint',
+'$[0].credential_ref', '$[0].input')
+42	SUCCEEDED	2	0
+GRANT AI_ADMIN ON *.* TO 'ai_audit_reader'@'localhost';
+# AI_ADMIN can inspect the cross-tenant sanitized projection.
+SELECT JSON_LENGTH(AI_AUDIT_INFO(2));
+JSON_LENGTH(AI_AUDIT_INFO(2))
+2
+DROP USER 'ai_audit_reader'@'localhost';

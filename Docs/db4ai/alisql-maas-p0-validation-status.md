@@ -12,8 +12,10 @@ mock 或成功编译替代真实云端验收。
 | Profile 解析 | `runtime_output_directory/ai_model_registry-t` | active/capability/tenant 优先级、1024 维 bge-m3、端点、Debug plaintext 策略和凭据 fail-closed 均覆盖 |
 | Huawei Adapter | `runtime_output_directory/ai_huawei_maas_adapter-t` | embedding/chat payload、final-only、超时/输出限制、HTTP 403/429/404 分类、协议不匹配和 request ID 覆盖 |
 | Runtime options | `runtime_output_directory/ai_runtime-t` | 白名单选项和私有厂商参数拒绝覆盖 |
+| Persistent audit | `runtime_output_directory/ai_audit-t` + `rds.ai_maas_contract` | dispatch 前 call id、独立完成更新、token/request/status telemetry 和无敏感字段的投影覆盖 |
 | VECTOR 编码 | `runtime_output_directory/ai_vector_codec-t` | native float VECTOR 编码、维度和非有限数拒绝覆盖 |
 | SQL/MTR 契约 | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_contract` | SQL arity、NULL 无 egress、`AI_INVOKE`、tenant account→Profile 优先级、Debug plaintext 精确 Profile 读取后本地协议拒绝、维度失败、无凭据失败、脱敏 model metadata 覆盖 |
+| 审计授权读取 | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_governance` | 无权限拒绝、viewer tenant 隔离、AI_ADMIN 跨 tenant、limit 和敏感字段缺失覆盖 |
 | Release 明文门禁 | 临时 Release `mysqld` 隔离实例，含 `PLAINTEXT_DEV` fixture 的 `AI_EMBEDDING` | 调用前返回 `DB4AI credential is unavailable`；未发生 HTTP 请求 |
 
 默认测试均使用 mock transport、不存在的 `SECRET_REF` 或不回显的 Debug fixture；
@@ -33,8 +35,8 @@ plaintext fixture 仅触发 Adapter 的本地端点协议拒绝，不会发送�
 
 ## 明确未完成的生产门禁
 
-- `mysql.alisql_ai_call_audit` 已有 schema、canonical telemetry 和 in-memory
-  sink；独立、持久、可重试的审计 writer 及 `AI_AUDIT_VIEWER` 查询面仍未完成。
+- `mysql.alisql_ai_call_audit` 已有独立、持久的创建/完成生命周期和
+  `AI_AUDIT_VIEWER` 查询面；审计保留、重试和运营仪表盘仍未完成。
 - `AI_ADMIN` 已注册，尚没有受该权限保护的 Profile 管理 SQL 管理面；当前系统表
   应仅由受控运维流程修改。
 - embedding-space、distance metric 和 index compatibility 已在 RAG schema/查询
@@ -50,13 +52,14 @@ plaintext fixture 仅触发 Adapter 的本地端点协议拒绝，不会发送�
 
 ```text
 cmake --build build-debug --target mysqld ai_types-t ai_model_registry-t \
-  ai_huawei_maas_adapter-t ai_runtime-t ai_vector_codec-t --parallel 8
+  ai_huawei_maas_adapter-t ai_audit-t ai_runtime-t ai_vector_codec-t --parallel 8
 build-debug/runtime_output_directory/ai_types-t
 build-debug/runtime_output_directory/ai_model_registry-t
 build-debug/runtime_output_directory/ai_huawei_maas_adapter-t
+build-debug/runtime_output_directory/ai_audit-t
 build-debug/runtime_output_directory/ai_runtime-t
 build-debug/runtime_output_directory/ai_vector_codec-t
-cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_contract
+cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_contract ai_maas_governance
 ```
 
 ## Release 明文门禁复验

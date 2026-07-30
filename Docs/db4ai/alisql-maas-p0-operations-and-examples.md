@@ -70,6 +70,24 @@ dimensions. Future providers (Bailian OpenAI-compatible/DashScope, Bedrock
 Converse/Invoke and Ark Chat/Responses) add Adapter/Profile support; no new
 customer function is required.
 
+### 审计查询
+
+每次已解析 Profile 的调用会在读取凭据和 HTTP egress 之前创建一条
+`mysql.alisql_ai_call_audit` 记录，并在独立事务中更新为 `SUCCEEDED` 或 `FAILED`。
+审计数据不包含 API key、credential ref、endpoint、prompt、task、原始响应或完整
+embedding。`AI_AUDIT_VIEWER` 只能读取自身 tenant；`AI_ADMIN` 可读取跨 tenant 的相同
+脱敏投影。
+
+```sql
+GRANT AI_AUDIT_VIEWER ON *.* TO 'rag_app'@'%';
+SELECT AI_AUDIT_INFO(20);
+```
+
+`AI_AUDIT_INFO([limit])` 的 `limit` 为 1–100（默认 100）。每个 JSON 项只包含
+call/config/version/tenant、capability、status、有限错误码、provider request id、token
+usage、created/completed time、latency 和 HTTP status。它不是系统表 DML 权限；业务账号
+不应被授予对 `mysql.alisql_ai_call_audit` 的直接写权限。
+
 ## 2. Enterprise-manual RAG
 
 Create a new corpus and new VECTOR INDEX whenever model revision, dimension,
@@ -171,10 +189,11 @@ failure rather than a customer result.
 Default verification is offline:
 
 ```text
-cmake --build build-debug --target mysqld ai_huawei_maas_adapter-t ai_runtime-t
+cmake --build build-debug --target mysqld ai_huawei_maas_adapter-t ai_audit-t ai_runtime-t
 build-debug/runtime_output_directory/ai_huawei_maas_adapter-t
+build-debug/runtime_output_directory/ai_audit-t
 build-debug/runtime_output_directory/ai_runtime-t
-cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_contract
+cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_contract ai_maas_governance
 ```
 
 The contract suite covers public arity, NULL-without-egress, configuration
@@ -208,12 +227,10 @@ increasing concurrency.
 | Multi-cloud evolution | Profile/version plus canonical request/response and Adapter boundary | AliSQL design advantage; provider additions need Adapter tests. |
 | Vector/RAG governance | Native VECTOR and VECTOR INDEX; SQL retains tenant/scalar filters and sources | Demonstrated by the schema/query above; benchmark comparison remains future work. |
 | Data egress and errors | `AI_INVOKE`, keyring `SECRET_REF`, endpoint allow-list, redacted failures | No external PolarDB validation was run in this branch. |
-| Audit/operations | Audit table schema, runtime audit records and provider request telemetry exist | Persistent independent audit writer and audit-view enforcement are follow-up work, not claimed complete. |
+| Audit/operations | Independent persistent lifecycle audit plus tenant-scoped `AI_AUDIT_INFO` metadata | Persistent retry/retention policy and operator dashboards remain future work. |
 
 The remaining implementation work is intentionally visible: authenticated
 account-to-tenant resolution is implemented, with tenant `0` retained only as
-an explicit global fallback. Persistent independent audit writes, AI_ADMIN
-management surfaces, AI_AUDIT_VIEWER query surfaces, configured
-embedding-space metadata enforcement and real MaaS smoke execution with an
-operator-provided keyring secret remain before a production-complete P0
-declaration.
+an explicit global fallback. AI_ADMIN Profile management surfaces, configured
+embedding-space metadata enforcement and full offline RAG/analysis/diagnosis
+evidence remain before a production-complete P0 declaration.

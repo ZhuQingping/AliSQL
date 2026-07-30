@@ -64,6 +64,8 @@ class Ai_model_registry {
   /** Production entry point. Database-backed resolution is fail-closed. */
   Ai_error Resolve(THD *thd, std::string_view model_name,
                    Ai_capability capability, Ai_resolved_model *out) const;
+  /** Return the caller's effective DB4AI tenant without exposing credentials. */
+  Ai_error ResolveTenant(THD *thd, uint64_t *tenant_id) const;
 
   /** Test seam used by offline unit and MTR fixtures. */
   void AddProfileForTest(const Ai_model_profile &profile);
@@ -78,7 +80,6 @@ class Ai_model_registry {
                           Ai_capability capability,
                           const std::vector<Ai_model_profile> &profiles,
                           Ai_resolved_model *out) const;
-  Ai_error ResolveTenant(THD *thd, uint64_t *tenant_id) const;
   Ai_error LoadProfiles(THD *thd, std::vector<Ai_model_profile> *profiles) const;
   std::vector<Ai_model_profile> test_profiles_;
 };

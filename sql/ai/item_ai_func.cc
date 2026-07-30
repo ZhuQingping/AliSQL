@@ -1,15 +1,23 @@
 /* Copyright (c) 2026, Alibaba and/or its affiliates. All rights reserved. */
 #include "sql/ai/item_ai_func.h"
 
+#include <limits>
+
 #include <my_rapidjson_size_t.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
 #include "mysqld_error.h"
+#include "sql/ai/ai_audit.h"
 #include "sql/ai/ai_model_registry.h"
 #include "sql/ai/ai_runtime.h"
 #include "sql/auth/sql_security_ctx.h"
+#include "sql/field.h"
+#include "sql/handler.h"
+#include "sql/rpl_table_access.h"
+#include "sql/sql_base.h"
 #include "sql/sql_class.h"
+#include "sql/table.h"
 #include "vidx/vidx_field.h"
 
 namespace alisql::ai {
@@ -55,6 +63,42 @@ bool CheckAiAuditPrivilege(THD *thd) {
     return false;
   my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), "AI_AUDIT_VIEWER");
   return true;
+}
+
+bool IsAiAdmin(THD *thd) {
+  return thd != nullptr && thd->security_context() != nullptr &&
+         thd->security_context()->has_global_grant(STRING_WITH_LEN("AI_ADMIN"))
+             .first;
+}
+
+constexpr uint k_audit_field_count = 17;
+const LEX_CSTRING k_mysql_schema = {STRING_WITH_LEN("mysql")};
+const LEX_CSTRING k_audit_table = {STRING_WITH_LEN("alisql_ai_call_audit")};
+
+class Ai_audit_read_table_access final : public System_table_access {
+ public:
+  void before_open(THD *) override {
+    m_flags = MYSQL_OPEN_IGNORE_GLOBAL_READ_LOCK | MYSQL_OPEN_IGNORE_FLUSH |
+              MYSQL_LOCK_IGNORE_TIMEOUT;
+  }
+};
+
+std::string AuditFieldValue(Field *field) {
+  if (field->is_null()) return {};
+  String value;
+  field->val_str(&value, &value);
+  return std::string(value.ptr(), value.length());
+}
+
+void WriteAuditString(rapidjson::Writer<rapidjson::StringBuffer> *writer,
+                      const char *key, Field *field) {
+  writer->Key(key);
+  if (field->is_null()) {
+    writer->Null();
+    return;
+  }
+  const std::string value = AuditFieldValue(field);
+  writer->String(value.data(), value.size());
 }
 
 void RaiseAiRuntimeError(Ai_error error) {
@@ -264,6 +308,112 @@ String *Item_func_ai_model_info::val_str(String *str) {
   writer.Key("distance_metric");
   writer.String(model.distance_metric.c_str(), model.distance_metric.size());
   writer.EndObject();
+  if (buffer.mem_realloc(json.GetSize())) return error_str();
+  memcpy(buffer.ptr(), json.GetString(), json.GetSize());
+  buffer.length(json.GetSize());
+  buffer.set_charset(&my_charset_utf8mb4_0900_ai_ci);
+  return &buffer;
+}
+
+bool Item_func_ai_audit_info::resolve_type(THD *thd) {
+  (void)thd;
+  if (arg_count > 1 ||
+      (arg_count == 1 && args[0]->result_type() != INT_RESULT)) {
+    my_error(ER_WRONG_ARGUMENTS, MYF(0), func_name());
+    return true;
+  }
+  set_data_type_string(1024 * 1024, &my_charset_utf8mb4_0900_ai_ci);
+  return false;
+}
+
+String *Item_func_ai_audit_info::val_str(String *str) {
+  (void)str;
+  null_value = false;
+  if (CheckAiAuditPrivilege(current_thd)) return error_str();
+
+  uint64_t limit = 100;
+  if (arg_count == 1) {
+    const longlong requested = args[0]->val_int();
+    if (args[0]->null_value || requested < 1 || requested > 100) {
+      my_error(ER_WRONG_ARGUMENTS, MYF(0), func_name());
+      return error_str();
+    }
+    limit = static_cast<uint64_t>(requested);
+  }
+
+  uint64_t caller_tenant_id = 0;
+  if (!IsAiAdmin(current_thd)) {
+    Ai_model_registry registry;
+    if (registry.ResolveTenant(current_thd, &caller_tenant_id) !=
+        Ai_error::k_ok) {
+      my_error(ER_NOT_SUPPORTED_YET, MYF(0), "DB4AI audit service is unavailable");
+      return error_str();
+    }
+  }
+
+  Ai_audit_read_table_access access;
+  Open_tables_backup backup;
+  TABLE *table = nullptr;
+  if (access.open_table(current_thd, k_mysql_schema, k_audit_table,
+                        k_audit_field_count, TL_READ, &table, &backup)) {
+    my_error(ER_NOT_SUPPORTED_YET, MYF(0), "DB4AI audit service is unavailable");
+    return error_str();
+  }
+
+  rapidjson::StringBuffer json;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(json);
+  writer.StartArray();
+  bool read_error = table->file->ha_rnd_init(true) != 0;
+  uint64_t returned = 0;
+  while (!read_error && returned < limit) {
+    const int scan = table->file->ha_rnd_next(table->record[0]);
+    if (scan == HA_ERR_END_OF_FILE) break;
+    if (scan != 0) {
+      read_error = true;
+      break;
+    }
+    const uint64_t tenant_id = static_cast<uint64_t>(table->field[1]->val_int());
+    if (!IsAiAdmin(current_thd) && tenant_id != caller_tenant_id) continue;
+
+    writer.StartObject();
+    writer.Key("call_id");
+    writer.Uint64(static_cast<uint64_t>(table->field[0]->val_int()));
+    writer.Key("tenant_id");
+    writer.Uint64(tenant_id);
+    writer.Key("config_id");
+    writer.Uint64(static_cast<uint64_t>(table->field[2]->val_int()));
+    writer.Key("config_version");
+    writer.Uint64(static_cast<uint64_t>(table->field[3]->val_int()));
+    WriteAuditString(&writer, "capability", table->field[4]);
+    WriteAuditString(&writer, "status", table->field[5]);
+    WriteAuditString(&writer, "error_code", table->field[6]);
+    WriteAuditString(&writer, "provider_request_id", table->field[7]);
+    writer.Key("prompt_tokens");
+    writer.Uint64(static_cast<uint64_t>(table->field[8]->val_int()));
+    writer.Key("completion_tokens");
+    writer.Uint64(static_cast<uint64_t>(table->field[9]->val_int()));
+    writer.Key("reasoning_tokens");
+    writer.Uint64(static_cast<uint64_t>(table->field[10]->val_int()));
+    writer.Key("cached_tokens");
+    writer.Uint64(static_cast<uint64_t>(table->field[11]->val_int()));
+    writer.Key("total_tokens");
+    writer.Uint64(static_cast<uint64_t>(table->field[12]->val_int()));
+    WriteAuditString(&writer, "created_at", table->field[13]);
+    WriteAuditString(&writer, "completed_at", table->field[14]);
+    writer.Key("latency_ms");
+    writer.Uint64(static_cast<uint64_t>(table->field[15]->val_int()));
+    writer.Key("http_status");
+    writer.Uint(table->field[16]->val_int());
+    writer.EndObject();
+    ++returned;
+  }
+  if (!read_error) table->file->ha_rnd_end();
+  if (access.close_table(current_thd, table, &backup, read_error, false) ||
+      read_error) {
+    my_error(ER_NOT_SUPPORTED_YET, MYF(0), "DB4AI audit service is unavailable");
+    return error_str();
+  }
+  writer.EndArray();
   if (buffer.mem_realloc(json.GetSize())) return error_str();
   memcpy(buffer.ptr(), json.GetString(), json.GetSize());
   buffer.length(json.GetSize());
