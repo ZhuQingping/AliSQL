@@ -10,6 +10,7 @@
 #include "sql/field.h"
 #include "keyring_operations_helper.h"
 #include "sql/rpl_table_access.h"
+#include "sql/auth/sql_security_ctx.h"
 #include "sql/server_component/mysql_server_keyring_lockable_imp.h"
 #include "sql/sql_base.h"
 #include "sql/sql_class.h"
@@ -32,6 +33,8 @@ class Ai_system_table_access final : public System_table_access {
 const LEX_CSTRING k_mysql_schema = {STRING_WITH_LEN("mysql")};
 const LEX_CSTRING k_tenant_binding_table = {
     STRING_WITH_LEN("alisql_ai_tenant_binding")};
+const LEX_CSTRING k_tenant_account_table = {
+    STRING_WITH_LEN("alisql_ai_tenant_account")};
 const LEX_CSTRING k_model_config_table = {
     STRING_WITH_LEN("alisql_ai_model_config")};
 
@@ -80,12 +83,57 @@ Ai_error Ai_model_registry::Resolve(THD *thd, std::string_view model_name,
                                     Ai_capability capability,
                                     Ai_resolved_model *out) const {
   if (thd == nullptr) return Ai_error::k_model_not_found;
+  uint64_t tenant_id = 0;
+  const Ai_error tenant_error = ResolveTenant(thd, &tenant_id);
+  if (tenant_error != Ai_error::k_ok) return tenant_error;
   std::vector<Ai_model_profile> profiles;
   const Ai_error load_error = LoadProfiles(thd, &profiles);
   if (load_error != Ai_error::k_ok) return load_error;
-  // Tenant 0 is the explicitly configured global fallback. A session tenant
-  // resolver will be added before non-default tenant profiles are exposed.
-  return ResolveProfiles(0, model_name, capability, profiles, out);
+  return ResolveProfiles(tenant_id, model_name, capability, profiles, out);
+}
+
+Ai_error Ai_model_registry::ResolveTenant(THD *thd, uint64_t *tenant_id) const {
+#ifdef EXTRA_CODE_FOR_UNIT_TESTING
+  (void)thd;
+  if (tenant_id == nullptr) return Ai_error::k_provider_error;
+  *tenant_id = 0;
+  return Ai_error::k_ok;
+#else
+  if (tenant_id == nullptr || thd == nullptr || thd->security_context() == nullptr)
+    return Ai_error::k_model_not_found;
+  *tenant_id = 0;
+  const auto user = thd->security_context()->priv_user();
+  const auto host = thd->security_context()->priv_host();
+  Ai_system_table_access access;
+  Open_tables_backup backup;
+  TABLE *table = nullptr;
+  if (access.open_table(thd, k_mysql_schema, k_tenant_account_table, 4,
+                        TL_READ, &table, &backup))
+    return Ai_error::k_model_not_found;
+  bool read_error = table->file->ha_rnd_init(true) != 0;
+  bool found = false;
+  while (!read_error) {
+    const int scan = table->file->ha_rnd_next(table->record[0]);
+    if (scan == HA_ERR_END_OF_FILE) break;
+    if (scan != 0) {
+      read_error = true;
+      break;
+    }
+    if (table->field[3]->val_int() == 0 ||
+        FieldValue(table->field[0]) != std::string(user.str, user.length) ||
+        FieldValue(table->field[1]) != std::string(host.str, host.length))
+      continue;
+    *tenant_id = static_cast<uint64_t>(table->field[2]->val_int());
+    found = true;
+    break;
+  }
+  if (!read_error) table->file->ha_rnd_end();
+  if (access.close_table(thd, table, &backup, read_error, false) || read_error)
+    return Ai_error::k_model_not_found;
+  // An absent account mapping is the explicit global tenant fallback.
+  (void)found;
+  return Ai_error::k_ok;
+#endif
 }
 
 Ai_error Ai_model_registry::LoadProfiles(

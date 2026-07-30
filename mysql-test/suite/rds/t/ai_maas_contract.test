@@ -26,6 +26,21 @@ INSERT INTO mysql.alisql_ai_tenant_binding
   (tenant_id, model_name, capability, config_id, active)
 VALUES (0, 'huawei/glm-5.2', 'TEXT_GENERATION', LAST_INSERT_ID(), TRUE);
 
+--echo # The authenticated account selects its tenant Profile before global fallback.
+INSERT INTO mysql.alisql_ai_model_config
+  (config_version, model_name, capability, provider, provider_model_name,
+   endpoint_type, endpoint, credential_kind, credential_ref, dimension, active)
+VALUES
+  (2, 'huawei/bge-m3', 'TEXT_EMBEDDING', 'huawei', 'bge-m3',
+   'HTTPS_JSON', 'https://maas.example.invalid/v1/embeddings',
+   'SECRET_REF', 'mtr/does-not-exist', 512, TRUE);
+INSERT INTO mysql.alisql_ai_tenant_binding
+  (tenant_id, model_name, capability, config_id, active)
+VALUES (77, 'huawei/bge-m3', 'TEXT_EMBEDDING', LAST_INSERT_ID(), TRUE);
+INSERT INTO mysql.alisql_ai_tenant_account
+  (account_user, account_host, tenant_id, active)
+VALUES ('root', 'localhost', 77, TRUE);
+
 --echo # Registered functions enforce their public arity.
 --error ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT
 SELECT AI_EMBEDDING();
