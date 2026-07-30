@@ -79,6 +79,21 @@ void Secure_string::Clear() {
   value_.clear();
 }
 
+namespace {
+
+Ai_error ReadPlaintextDevCredential(bool allow_plaintext_dev,
+                                    std::string_view credential_kind,
+                                    std::string_view plaintext_value,
+                                    Secure_string *out) {
+  if (!allow_plaintext_dev || out == nullptr ||
+      credential_kind != "PLAINTEXT_DEV" || plaintext_value.empty())
+    return Ai_error::k_credential_unavailable;
+  out->Assign(std::string(plaintext_value));
+  return Ai_error::k_ok;
+}
+
+}  // namespace
+
 Ai_error Ai_model_registry::Resolve(THD *thd, std::string_view model_name,
                                     Ai_capability capability,
                                     Ai_resolved_model *out) const {
@@ -312,5 +327,14 @@ Ai_error Ai_credential_resolver::ReadSecret(const Ai_resolved_model &model,
   return Ai_error::k_ok;
 #endif
 }
+
+#ifdef EXTRA_CODE_FOR_UNIT_TESTING
+Ai_error Ai_credential_resolver::ReadPlaintextDevForTest(
+    bool allow_plaintext_dev, std::string_view credential_kind,
+    std::string_view plaintext_value, Secure_string *out) const {
+  return ReadPlaintextDevCredential(allow_plaintext_dev, credential_kind,
+                                    plaintext_value, out);
+}
+#endif
 
 }  // namespace alisql::ai

@@ -107,4 +107,24 @@ TEST(AiModelRegistryTest, CredentialResolverRejectsUnconfiguredSecret) {
   EXPECT_TRUE(secret.empty());
 }
 
+TEST(AiCredentialResolverTest, PlaintextDevRequiresDebugPolicy) {
+  Ai_credential_resolver resolver;
+  Secure_string credential;
+
+  EXPECT_EQ(Ai_error::k_credential_unavailable,
+            resolver.ReadPlaintextDevForTest(false, "PLAINTEXT_DEV",
+                                             "unit-token", &credential));
+  EXPECT_TRUE(credential.empty());
+}
+
+TEST(AiCredentialResolverTest, PlaintextDevReturnsOnlyNonemptyValue) {
+  Ai_credential_resolver resolver;
+  Secure_string credential;
+
+  EXPECT_EQ(Ai_error::k_ok,
+            resolver.ReadPlaintextDevForTest(true, "PLAINTEXT_DEV",
+                                             "unit-token", &credential));
+  EXPECT_EQ("unit-token", credential.view());
+}
+
 }  // namespace alisql::ai

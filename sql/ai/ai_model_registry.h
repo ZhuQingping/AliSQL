@@ -90,6 +90,14 @@ class Ai_credential_resolver {
     separate from SQL argument parsing; only SECRET_REF is production-safe.
   */
   Ai_error ReadSecret(const Ai_resolved_model &model, Secure_string *out) const;
+
+#ifdef EXTRA_CODE_FOR_UNIT_TESTING
+  /** Offline seam for the Debug-only plaintext credential policy. */
+  Ai_error ReadPlaintextDevForTest(bool allow_plaintext_dev,
+                                   std::string_view credential_kind,
+                                   std::string_view plaintext_value,
+                                   Secure_string *out) const;
+#endif
 };
 
 }  // namespace alisql::ai
