@@ -48,7 +48,8 @@ plaintext fixture 仅触发 Adapter 的本地端点协议拒绝，不会发送�
 - `PLAINTEXT_DEV` 仅限 Debug 本地联调且不提供静态加密、轮换或生产安全保证；Release
   构建拒绝该 kind，生产凭据仍需要 keyring `SECRET_REF`。
 - PolarDB MySQL 的比较只陈述本分支可验证的 AliSQL 证据，未进行外部实测，不做
-  兼容性或性能等价声明。
+  兼容性或性能等价声明；详见
+  [`alisql-vs-polardb-ai-capability.md`](alisql-vs-polardb-ai-capability.md)。
 
 ## 交付前复验命令
 

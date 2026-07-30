@@ -26,8 +26,9 @@ identifier, endpoint, adapter name or credential. `AI_EMBEDDING(NULL, ...)`
 returns `NULL`. Huawei `huawei/bge-m3` is a fixed 1024-dimension Profile in
 P0: specifying any other dimension fails locally before an HTTP request.
 
-`AI_ANALYZE` returns a utf8mb4 final-content string by default. Its JSON
-option accepts only these stable keys:
+`AI_ANALYZE` returns a utf8mb4 final-content string by default. Its second
+argument accepts a string or JSON input value; its JSON option accepts only
+these stable keys:
 
 ```json
 {
@@ -97,12 +98,10 @@ The bootstrap/upgrade scripts create these protected InnoDB tables in `mysql`:
 
 ```text
 alisql_ai_model_config
-  id, tenant_id, model_name, provider, capability,
-  provider_model_name, model_revision, endpoint_type, endpoint_url,
-  credential_mode, credential_ref, api_key_plaintext,
-  default_dimension, allowed_dimensions, embedding_space_id,
-  distance_metric, generation_defaults, generation_limits,
-  status, config_version, is_builtin, created_at, updated_at
+  config_id, config_version, model_name, capability, provider,
+  provider_model_name, model_revision, endpoint_type, endpoint, dimension,
+  embedding_space_id, distance_metric, credential_kind, credential_ref,
+  api_key_plaintext, active, created_at, updated_at
 
 alisql_ai_tenant_binding
   tenant_id, model_name, capability, config_id, active
@@ -111,11 +110,10 @@ alisql_ai_tenant_account
   account_user, account_host, tenant_id, active
 
 alisql_ai_call_audit
-  request_id, provider_request_id, db_user, tenant_id, capability,
-  model_name, resolved_config_id, resolved_config_version,
-  provider_model_name, model_revision, protocol_family,
-  prompt_tokens, completion_tokens, reasoning_tokens, cached_tokens,
-  total_tokens, latency_ms, http_status, error_code, state, created_at
+  call_id, tenant_id, config_id, config_version, capability, status,
+  error_code, provider_request_id, prompt_tokens, completion_tokens,
+  reasoning_tokens, cached_tokens, total_tokens, created_at, completed_at,
+  latency_ms, http_status
 ```
 
 Model resolution uses `alisql_ai_tenant_account` to select an `ACTIVE` Profile
@@ -165,10 +163,10 @@ P0 registers three dynamic privileges:
 | Privilege | Grants |
 |---|---|
 | `AI_INVOKE` | Execute `AI_EMBEDDING` and `AI_ANALYZE` for authorized Profiles |
-| `AI_ADMIN` | Manage model Profiles, tenant bindings and development credential configuration |
+| `AI_ADMIN` | Cross-tenant sanitized audit read; Profile mutation is currently a controlled system-table operation, not a public SQL management surface |
 | `AI_AUDIT_VIEWER` | Read sanitized model-health, audit and usage surfaces |
 
-An independent audit transaction writes `CREATED` before egress; inability to
+An independent audit transaction writes `STARTED` before credential lookup and egress; inability to
 record it fails the invocation closed. It is updated to `SUCCEEDED`, `FAILED`
 or `UNKNOWN` independently of the caller transaction, because a later SQL
 rollback cannot undo a cloud request or its charge.
@@ -206,8 +204,9 @@ timeout, non-2xx redaction, response size, no-final-content, length finish,
 dimension mismatch and embedding-space mismatch. Vector tests extend the
 existing `vidx_*` suite with an `AI_EMBEDDING` insertion and cosine-HNSW query.
 
-The repository will also contain repeatable RAG, SQL-result analysis and
-read-only DBA diagnosis examples, an opt-in MaaS smoke script that reads a
-repository-external credential reference, known limits, performance/capacity
-boundaries and a capability comparison with PolarDB MySQL. The smoke script is
-not part of MTR and never emits a secret, prompt, response body or embedding.
+The repository contains repeatable RAG, SQL-result analysis and read-only DBA
+diagnosis examples in `rds.ai_maas_rag` and `rds.ai_maas_analysis`, an opt-in
+MaaS smoke script that reads a repository-external credential reference, and
+the evidence-bounded [AliSQL/PolarDB comparison](alisql-vs-polardb-ai-capability.md).
+The smoke script is not part of MTR and never emits a secret, prompt, response
+body or embedding.
