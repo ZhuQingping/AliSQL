@@ -51,7 +51,9 @@ SELECT AI_MODEL_INFO('a', 'b');
 
 --echo # A non-NULL call cannot silently use an unconfigured profile.
 GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
+GRANT AI_AUDIT_VIEWER ON *.* TO 'root'@'localhost';
 --error ER_NOT_SUPPORTED_YET
 SELECT AI_EMBEDDING('text');
 --error ER_NOT_SUPPORTED_YET
 SELECT AI_ANALYZE('summarize', 'text');
+SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/bge-m3'), '$.dimension');

@@ -2,6 +2,7 @@
 #include "sql/ai/item_ai_func.h"
 
 #include "mysqld_error.h"
+#include "sql/ai/ai_model_registry.h"
 #include "sql/ai/ai_runtime.h"
 #include "sql/auth/sql_security_ctx.h"
 #include "sql/sql_class.h"
@@ -32,6 +33,18 @@ bool CheckAiInvokePrivilege(THD *thd) {
           .first)
     return false;
   my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), "AI_INVOKE");
+  return true;
+}
+
+bool CheckAiAuditPrivilege(THD *thd) {
+  if (thd != nullptr && thd->security_context() != nullptr &&
+      (thd->security_context()
+           ->has_global_grant(STRING_WITH_LEN("AI_AUDIT_VIEWER"))
+           .first ||
+       thd->security_context()->has_global_grant(STRING_WITH_LEN("AI_ADMIN"))
+           .first))
+    return false;
+  my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), "AI_AUDIT_VIEWER");
   return true;
 }
 
@@ -196,10 +209,40 @@ bool Item_func_ai_model_info::resolve_type(THD *thd) {
   return false;
 }
 
-String *Item_func_ai_model_info::val_str(String *) {
+String *Item_func_ai_model_info::val_str(String *str) {
   null_value = false;
-  my_error(ER_NOT_SUPPORTED_YET, MYF(0), "DB4AI model metadata");
-  return error_str();
+  if (CheckAiAuditPrivilege(current_thd)) return error_str();
+  std::string model_name{"huawei/bge-m3"};
+  if (arg_count == 1) {
+    String *model = args[0]->val_str(str);
+    if (model == nullptr) {
+      null_value = true;
+      return nullptr;
+    }
+    model_name.assign(model->ptr(), model->length());
+  }
+  Ai_model_registry registry;
+  Ai_resolved_model model;
+  Ai_error error = registry.Resolve(current_thd, model_name,
+                                    Ai_capability::k_text_embedding, &model);
+  if (error == Ai_error::k_model_not_found)
+    error = registry.Resolve(current_thd, model_name,
+                             Ai_capability::k_text_generation, &model);
+  if (error != Ai_error::k_ok) {
+    RaiseAiRuntimeError(error);
+    return error_str();
+  }
+  const std::string result =
+      "{\"model_name\":\"" + model.model_name + "\",\"config_id\":" +
+      std::to_string(model.config_id) + ",\"config_version\":" +
+      std::to_string(model.config_version) + ",\"model_revision\":\"" +
+      model.model_revision + "\",\"dimension\":" +
+      std::to_string(model.dimension) + "}";
+  if (buffer.mem_realloc(result.size())) return error_str();
+  memcpy(buffer.ptr(), result.data(), result.size());
+  buffer.length(result.size());
+  buffer.set_charset(&my_charset_utf8mb4_0900_ai_ci);
+  return &buffer;
 }
 
 }  // namespace alisql::ai

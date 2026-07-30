@@ -50,7 +50,11 @@ SELECT AI_MODEL_INFO('a', 'b');
 ERROR 42000: Incorrect parameter count in the call to native function 'AI_MODEL_INFO'
 # A non-NULL call cannot silently use an unconfigured profile.
 GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
+GRANT AI_AUDIT_VIEWER ON *.* TO 'root'@'localhost';
 SELECT AI_EMBEDDING('text');
 ERROR 42000: This version of MySQL doesn't yet support 'DB4AI embedding dimension is incompatible with the model'
 SELECT AI_ANALYZE('summarize', 'text');
 ERROR 42000: This version of MySQL doesn't yet support 'DB4AI credential is unavailable'
+SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/bge-m3'), '$.dimension');
+JSON_EXTRACT(AI_MODEL_INFO('huawei/bge-m3'), '$.dimension')
+512

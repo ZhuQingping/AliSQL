@@ -36,6 +36,7 @@ class Item_func_ai_analyze final : public Item_str_func {
 };
 
 class Item_func_ai_model_info final : public Item_str_func {
+  String buffer;
  public:
   Item_func_ai_model_info(const POS &pos, PT_item_list *list)
       : Item_str_func(pos, list) {}
