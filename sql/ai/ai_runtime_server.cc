@@ -58,7 +58,8 @@ Ai_error Ai_runtime::Embed(THD *thd, const std::string &text,
 
   Ai_credential_resolver credential_resolver;
   Secure_string credential;
-  const Ai_error credential_error = credential_resolver.ReadSecret(model, &credential);
+  const Ai_error credential_error =
+      credential_resolver.ReadSecret(thd, model, &credential);
   if (credential_error != Ai_error::k_ok)
     return CompleteInvocation(audit_, model, Ai_capability::k_text_embedding,
                               nullptr, credential_error);
@@ -101,7 +102,8 @@ Ai_error Ai_runtime::Analyze(THD *thd, const std::string &task,
 
   Ai_credential_resolver credential_resolver;
   Secure_string credential;
-  const Ai_error credential_error = credential_resolver.ReadSecret(model, &credential);
+  const Ai_error credential_error =
+      credential_resolver.ReadSecret(thd, model, &credential);
   if (credential_error != Ai_error::k_ok)
     return CompleteInvocation(audit_, model, Ai_capability::k_text_generation,
                               nullptr, credential_error);

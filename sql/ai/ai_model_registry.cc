@@ -81,6 +81,16 @@ void Secure_string::Clear() {
 
 namespace {
 
+bool IsPlaintextDevConfig(uint64_t expected_config_id,
+                          uint64_t expected_config_version,
+                          uint64_t actual_config_id,
+                          uint64_t actual_config_version, bool active,
+                          std::string_view credential_kind) {
+  return expected_config_id == actual_config_id &&
+         expected_config_version == actual_config_version && active &&
+         credential_kind == "PLAINTEXT_DEV";
+}
+
 Ai_error ReadPlaintextDevCredential(bool allow_plaintext_dev,
                                     std::string_view credential_kind,
                                     std::string_view plaintext_value,
@@ -91,6 +101,57 @@ Ai_error ReadPlaintextDevCredential(bool allow_plaintext_dev,
   out->Assign(std::string(plaintext_value));
   return Ai_error::k_ok;
 }
+
+#ifndef EXTRA_CODE_FOR_UNIT_TESTING
+Ai_error ReadPlaintextDevFromSystemTable(THD *thd,
+                                         const Ai_resolved_model &model,
+                                         Secure_string *out) {
+#ifdef NDEBUG
+  (void)thd;
+  (void)model;
+  (void)out;
+  return Ai_error::k_credential_unavailable;
+#else
+  if (thd == nullptr || out == nullptr) return Ai_error::k_credential_unavailable;
+  Ai_system_table_access access;
+  Open_tables_backup backup;
+  TABLE *table = nullptr;
+  if (access.open_table(thd, k_mysql_schema, k_model_config_table, 16,
+                        TL_READ, &table, &backup))
+    return Ai_error::k_credential_unavailable;
+
+  bool read_error = table->file->ha_rnd_init(true) != 0;
+  Ai_error result = Ai_error::k_credential_unavailable;
+  while (!read_error) {
+    const int scan = table->file->ha_rnd_next(table->record[0]);
+    if (scan == HA_ERR_END_OF_FILE) break;
+    if (scan != 0) {
+      read_error = true;
+      break;
+    }
+    if (!IsPlaintextDevConfig(
+            model.config_id, model.config_version,
+            static_cast<uint64_t>(table->field[0]->val_int()),
+            static_cast<uint64_t>(table->field[1]->val_int()),
+            table->field[15]->val_int() != 0, FieldValue(table->field[12])))
+      continue;
+    if (!table->field[14]->is_null()) {
+      String plaintext;
+      String *value = table->field[14]->val_str(&plaintext, &plaintext);
+      if (value != nullptr)
+        result = ReadPlaintextDevCredential(
+            true, model.credential_kind,
+            std::string_view(value->ptr(), value->length()), out);
+    }
+    break;
+  }
+  if (!read_error) table->file->ha_rnd_end();
+  if (access.close_table(thd, table, &backup, read_error, false) || read_error)
+    return Ai_error::k_credential_unavailable;
+  return result;
+#endif
+}
+#endif
 
 }  // namespace
 
@@ -301,10 +362,19 @@ Ai_error Ai_model_registry::ValidateDimension(
   return Ai_error::k_ok;
 }
 
-Ai_error Ai_credential_resolver::ReadSecret(const Ai_resolved_model &model,
+Ai_error Ai_credential_resolver::ReadSecret(THD *thd,
+                                            const Ai_resolved_model &model,
                                             Secure_string *out) const {
-  if (out == nullptr || model.credential_kind != "SECRET_REF" ||
-      model.credential_ref.empty())
+  if (out == nullptr) return Ai_error::k_credential_unavailable;
+  if (model.credential_kind == "PLAINTEXT_DEV") {
+#ifdef EXTRA_CODE_FOR_UNIT_TESTING
+    (void)thd;
+    return Ai_error::k_credential_unavailable;
+#else
+    return ReadPlaintextDevFromSystemTable(thd, model, out);
+#endif
+  }
+  if (model.credential_kind != "SECRET_REF" || model.credential_ref.empty())
     return Ai_error::k_credential_unavailable;
 
 #ifdef EXTRA_CODE_FOR_UNIT_TESTING
@@ -334,6 +404,15 @@ Ai_error Ai_credential_resolver::ReadPlaintextDevForTest(
     std::string_view plaintext_value, Secure_string *out) const {
   return ReadPlaintextDevCredential(allow_plaintext_dev, credential_kind,
                                     plaintext_value, out);
+}
+
+bool Ai_credential_resolver::IsPlaintextDevConfigForTest(
+    uint64_t expected_config_id, uint64_t expected_config_version,
+    uint64_t actual_config_id, uint64_t actual_config_version, bool active,
+    std::string_view credential_kind) const {
+  return IsPlaintextDevConfig(expected_config_id, expected_config_version,
+                              actual_config_id, actual_config_version, active,
+                              credential_kind);
 }
 #endif
 

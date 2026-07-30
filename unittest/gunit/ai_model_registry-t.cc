@@ -103,7 +103,7 @@ TEST(AiModelRegistryTest, CredentialResolverRejectsUnconfiguredSecret) {
   Secure_string secret;
 
   EXPECT_EQ(Ai_error::k_credential_unavailable,
-            resolver.ReadSecret(model, &secret));
+            resolver.ReadSecret(nullptr, model, &secret));
   EXPECT_TRUE(secret.empty());
 }
 
@@ -125,6 +125,19 @@ TEST(AiCredentialResolverTest, PlaintextDevReturnsOnlyNonemptyValue) {
             resolver.ReadPlaintextDevForTest(true, "PLAINTEXT_DEV",
                                              "unit-token", &credential));
   EXPECT_EQ("unit-token", credential.view());
+}
+
+TEST(AiCredentialResolverTest, PlaintextDevRequiresExactActiveConfig) {
+  Ai_credential_resolver resolver;
+
+  EXPECT_TRUE(resolver.IsPlaintextDevConfigForTest(
+      9, 3, 9, 3, true, "PLAINTEXT_DEV"));
+  EXPECT_FALSE(resolver.IsPlaintextDevConfigForTest(
+      9, 3, 9, 4, true, "PLAINTEXT_DEV"));
+  EXPECT_FALSE(resolver.IsPlaintextDevConfigForTest(
+      9, 3, 9, 3, false, "PLAINTEXT_DEV"));
+  EXPECT_FALSE(resolver.IsPlaintextDevConfigForTest(
+      9, 3, 9, 3, true, "SECRET_REF"));
 }
 
 }  // namespace alisql::ai
