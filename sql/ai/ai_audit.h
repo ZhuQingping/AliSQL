@@ -8,6 +8,7 @@
 namespace alisql::ai {
 enum class Ai_audit_status { k_started, k_succeeded, k_failed };
 struct Ai_audit_record {
+  uint64_t call_id{0};
   uint64_t tenant_id{0};
   uint64_t config_id{0};
   uint64_t config_version{0};
@@ -21,13 +22,26 @@ struct Ai_audit_record {
 class Ai_audit_sink {
  public:
   virtual ~Ai_audit_sink() = default;
-  virtual void Complete(const Ai_audit_record &record) = 0;
+  virtual Ai_error Start(const Ai_audit_record &record, uint64_t *call_id) = 0;
+  virtual Ai_error Complete(uint64_t call_id, const Ai_audit_record &record) = 0;
 };
 class Ai_memory_audit_sink final : public Ai_audit_sink {
  public:
-  void Complete(const Ai_audit_record &record) override { records_.push_back(record); }
+  Ai_error Start(const Ai_audit_record &, uint64_t *call_id) override {
+    if (call_id == nullptr) return Ai_error::k_provider_error;
+    *call_id = next_call_id_++;
+    return Ai_error::k_ok;
+  }
+  Ai_error Complete(uint64_t call_id, const Ai_audit_record &record) override {
+    if (call_id == 0) return Ai_error::k_provider_error;
+    Ai_audit_record stored = record;
+    stored.call_id = call_id;
+    records_.push_back(std::move(stored));
+    return Ai_error::k_ok;
+  }
   const std::vector<Ai_audit_record> &records() const { return records_; }
  private:
+  uint64_t next_call_id_{1};
   std::vector<Ai_audit_record> records_;
 };
 }  // namespace alisql::ai

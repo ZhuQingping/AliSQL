@@ -33,7 +33,13 @@ Ai_error CompleteInvocation(Ai_audit_sink *sink, const Ai_resolved_model &model,
     record.provider_request_id = response->provider_request_id;
     record.http_status = response->http_status;
   }
-  if (sink != nullptr) sink->Complete(record);
+  if (sink != nullptr) {
+    uint64_t call_id = 0;
+    const Ai_error start = sink->Start(record, &call_id);
+    if (start != Ai_error::k_ok) return start;
+    const Ai_error complete = sink->Complete(call_id, record);
+    if (complete != Ai_error::k_ok) return complete;
+  }
   return result;
 }
 

@@ -31,13 +31,31 @@ TEST(AiRuntimeTest, ParsesOnlyStableAnalyzeOptions) {
 TEST(AiRuntimeTest, RecordsReasoningTokensButNeverReasoningText) {
   Ai_memory_audit_sink audit;
   Ai_audit_record record;
+  uint64_t call_id = 0;
   record.usage.reasoning_tokens = 17;
   record.status = Ai_audit_status::k_succeeded;
-  audit.Complete(record);
+  ASSERT_EQ(Ai_error::k_ok, audit.Start(record, &call_id));
+  ASSERT_EQ(Ai_error::k_ok, audit.Complete(call_id, record));
 
   ASSERT_EQ(1U, audit.records().size());
+  EXPECT_EQ(call_id, audit.records().front().call_id);
   EXPECT_EQ(17U, audit.records().front().usage.reasoning_tokens);
   EXPECT_TRUE(audit.records().front().provider_request_id.empty());
+}
+
+TEST(AiRuntimeAuditTest, StartAllocatesCallIdBeforeCompletion) {
+  Ai_memory_audit_sink audit;
+  Ai_audit_record record;
+  uint64_t call_id = 0;
+
+  ASSERT_EQ(Ai_error::k_ok, audit.Start(record, &call_id));
+  EXPECT_NE(0U, call_id);
+  record.status = Ai_audit_status::k_succeeded;
+  record.usage.total_tokens = 9;
+  ASSERT_EQ(Ai_error::k_ok, audit.Complete(call_id, record));
+  ASSERT_EQ(1U, audit.records().size());
+  EXPECT_EQ(call_id, audit.records().front().call_id);
+  EXPECT_EQ(9U, audit.records().front().usage.total_tokens);
 }
 
 }  // namespace alisql::ai
