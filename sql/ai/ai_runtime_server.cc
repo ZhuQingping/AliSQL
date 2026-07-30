@@ -19,6 +19,41 @@ std::string EndpointAuthority(const std::string &endpoint) {
   return endpoint.substr(start, end - start);
 }
 
+#ifndef NDEBUG
+// MTR-only profiles use these exact logical names and an invalid authority.
+// This block is excluded from Release builds and never performs HTTP or reads
+// a credential. It exists solely to make governed SQL examples deterministic.
+bool IsOfflineMtrFixture(const Ai_resolved_model &model,
+                         Ai_capability capability) {
+  if (capability == Ai_capability::k_text_embedding)
+    return model.model_name == "mtr/fixture-embedding" &&
+           model.endpoint ==
+               "https://db4ai-mtr-fixture.invalid/v1/embeddings";
+  return model.model_name == "mtr/fixture-chat" &&
+         model.endpoint ==
+             "https://db4ai-mtr-fixture.invalid/v2/chat/completions";
+}
+
+void ExecuteOfflineMtrEmbedding(Ai_canonical_response *response) {
+  response->embeddings.emplace_back(1024, 0.0F);
+  response->embeddings.front()[0] = 1.0F;
+  response->usage.total_tokens = 1;
+  response->provider_request_id = "mtr-offline-embedding";
+  response->http_status = 200;
+}
+
+void ExecuteOfflineMtrChat(std::string_view mode,
+                           Ai_canonical_response *response) {
+  response->final_content =
+      mode == "diagnose" ? "offline diagnosis: evidence only" :
+      mode == "rag" ? "offline RAG answer" : "offline analysis";
+  response->usage.total_tokens = 1;
+  response->provider_request_id = "mtr-offline-chat";
+  response->http_status = 200;
+  response->response_complete = true;
+}
+#endif
+
 Ai_audit_record NewAuditRecord(const Ai_resolved_model &model,
                                Ai_capability capability) {
   Ai_audit_record record;
@@ -97,6 +132,16 @@ Ai_error Ai_runtime::Embed(THD *thd, const std::string &text,
       (model.model_name == "huawei/bge-m3" && expected_dimension != 1024))
     return complete(nullptr, Ai_error::k_dimension_mismatch);
 
+#ifndef NDEBUG
+  if (IsOfflineMtrFixture(model, Ai_capability::k_text_embedding)) {
+    Ai_canonical_response response;
+    ExecuteOfflineMtrEmbedding(&response);
+    const Ai_error encode = Ai_vector_codec::Encode(
+        response.embeddings.front(), expected_dimension, encoded_vector);
+    return complete(&response, encode);
+  }
+#endif
+
   Ai_credential_resolver credential_resolver;
   Secure_string credential;
   const Ai_error credential_error =
@@ -153,6 +198,15 @@ Ai_error Ai_runtime::Analyze(THD *thd, const std::string &task,
                 .count()),
         result);
   };
+
+#ifndef NDEBUG
+  if (IsOfflineMtrFixture(model, Ai_capability::k_text_generation)) {
+    Ai_canonical_response response;
+    ExecuteOfflineMtrChat(options.mode, &response);
+    *final_content = response.final_content;
+    return complete(&response, Ai_error::k_ok);
+  }
+#endif
 
   Ai_credential_resolver credential_resolver;
   Secure_string credential;

@@ -16,6 +16,8 @@ mock 或成功编译替代真实云端验收。
 | VECTOR 编码 | `runtime_output_directory/ai_vector_codec-t` | native float VECTOR 编码、维度和非有限数拒绝覆盖 |
 | SQL/MTR 契约 | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_contract` | SQL arity、NULL 无 egress、`AI_INVOKE`、tenant account→Profile 优先级、Debug plaintext 精确 Profile 读取后本地协议拒绝、维度失败、无凭据失败、脱敏 model metadata 覆盖 |
 | 审计授权读取 | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_governance` | 无权限拒绝、viewer tenant 隔离、AI_ADMIN 跨 tenant、limit 和敏感字段缺失覆盖 |
+| 受控 RAG | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_rag` | Debug 离线 fixture 经实际 `AI_EMBEDDING` 写入 VECTOR INDEX；tenant/业务/embedding-space 过滤、schema contract 拒绝与来源回传覆盖 |
+| 分析与只读诊断 | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_analysis` | JSON input、analyze/diagnose mode 和私有 provider options 拒绝覆盖；fixture 不读取 secret、不发起 HTTP |
 | Release 明文门禁 | 临时 Release `mysqld` 隔离实例，含 `PLAINTEXT_DEV` fixture 的 `AI_EMBEDDING` | 调用前返回 `DB4AI credential is unavailable`；未发生 HTTP 请求 |
 
 默认测试均使用 mock transport、不存在的 `SECRET_REF` 或不回显的 Debug fixture；
@@ -59,7 +61,8 @@ build-debug/runtime_output_directory/ai_huawei_maas_adapter-t
 build-debug/runtime_output_directory/ai_audit-t
 build-debug/runtime_output_directory/ai_runtime-t
 build-debug/runtime_output_directory/ai_vector_codec-t
-cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_contract ai_maas_governance
+cd build-debug/mysql-test && ./mtr --suite=rds \
+  ai_maas_contract ai_maas_governance ai_maas_rag ai_maas_analysis vidx_func
 ```
 
 ## Release 明文门禁复验

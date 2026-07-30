@@ -193,7 +193,8 @@ cmake --build build-debug --target mysqld ai_huawei_maas_adapter-t ai_audit-t ai
 build-debug/runtime_output_directory/ai_huawei_maas_adapter-t
 build-debug/runtime_output_directory/ai_audit-t
 build-debug/runtime_output_directory/ai_runtime-t
-cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_contract ai_maas_governance
+cd build-debug/mysql-test && ./mtr --suite=rds \
+  ai_maas_contract ai_maas_governance ai_maas_rag ai_maas_analysis vidx_func
 ```
 
 The contract suite covers public arity, NULL-without-egress, configuration
@@ -231,6 +232,7 @@ increasing concurrency.
 
 The remaining implementation work is intentionally visible: authenticated
 account-to-tenant resolution is implemented, with tenant `0` retained only as
-an explicit global fallback. AI_ADMIN Profile management surfaces, configured
-embedding-space metadata enforcement and full offline RAG/analysis/diagnosis
-evidence remain before a production-complete P0 declaration.
+an explicit global fallback. AI_ADMIN Profile management surfaces and generic,
+Profile-driven embedding-space metadata enforcement remain before a
+production-complete P0 declaration. Offline RAG/analysis/diagnosis evidence is
+now covered by `rds.ai_maas_rag` and `rds.ai_maas_analysis`.

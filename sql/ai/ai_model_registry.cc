@@ -16,6 +16,7 @@
 #include "sql/server_component/mysql_server_keyring_lockable_imp.h"
 #include "sql/sql_base.h"
 #include "sql/sql_class.h"
+#include "sql/sql_lex.h"
 #include "sql/table.h"
 #endif
 
@@ -50,6 +51,19 @@ std::string FieldValue(Field *field) {
 Ai_capability CapabilityFromEnum(longlong value) {
   return value == 1 ? Ai_capability::k_text_embedding
                     : Ai_capability::k_text_generation;
+}
+
+// System_table_access::close_table() commits the supplied THD. Metadata
+// lookups can run while an AI function is evaluated inside DML, so they must
+// restore the caller's open-table state without committing that DML statement.
+void CloseReadOnlySystemTable(THD *thd, TABLE *table,
+                              Open_tables_backup *backup) {
+  if (table == nullptr) return;
+  Query_tables_list query_tables_list_backup;
+  thd->lex->reset_n_backup_query_tables_list(&query_tables_list_backup);
+  close_thread_tables(thd);
+  thd->lex->restore_backup_query_tables_list(&query_tables_list_backup);
+  thd->restore_backup_open_tables_state(backup);
 }
 #endif
 
@@ -148,7 +162,8 @@ Ai_error ReadPlaintextDevFromSystemTable(THD *thd,
     break;
   }
   if (!read_error) table->file->ha_rnd_end();
-  if (access.close_table(thd, table, &backup, read_error, false) || read_error)
+  CloseReadOnlySystemTable(thd, table, &backup);
+  if (read_error)
     return Ai_error::k_credential_unavailable;
   return result;
 #endif
@@ -209,7 +224,8 @@ Ai_error Ai_model_registry::ResolveTenant(THD *thd, uint64_t *tenant_id) const {
     break;
   }
   if (!read_error) table->file->ha_rnd_end();
-  if (access.close_table(thd, table, &backup, read_error, false) || read_error)
+  CloseReadOnlySystemTable(thd, table, &backup);
+  if (read_error)
     return Ai_error::k_model_not_found;
   // An absent account mapping is the explicit global tenant fallback.
   (void)found;
@@ -250,7 +266,8 @@ Ai_error Ai_model_registry::LoadProfiles(
                         static_cast<uint64_t>(binding_table->field[3]->val_int())});
   }
   if (!read_error) binding_table->file->ha_rnd_end();
-  if (access.close_table(thd, binding_table, &binding_backup, read_error, false))
+  CloseReadOnlySystemTable(thd, binding_table, &binding_backup);
+  if (read_error)
     return Ai_error::k_model_not_found;
 
   Open_tables_backup config_backup;
@@ -291,7 +308,8 @@ Ai_error Ai_model_registry::LoadProfiles(
     }
   }
   if (!read_error) config_table->file->ha_rnd_end();
-  if (access.close_table(thd, config_table, &config_backup, read_error, false))
+  CloseReadOnlySystemTable(thd, config_table, &config_backup);
+  if (read_error)
     return Ai_error::k_model_not_found;
   return read_error ? Ai_error::k_model_not_found : Ai_error::k_ok;
 #endif

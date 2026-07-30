@@ -30,7 +30,7 @@ bool ResolveAnalyzeArguments(THD *thd, Item_func *item) {
   }
   for (uint i = 0; i < 2; ++i) {
     if (item->get_arg(i)->result_type() != STRING_RESULT ||
-        item->get_arg(i)->data_type() == MYSQL_TYPE_JSON) {
+        (i == 0 && item->get_arg(i)->data_type() == MYSQL_TYPE_JSON)) {
       my_error(ER_WRONG_ARGUMENTS, MYF(0), item->func_name());
       return true;
     }

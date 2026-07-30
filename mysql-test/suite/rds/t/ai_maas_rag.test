@@ -1,0 +1,94 @@
+--source include/have_binlog_format_mixed_or_row.inc
+
+SET GLOBAL vidx_disabled = OFF;
+SET transaction_isolation = 'READ-COMMITTED';
+GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
+
+--echo # Debug-only fixture Profiles never contact a provider or read a secret.
+INSERT INTO mysql.alisql_ai_model_config
+  (config_version, model_name, capability, provider, provider_model_name,
+   endpoint_type, endpoint, credential_kind, credential_ref, dimension, active)
+VALUES
+  (1, 'mtr/fixture-embedding', 'TEXT_EMBEDDING', 'mtr', 'fixture-embedding',
+   'HTTPS_JSON', 'https://db4ai-mtr-fixture.invalid/v1/embeddings',
+   'SECRET_REF', 'mtr/not-read', 1024, TRUE),
+  (1, 'mtr/fixture-chat', 'TEXT_GENERATION', 'mtr', 'fixture-chat',
+   'HTTPS_JSON', 'https://db4ai-mtr-fixture.invalid/v2/chat/completions',
+   'SECRET_REF', 'mtr/not-read', NULL, TRUE);
+INSERT INTO mysql.alisql_ai_tenant_binding
+  (tenant_id, model_name, capability, config_id, active)
+SELECT 0, model_name, capability, config_id, TRUE
+  FROM mysql.alisql_ai_model_config
+ WHERE model_name LIKE 'mtr/fixture-%';
+
+CREATE TABLE rag_manual_chunk (
+  tenant_id BIGINT UNSIGNED NOT NULL,
+  source_id VARCHAR(64) NOT NULL,
+  chunk_id INT NOT NULL,
+  product_line VARCHAR(32) NOT NULL,
+  access_label ENUM('internal','support') NOT NULL,
+  content TEXT NOT NULL,
+  embedding VECTOR(1024) NOT NULL,
+  embedding_model VARCHAR(128) NOT NULL,
+  embedding_config_version BIGINT UNSIGNED NOT NULL,
+  embedding_space_id VARCHAR(128) NOT NULL,
+  PRIMARY KEY (tenant_id, source_id, chunk_id),
+  KEY ix_tenant_product (tenant_id, product_line, access_label),
+  VECTOR INDEX ix_manual_embedding (embedding) m=3 distance=cosine,
+  CONSTRAINT ck_embedding_contract CHECK
+    (embedding_config_version = 1 AND
+     embedding_space_id = 'mtr/fixture/1024/cosine')
+) ENGINE=InnoDB;
+
+INSERT INTO rag_manual_chunk
+  (tenant_id, source_id, chunk_id, product_line, access_label, content,
+   embedding, embedding_model, embedding_config_version, embedding_space_id)
+VALUES
+  (42, 'manual-42', 1, 'gateway', 'support', 'Tenant 42 gateway procedure.',
+   AI_EMBEDDING('Tenant 42 gateway procedure.', 'mtr/fixture-embedding', 1024),
+   'mtr/fixture-embedding', 1, 'mtr/fixture/1024/cosine'),
+  (77, 'manual-77', 1, 'gateway', 'support', 'Tenant 77 private procedure.',
+   AI_EMBEDDING('Tenant 77 private procedure.', 'mtr/fixture-embedding', 1024),
+   'mtr/fixture-embedding', 1, 'mtr/fixture/1024/cosine');
+
+--echo # The retrieval query keeps tenant and business predicates in SQL.
+SET @query_embedding = AI_EMBEDDING('How do I handle an offline gateway?',
+                                    'mtr/fixture-embedding', 1024);
+SELECT source_id, chunk_id, content
+  FROM rag_manual_chunk
+ WHERE tenant_id = 42
+   AND product_line = 'gateway'
+   AND access_label = 'support'
+   AND embedding_model = 'mtr/fixture-embedding'
+   AND embedding_config_version = 1
+   AND embedding_space_id = 'mtr/fixture/1024/cosine'
+ ORDER BY VEC_DISTANCE_COSINE(embedding, @query_embedding), source_id
+ LIMIT 8;
+
+--echo # A mismatched embedding-space/version contract is rejected on write.
+--error ER_CHECK_CONSTRAINT_VIOLATED
+INSERT INTO rag_manual_chunk
+  (tenant_id, source_id, chunk_id, product_line, access_label, content,
+   embedding, embedding_model, embedding_config_version, embedding_space_id)
+VALUES
+  (42, 'invalid-space', 1, 'gateway', 'support', 'must fail',
+   AI_EMBEDDING('must fail', 'mtr/fixture-embedding', 1024),
+   'mtr/fixture-embedding', 2, 'mtr/fixture/other');
+
+--echo # RAG output is paired with database-generated source metadata.
+SELECT AI_ANALYZE(
+  'Answer from supplied database chunks only.',
+  JSON_OBJECT('question', 'How do I handle an offline gateway?',
+              'sources', JSON_ARRAY(JSON_OBJECT('source_id', 'manual-42',
+                                                'chunk_id', 1))),
+  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'rag',
+              'output_format', 'json', 'return_sources', true)) AS rag_answer;
+SELECT JSON_ARRAYAGG(JSON_OBJECT('source_id', source_id, 'chunk_id', chunk_id))
+       AS sources
+  FROM rag_manual_chunk
+ WHERE tenant_id = 42 AND source_id = 'manual-42';
+
+DROP TABLE rag_manual_chunk;
+DELETE FROM mysql.alisql_ai_tenant_binding WHERE model_name IN ('mtr/fixture-embedding', 'mtr/fixture-chat');
+DELETE FROM mysql.alisql_ai_model_config WHERE model_name IN ('mtr/fixture-embedding', 'mtr/fixture-chat');
+SET GLOBAL vidx_disabled = ON;

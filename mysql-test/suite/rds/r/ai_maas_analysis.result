@@ -1,0 +1,43 @@
+GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
+INSERT INTO mysql.alisql_ai_model_config
+(config_version, model_name, capability, provider, provider_model_name,
+endpoint_type, endpoint, credential_kind, credential_ref, active)
+VALUES
+(1, 'mtr/fixture-chat', 'TEXT_GENERATION', 'mtr', 'fixture-chat',
+'HTTPS_JSON', 'https://db4ai-mtr-fixture.invalid/v2/chat/completions',
+'SECRET_REF', 'mtr/not-read', TRUE);
+INSERT INTO mysql.alisql_ai_tenant_binding
+(tenant_id, model_name, capability, config_id, active)
+SELECT 0, model_name, capability, config_id, TRUE
+FROM mysql.alisql_ai_model_config
+WHERE model_name = 'mtr/fixture-chat';
+# Bounded aggregate JSON reaches the stable analyze mode.
+SELECT AI_ANALYZE(
+'Summarize only the supplied aggregates.',
+JSON_OBJECT('period', '2026-07',
+'rows', JSON_ARRAY(JSON_OBJECT('region', 'cn-north',
+'orders', 12))),
+JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'analyze',
+'output_format', 'json', 'max_output_tokens', 128))
+AS analysis_result;
+analysis_result
+offline analysis
+# Diagnosis returns evidence only and is not an automatic repair path.
+SELECT AI_ANALYZE(
+'Return evidence and risk only. Do not execute or propose a repair.',
+JSON_OBJECT('sql_digest', 'SELECT * FROM orders WHERE tenant_id = ?',
+'explain', 'range scan', 'elapsed_ms', 4210,
+'rows_examined', 900000, 'lock_wait_ms', 0,
+'io', JSON_OBJECT('read_pages', 44)),
+JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
+'output_format', 'json', 'max_output_tokens', 128))
+AS diagnosis_result;
+diagnosis_result
+offline diagnosis: evidence only
+# Provider-private options remain outside the SQL contract.
+SELECT AI_ANALYZE('task', JSON_OBJECT('rows', JSON_ARRAY()),
+JSON_OBJECT('model_name', 'mtr/fixture-chat',
+'temperature', 0));
+ERROR HY000: Incorrect arguments to ai_analyze
+DELETE FROM mysql.alisql_ai_tenant_binding WHERE model_name = 'mtr/fixture-chat';
+DELETE FROM mysql.alisql_ai_model_config WHERE model_name = 'mtr/fixture-chat';
