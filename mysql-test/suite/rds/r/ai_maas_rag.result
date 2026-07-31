@@ -69,6 +69,66 @@ VALUES
 AI_EMBEDDING('must fail', 'mtr/fixture-embedding', 1024),
 'mtr/fixture-embedding', 2, 'mtr/fixture/other');
 ERROR HY000: Check constraint 'ck_embedding_contract' is violated.
+# STORED generated vectors synchronously embed document writes and updates.
+SELECT config_id INTO @rag_fixture_embedding_config_id
+FROM mysql.alisql_ai_model_config
+WHERE model_name = 'mtr/fixture-embedding';
+SELECT COUNT(*) INTO @rag_fixture_embedding_calls_before
+FROM mysql.alisql_ai_call_audit
+WHERE config_id = @rag_fixture_embedding_config_id;
+CREATE TABLE knowledge_base (
+id INT AUTO_INCREMENT PRIMARY KEY,
+doc TEXT NOT NULL,
+category VARCHAR(32) NOT NULL DEFAULT 'general',
+vec VECTOR(1024)
+AS (AI_EMBEDDING(doc, 'mtr/fixture-embedding', 1024)) STORED,
+VECTOR INDEX ix_knowledge_vec (vec) m=3 distance=cosine
+) ENGINE=InnoDB;
+INSERT INTO knowledge_base (doc) VALUES
+('TaurusDB improves MySQL-compatible database throughput.'),
+('A database instance can grow to 128 TB of storage.'),
+('Read replicas offload pressure from the primary node.'),
+('Snapshots are retained and can be restored to a point in time.');
+SELECT id, VECTOR_DIM(vec) AS dimension
+FROM knowledge_base
+ORDER BY id;
+id	dimension
+1	1024
+2	1024
+3	1024
+4	1024
+SELECT COUNT(*) - @rag_fixture_embedding_calls_before AS generated_embedding_calls
+FROM mysql.alisql_ai_call_audit
+WHERE config_id = @rag_fixture_embedding_config_id;
+generated_embedding_calls
+4
+UPDATE knowledge_base
+SET doc = 'Read replicas offload pressure from the primary database node.'
+ WHERE id = 3;
+SELECT COUNT(*) - @rag_fixture_embedding_calls_before AS generated_embedding_calls
+FROM mysql.alisql_ai_call_audit
+WHERE config_id = @rag_fixture_embedding_config_id;
+generated_embedding_calls
+5
+SET @rag_original_binlog_row_image = @@SESSION.binlog_row_image;
+SET SESSION binlog_row_image = 'MINIMAL';
+UPDATE knowledge_base SET category = 'operations' WHERE id = 3;
+SELECT COUNT(*) - @rag_fixture_embedding_calls_before AS generated_embedding_calls
+FROM mysql.alisql_ai_call_audit
+WHERE config_id = @rag_fixture_embedding_config_id;
+generated_embedding_calls
+5
+SET @knowledge_query = AI_EMBEDDING(
+'How can read traffic be offloaded?', 'mtr/fixture-embedding', 1024);
+SELECT id, doc, VEC_DISTANCE(vec, @knowledge_query) AS distance
+FROM knowledge_base FORCE INDEX (ix_knowledge_vec)
+ORDER BY VEC_DISTANCE(vec, @knowledge_query), id
+LIMIT 2;
+id	doc	distance
+1	TaurusDB improves MySQL-compatible database throughput.	0
+2	A database instance can grow to 128 TB of storage.	0
+DROP TABLE knowledge_base;
+SET SESSION binlog_row_image = @rag_original_binlog_row_image;
 # RAG output is paired with database-generated source metadata.
 SELECT AI_ANALYZE(
 'Answer from supplied database chunks only.',

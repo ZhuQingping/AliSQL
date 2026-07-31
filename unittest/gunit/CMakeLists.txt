@@ -392,6 +392,12 @@ FOREACH(test ${TESTS})
 ENDFOREACH()
 
 TARGET_SOURCES(ai_types-t PRIVATE ${CMAKE_SOURCE_DIR}/sql/ai/ai_types.cc)
+TARGET_SOURCES(merge_small_tests-t PRIVATE
+  ${CMAKE_SOURCE_DIR}/sql/ai/ai_types.cc
+  ${CMAKE_SOURCE_DIR}/sql/ai/ai_model_registry.cc
+  ${CMAKE_SOURCE_DIR}/sql/ai/ai_huawei_maas_adapter.cc
+  ${CMAKE_SOURCE_DIR}/sql/ai/ai_runtime.cc
+  ${CMAKE_SOURCE_DIR}/sql/ai/ai_vector_codec.cc)
 TARGET_SOURCES(ai_model_registry-t PRIVATE
   ${CMAKE_SOURCE_DIR}/sql/ai/ai_types.cc
   ${CMAKE_SOURCE_DIR}/sql/ai/ai_model_registry.cc)
