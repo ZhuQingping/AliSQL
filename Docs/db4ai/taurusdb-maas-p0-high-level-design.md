@@ -4,7 +4,7 @@
 
 目标版本：2026-09-30 P0 预览版本
 
-最近更新：2026-07-29（补充 AWS、PolarDB/百炼、火山方舟实测调研与设计输入）
+最近更新：2026-08-02（确定只读节点两阶段文件审计、动态全局审计开关和 P0 简化权限模型）
 
 关联主计划：
 
@@ -205,10 +205,11 @@ P0 采用两条相互衔接但职责分离的主线：**调用执行主线（Dat
   -> 响应、维度/结果校验与 SQL 结果
 ```
 
-审计是该主线的同步治理步骤，而不是可选的异步旁路：在出站前写入最小、脱敏的
-`STARTED` 事实；返回、失败或超时后以相同 `call_id` 写入 `SUCCESS`、`FAILED` 或
-`UNKNOWN` 结果、时延、用量和错误分类。起始事实不可写时 fail closed；完成态允许
-独立重试和恢复，但不得阻塞或改变已发出的云端请求。
+当全局审计开关 `ai_invoke_audit=ON` 时，审计是该主线的同步治理步骤，而不是可选的
+异步旁路：在出站前向 AI 审计日志文件写入最小、脱敏的 `STARTED` 事件；返回、失败或
+超时后以相同 `call_id` 追加 `SUCCESS`、`FAILED` 或 `UNKNOWN` 终态、时延、用量和错误
+分类。起始事件不可写或不可安全落盘时 fail closed；终态写入失败不得否认已经发出的
+云端请求，保留 `STARTED` 事件并作为待处置的 `UNKNOWN` 调用处理。
 
 ### 3.2 模型治理主线（Control Plane）
 
@@ -223,9 +224,10 @@ P0 采用两条相互衔接但职责分离的主线：**调用执行主线（Dat
   -> 后续新调用按新版本解析
 ```
 
-授权是与模型配置独立的治理操作：`GRANT`/`REVOKE` 将有效 MySQL 账号
-`user@host` 映射至可调用的 `model_name + capability`。一个模型可以授权给多个账号，
-一个账号也可获授多个模型；不得将用户列表编码在模型配置字段中。
+授权是与模型配置独立的治理操作：`GRANT`/`REVOKE AI_INVOKE` 决定有效 MySQL 账号
+`user@host` 是否可调用 P0 AI 能力。P0 不建立账号到 `model_name + capability` 的映射；
+持有该权限的账号可以调用全部 `ACTIVE` Profile。模型集合、Endpoint 和凭据由 DBA 通过
+受控 Profile 管理路径控制。
 
 ### 3.3 模块边界与主线归属
 
@@ -411,10 +413,10 @@ P0 可以先把这些作为 C++ 结构和函数边界，不要求全部拆成独
 
 ### 5.3 模型配置、凭据与 Provider 路由
 
-模型治理控制面使用两张低频配置表：`mysql.taurusdb_ai_model_config` 描述“模型是什么、
-如何调用”；`mysql.taurusdb_ai_model_grant` 描述“哪个有效 MySQL 账号可调用哪个模型和
-能力”。调用审计使用独立高频事实表，见第 8 章。三类数据的读写频率和权限边界不同，
-不得合并。
+P0 模型治理控制面仅使用一张低频配置表 `mysql.taurusdb_ai_model_config`，描述“模型是
+什么、如何调用”。调用权限不再通过 tenant、账号或模型绑定表表达，而由 MySQL 动态权限
+`AI_INVOKE` 表达；调用审计写入受控的追加式日志文件，见第 8 章。这样模型配置、账号
+授权和审计日志保持清晰边界，且不依赖系统表写入，因此可在只读节点执行。
 
 `Id` 是内部自增主键；客户 SQL 使用可读且稳定的 `model_name`，不依赖该数值 ID。P0
 不在 AI 控制面引入独立 `tenant_id`：若业务表需要多租户隔离，仍由业务 schema、行级
@@ -438,6 +440,7 @@ CREATE TABLE mysql.taurusdb_ai_model_config (
   generation_defaults JSON NULL,
   generation_limits JSON NULL,
   is_builtin BOOLEAN NOT NULL DEFAULT TRUE,
+  is_default BOOLEAN NOT NULL DEFAULT FALSE,
   status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
   config_version BIGINT NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -445,18 +448,6 @@ CREATE TABLE mysql.taurusdb_ai_model_config (
     ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (Id),
   UNIQUE KEY uq_ai_model_config (model_name, capability, config_version)
-);
-
-CREATE TABLE mysql.taurusdb_ai_model_grant (
-  account_user VARCHAR(32) NOT NULL,
-  account_host VARCHAR(255) NOT NULL,
-  model_name VARCHAR(255) NOT NULL,
-  capability VARCHAR(64) NOT NULL,
-  active BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (account_user, account_host, model_name, capability)
 );
 ```
 
@@ -496,9 +487,18 @@ CREATE TABLE mysql.taurusdb_ai_model_grant (
 - `status` 是配置生命周期状态（如 `ACTIVE`、`DISABLED`、`RETIRED`），不是实时可调用性。
   账号/Key 准入、模型下线、区域限制、超时和响应完整性写入调用审计，并在受控模型健康
   查询面呈现最近验证结果；不得因一次目录查询成功就把配置标记为可推理。
-- `alisql_ai_model_grant` 的授权粒度为有效 MySQL 账号 `user@host + model_name + capability`。
-  `AI_INVOKE`（或等价的专用 privilege）是调用 AI 的粗粒度门槛；模型授权表是细粒度
-  allowlist。二者均通过后才允许出站调用。
+- `AI_INVOKE` 是 P0 唯一的调用权限：有效 MySQL 账号 `user@host` 持有该动态权限后，可
+  调用全部 `ACTIVE` 的 P0 模型 Profile；P0 不提供按账号、模型或 capability 的二次
+  allowlist。无 `AI_INVOKE` 时必须在 Profile/网络解析前拒绝。
+- `is_default=TRUE` 定义实例级默认模型；每个 capability 至多一个 `ACTIVE` 默认 Profile。
+  客户 SQL 显式传入 `model_name` 时直接解析该 Profile；省略模型名时解析对应 capability
+  的实例级默认值，不再按 tenant 或账号选择默认模型。
+- `AI_ADMIN` 只用于受控的模型 Profile 管理路径；动态权限的授予和回收仍遵循 MySQL 的
+  `GRANT`/`REVOKE` 与 `WITH GRANT OPTION` 管理规则，不能因为拥有 `AI_ADMIN` 而隐式扩大
+  其他账号的权限。
+- `AI_AUDIT_VIEWER` 不作为 P0 的数据库内审计文件读取能力交付。删除系统表审计后，P0 不
+  提供可由普通 SQL 直接读取审计文件的 `AI_AUDIT_INFO()`；审计查看由 TaurusDB 日志平台
+  的访问控制负责。若后续提供受控审计查询服务，再定义该动态权限的查询语义。
 - 配置更新不得覆写会影响向量语义或协议契约的已发布版本。管理接口应创建新
   `config_version`，完成校验后原子发布；停用、下线和撤权必须使后续新调用立即拒绝，
   已开始调用继续按已解析版本完成并写审计。
@@ -843,54 +843,88 @@ SELECT AI_ANALYZE(
 
 ## 8. 审计与 Token 计量
 
-P0 每次 MaaS 调用至少记录逻辑事件。调用生命周期、Token 计量和成本对账的设计要求是：事实记录存放在受保护的
-内部调用表中，并通过 `INFORMATION_SCHEMA.TAURUSDB_AI_CALLS`、
-`INFORMATION_SCHEMA.TAURUSDB_AI_USAGE_HOURLY` 等只读查询面提供给授权用户；
-不能只依赖错误日志、进程内计数器或用户事务。
+### 8.1 P0 审计目标与日志 Sink
 
-建议字段：
+P0 使用追加式 **AI 审计日志文件**，而不是写入 `mysql` 系统表。这样主节点和只读节点
+均可记录调用事实，不依赖用户事务、复制链路或主节点转发。系统表审计是 AliSQL 原型的
+第一版实现，不是 TaurusDB P0 的目标方案。
+
+审计由仅全局的动态系统变量 `ai_invoke_audit` 控制：
 
 ```text
-request_id
-provider_request_id
-db_user
-business_tenant_id (optional；来自可信业务上下文时才记录)
-capability
-model_alias
-resolved_config_id
-resolved_config_version
-model_name
-provider_model_revision
-protocol_family
-model_config_version
-prompt_tokens
-completion_tokens
-reasoning_tokens
-cached_tokens
-total_tokens
-latency_ms
-http_status
-error_code
-sql_digest
-instance_id
-created_at
+默认值：ON
+作用域：GLOBAL；不提供 SESSION 变量
+修改权限：仅具备 TaurusDB 系统变量管理权限的管理员
+普通 AI 调用账号：即使拥有 AI_INVOKE，也不得关闭审计
 ```
 
-禁止记录：
+`ai_invoke_audit=ON` 时必须按本章记录两阶段事件；`OFF` 时后续新调用不写 AI 审计文件，
+但 AI 调用资格仍只由 `AI_INVOKE`、模型 Profile 状态和其他安全策略决定。开关只影响其变更完成
+之后开始的调用；一个已经写入 `STARTED` 的调用必须继续尝试写入终态，不能因中途关闭
+开关而形成无终态记录。
 
-- API Key。
-- Authorization header。
-- 完整 prompt。
-- 完整模型响应。
-- 未脱敏客户敏感字段。
+审计文件路径不得由普通 SQL 会话指定，须由实例启动配置或受保护的全局配置指定；文件
+权限、滚动、保留期、采集和磁盘容量告警复用 TaurusDB 日志运维机制。P0 不记录审计正文
+到 binlog，也不通过审计日志重放 AI 调用。
 
-事务语义：
+### 8.2 两阶段追加式事件
 
-- 出站前使用独立系统事务写入 `CREATED` 调用记录；起始记录不可写时 fail closed。
-- MaaS 调用已经发生后，即使用户事务 rollback，云侧也可能产生费用。
-- metering 不应依赖用户事务提交。
-- 调用完成状态通过独立审计路径更新，避免阻塞 OLTP 热路径；进程故障后未完成的
-  `DISPATCHED` 记录由恢复任务标记为 `UNKNOWN`，不得误报为未调用或未计费。
+一次出站调用使用不可复用的 `call_id`，产生以下事件：
+
+```text
+AI_CALL_STARTED
+  成功追加并安全落盘
+  -> 发起 MaaS HTTPS 请求
+  -> AI_CALL_SUCCEEDED | AI_CALL_FAILED | AI_CALL_UNKNOWN
+```
+
+1. `AI_CALL_STARTED` 在 MaaS 出站前写入，包含可追溯的最小事实。若文件不可写、磁盘满、
+   滚动失败或安全落盘失败，调用直接失败，且不得发起 MaaS 请求（fail closed）。
+2. 收到正常响应时追加 `AI_CALL_SUCCEEDED`；可归类的 provider/网络/协议失败追加
+   `AI_CALL_FAILED`。两者补充耗时、HTTP 状态、provider request ID 和 Token 用量。
+3. 若进程崩溃、节点切换或终态追加失败，已存在 `STARTED` 的 `call_id` 视为
+   `UNKNOWN`，不得误报为“未调用”或“未计费”。终态写入失败不能撤销已发生的云侧请求；
+   Runtime 向调用方返回可诊断的审计完成失败，并触发实例运维告警。
+
+MaaS 调用已经发生后，即使用户事务 rollback，云侧也可能产生费用；审计及 Token 计量
+不得依赖用户事务提交。
+
+### 8.3 事件字段与脱敏
+
+每个事件为单行结构化记录（推荐 JSON Lines），至少包含：
+
+```text
+timestamp
+event_type
+call_id
+instance_id
+node_role
+db_user / db_host
+client_ip
+capability
+model_name
+resolved_config_id / resolved_config_version
+provider_model_name / provider_model_revision (if available)
+endpoint_id_or_hash
+status
+latency_ms                         (terminal event)
+http_status / error_category       (terminal event when available)
+provider_request_id                (terminal event when available)
+prompt_tokens / completion_tokens / reasoning_tokens / cached_tokens / total_tokens
+```
+
+`business_tenant_id` 仅在平台提供可信业务上下文且允许记录时出现；它不是 AI 模型授权的
+基础字段。日志不得包含 API Key、credential reference、Authorization header、完整
+prompt、完整模型响应、原始 embedding 或未脱敏的 provider 错误正文。`endpoint_id_or_hash`
+用于关联批准的 Endpoint，不记录完整私有 Endpoint。
+
+### 8.4 只读节点与验收要求
+
+只读节点调用 AI 接口时，与主节点使用相同的本地 AI 审计日志 Sink，不写系统表。P0 验收
+至少覆盖：主/只读节点各一次成功调用、一次 provider 失败、一次 `STARTED` 写入失败；
+验证成功/失败均产生相应事件，且 `STARTED` 写入失败时 MaaS 请求数为零。验收还必须验证
+普通用户无法修改 `ai_invoke_audit`、不支持 `SET SESSION ai_invoke_audit`，以及日志文件
+中不存在密钥和请求正文。
 
 ## 9. 错误处理
 
@@ -899,7 +933,7 @@ P0 错误分类：
 | 类别 | 示例 | 处理 |
 |---|---|---|
 | 配置错误 | 缺少 API Key、无默认模型、endpoint 不在 allowlist | fail closed，返回明确错误 |
-| 准入或生命周期错误 | 服务未开通、账号准入拒绝、模型下线、区域或协议不支持 | 区分于数据库权限和输入错误，记录脱敏 provider code |
+| 准入或生命周期错误 | 服务未开通、模型下线、区域或协议不支持 | 区分于数据库权限和输入错误，记录脱敏 provider code |
 | 输入错误 | NULL、非法 JSON、参数个数/类型错误、超出输入大小 | 内置函数校验阶段返回明确错误 |
 | HTTP 错误 | 连接失败、timeout、non-2xx | 错误脱敏，记录 status/error code |
 | 响应错误 | JSON 解析失败、缺少 content、缺少 embedding、维度不匹配 | 返回明确错误，记录 provider request id |
@@ -921,17 +955,17 @@ P0 安全要求：
 - 生产禁用或限制普通用户 endpoint override。
 - API Key 不进入业务 SQL。
 - `AI_ANALYZE()` 文档必须说明哪些输入会发送到 MaaS。
-- `model_alias` 必须按 capability 和有效 DB 用户 `user@host` 授权；不能通过切换 alias 绕过数据
-  出境、成本或模型准入策略。
+- `model_alias` 必须解析为 `ACTIVE` 的、受 DBA 管理的 Profile；P0 的 `AI_INVOKE` 是实例级
+  调用权限，不能让普通用户借由 alias 指定任意 Endpoint、凭据或厂商私有参数。
 - RAG 样例必须包含 tenant/security/scalar filter。
 - DBA 诊断只读，不自动执行修复。
 - 默认 MTR 不访问外网。
 
 权限建议：
 
-- 执行 AI 函数应受 `EXECUTE` 权限或后续专门 AI privilege 控制。
+- 执行 AI 函数必须具有 `AI_INVOKE` 动态权限；普通函数 `EXECUTE` 权限不能替代它。
 - 共享实例中应有 per-user quota 和 rate limit hook；若产品提供可信业务 tenant 上下文，
-  可在不改变模型授权语义的前提下叠加 per-tenant 配额。
+  可在不改变 P0 调用授权语义的前提下叠加 per-tenant 配额。
 
 ## 11. 性能与容量边界
 
@@ -1034,7 +1068,9 @@ P0 HLD 通过后，建议拆分以下 Low Level Design 或实现任务：
      新旧空间双写/回填/切换策略。
 
 6. Audit/metering 低层设计
-   - usage 解析、日志或表结构、事务外写入策略、敏感字段脱敏。
+   - `ai_invoke_audit` 全局动态变量及权限注册、追加式 JSON Lines 文件 Sink、文件权限与
+     滚动、`STARTED` 安全落盘、终态事件、`UNKNOWN` 处置、usage 解析、敏感字段脱敏，
+     以及主/只读节点、日志不可写和节点切换的测试矩阵。
 
 7. RAG demo 低层设计
    - schema、HNSW 语法、tenant filter、source 引用、可重复执行脚本。
@@ -1105,45 +1141,48 @@ P0 HLD 通过后，建议拆分以下 Low Level Design 或实现任务：
 调用结束后更新状态；审计不可写时调用 fail closed。该行为避免已发生云侧调用却没有
 最小审计事实，但要求执行节点具备审计写入能力。
 
-**迁移风险。** 若 TaurusDB 只读节点禁止对系统表及内部元数据写入，当前
-`Ai_system_table_audit_sink` 无法在只读节点完成 `STARTED`/完成态写入，
-`AI_EMBEDDING()` 与 `AI_ANALYZE()` 会在外部 MaaS 请求前失败。不能依赖只读副本本地
-写表、用户事务复制或延迟复制来保证审计；它们无法稳定覆盖云侧费用和故障恢复语义。
+**目标方案。** TaurusDB 不再要求只读节点写系统表。`ai_invoke_audit=ON` 时，执行节点在
+MaaS 出站前向本地受控 AI 审计日志文件追加并安全落盘 `AI_CALL_STARTED`；返回后向同一
+文件追加终态。主节点和只读节点使用相同的日志协议，因此不依赖控制面 RPC、主节点转发、
+用户事务复制或延迟复制。
 
-**推荐目标方案。** 在 TaurusDB 控制面或主节点提供独立的审计写入服务：
+**失败语义。** 只读节点的 `STARTED` 追加失败时 fail closed，MaaS 请求数必须为零。已
+出站调用的终态追加失败时，保留可追溯的 `STARTED`，以 `call_id` 标记为 `UNKNOWN` 并产生
+运维告警；不得将其视为未调用。审计文件不得记录 API Key、Authorization header、完整
+prompt、完整响应或原始 embedding。
 
-1. 只读节点在 MaaS 出站前同步提交最小、脱敏的 `STARTED` 事件；写入不可用则 fail closed。
-2. MaaS 返回后以同一 `call_id` 更新 `SUCCEEDED`/`FAILED`、HTTP 状态、延时和 Token 用量；
-   完成态可异步重试，但不得覆盖起始事实。
-3. 该服务不得写入用户事务，不记录 API Key、Authorization header、完整 prompt 或原始响应。
-
-**待确认项。** TaurusDB 需要确认只读节点是否允许内部控制面 RPC、主节点转发或专用
-审计存储，并以主从切换、网络中断和完成态重试场景验证“不漏记、不过度泄漏、可追溯”。
+**上线前验证。** 需在主节点、只读节点、节点切换和日志文件不可写四类场景中验证两阶段
+事件、fail-closed 和 `UNKNOWN` 处置语义；同时确认日志采集、权限、滚动、保留与磁盘满告警
+符合 TaurusDB 运维规范。
 
 ### 15.4 AI 系统表数量与控制面简化
 
-**设计决策。** P0 的目标控制面不引入 AI 专用 `tenant_id` 映射。模型选择和访问控制
-以有效 MySQL 账号 `user@host` 为边界；业务多租户数据隔离继续由业务表、行级策略或
-可信业务上下文承担。这样避免“账号映射到 AI tenant，再由 tenant 映射到模型”的两级
-间接关系。
+**设计决策。** P0 的目标控制面不引入 AI 专用 `tenant_id`、账号到 tenant 映射或账号到
+模型绑定。模型选择是实例级的：有 `AI_INVOKE` 的有效 MySQL 账号 `user@host` 可调用全部
+`ACTIVE` 的 P0 模型；业务多租户数据隔离仍由业务表、行级策略或可信业务上下文承担，不能
+以 AI 调用权限替代数据访问控制。
 
-目标表模型为三张：
+P0 仅保留一张 AI 系统表：
 
-| 系统表 | 职责 | 合并结论 |
+| 系统表 | 职责 | P0 结论 |
 |---|---|---|
-| `mysql.taurusdb_ai_model_config` | 模型/Profile、版本、Endpoint、维度和凭据引用 | 不与授权或审计合并 |
-| `mysql.taurusdb_ai_model_grant` | `user@host -> model_name + capability` 的细粒度授权 | 独立保存多对多关系，便于撤权和后续配额 |
-| `mysql.taurusdb_ai_call_audit` | 独立调用生命周期、计量和故障追溯 | 不与任何配置表合并 |
+| `mysql.taurusdb_ai_model_config` | 模型/Profile、版本、Endpoint、维度、凭据引用和实例级默认模型 | 保留 |
 
-不得把可用用户列表直接存入 `mysql.taurusdb_ai_model_config`：一个模型可授权给多个账号，一个
-账号也可调用多个模型；字段内列表无法可靠支持撤权、查询、审计和后续限额。现有
-`mysql.alisql_ai_tenant_binding`、`mysql.alisql_ai_tenant_account` 是当前 AliSQL 原型的
-实现遗留，迁移至 TaurusDB 前应由 `mysql.taurusdb_ai_model_grant` 替换，并提供配置迁移和
-回退方案。
+权限记录复用 MySQL 既有 `mysql.global_grants`，其中 `AI_INVOKE` 决定账号能否调用 AI，
+`AI_ADMIN` 用于受控 Profile 管理；它们不是新增 AI 系统表。调用生命周期、计量和故障
+追溯写入第 8 章定义的 AI 审计日志文件，不使用 `mysql.taurusdb_ai_call_audit`，也不允许
+普通 SQL 修改或读取该日志文件。
 
-**后续边界。** 只有出现“同一 `user@host` 代表多个独立客户、各客户使用不同密钥、
-Endpoint、配额或成本归属”且平台提供可信 tenant 上下文时，才评估新增 tenant 维度；
-届时必须以平台原生上下文为权威来源，不能恢复手工账号到 tenant 的映射表。
+当前 AliSQL 原型中的 `mysql.alisql_ai_tenant_account`、
+`mysql.alisql_ai_tenant_binding` 和 `mysql.alisql_ai_call_audit` 是第一版实现遗留。TaurusDB
+实现新的 Model Resolver 和文件审计 Sink 后，先停止所有对这些表的读写、完成受控迁移与
+备份，再删除它们；不得在现有运行时仍依赖这些表时直接 `DROP TABLE`。模型配置可迁移为
+实例级 `ACTIVE` Profile；每种 capability 指定一个 `is_default=TRUE` 的默认 Profile。
+
+**后续边界。** 只有出现按账号/模型的最小权限、不同密钥或 Endpoint、配额/成本归属，
+或同一 `user@host` 代表多个独立客户等明确诉求时，才新增独立的 `user@host -> model`
+授权表或可信 tenant 上下文；不能恢复手工账号到 tenant 的两级映射。届时由新增表表达
+多对多关系，而不是将用户列表塞入 `model_config` 字段。
 
 ## 16. 协议兼容调研依据
 
