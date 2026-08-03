@@ -64,6 +64,11 @@ customer function is required.
 Authorization、完整 prompt、完整响应或原始 embedding。日志文件由 TaurusDB 日志平台管理，
 P0 不提供 `AI_AUDIT_INFO()` 或普通 SQL 文件读取。
 
+`ai_invoke_audit` 是仅 GLOBAL 的动态开关，默认 `ON`，只能由具备系统变量管理权限的管理员
+设置；不支持 `SET SESSION ai_invoke_audit`。`ai_invoke_audit_log_file` 是仅 GLOBAL 的只读启动
+变量，用 `--ai-invoke-audit-log-file=/path/to/file` 指定日志文件；未配置时使用
+`<datadir>/ai_invoke_audit.jsonl`。修改日志路径需要重启实例。
+
 ## 2. Enterprise-manual RAG
 
 Create a new corpus and new VECTOR INDEX whenever model revision, dimension,

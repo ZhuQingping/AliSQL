@@ -867,9 +867,18 @@ P0 使用追加式 **AI 审计日志文件**，而不是写入 `mysql` 系统表
 之后开始的调用；一个已经写入 `STARTED` 的调用必须继续尝试写入终态，不能因中途关闭
 开关而形成无终态记录。
 
-审计文件路径不得由普通 SQL 会话指定，须由实例启动配置或受保护的全局配置指定；文件
-权限、滚动、保留期、采集和磁盘容量告警复用 TaurusDB 日志运维机制。P0 不记录审计正文
-到 binlog，也不通过审计日志重放 AI 调用。
+审计文件由只读全局启动变量 `ai_invoke_audit_log_file` 指定：
+
+```text
+默认值：<datadir>/ai_invoke_audit.jsonl
+作用域：GLOBAL；只读，不支持 SET GLOBAL、SET PERSIST 或 SESSION 设置
+启动配置：--ai-invoke-audit-log-file=/path/to/ai_invoke_audit.jsonl
+用途：指定追加式 AI 审计日志文件的固定位置
+```
+
+该路径不得由普通 SQL 会话指定；变更路径必须修改实例启动配置并重启实例。文件权限、滚动、
+保留期、采集和磁盘容量告警复用 TaurusDB 日志运维机制。P0 不记录审计正文到 binlog，也不
+通过审计日志重放 AI 调用。
 
 ### 8.2 两阶段追加式事件
 
