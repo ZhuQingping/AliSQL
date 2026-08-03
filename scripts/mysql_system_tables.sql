@@ -581,87 +581,35 @@ INSERT IGNORE INTO engine_cost(engine_name, device_type, cost_name) VALUES
   ("default", 0, "memory_block_read_cost"),
   ("default", 0, "io_block_read_cost");
 
--- DB4AI MaaS protected configuration and redacted usage audit.
--- Credentials are stored only as keyring references in production. The
--- nullable plaintext column is for explicitly enabled development-only
--- deployments and is never exposed by DB4AI SQL functions.
-SET @cmd = "CREATE TABLE IF NOT EXISTS alisql_ai_model_config (
-  config_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  config_version BIGINT UNSIGNED NOT NULL,
-  model_name VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  capability ENUM('TEXT_EMBEDDING','TEXT_GENERATION') NOT NULL,
+-- DB4AI MaaS instance-level model Profiles. Invocation authorization uses
+-- dynamic privileges and telemetry uses a local append-only audit file; new
+-- instances deliberately do not create tenant mapping or audit tables.
+SET @cmd = "CREATE TABLE IF NOT EXISTS taurusdb_ai_model_config (
+  Id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  model_name VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   provider VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  capability ENUM('TEXT_EMBEDDING','TEXT_GENERATION') NOT NULL,
   provider_model_name VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  model_revision VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '',
-  endpoint_type ENUM('HTTPS_JSON') NOT NULL,
-  endpoint VARCHAR(1024) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  dimension INT UNSIGNED DEFAULT NULL,
-  embedding_space_id VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '',
-  distance_metric ENUM('COSINE','EUCLIDEAN') NOT NULL DEFAULT 'COSINE',
-  credential_kind ENUM('SECRET_REF','PLAINTEXT_DEV') NOT NULL DEFAULT 'SECRET_REF',
+  endpoint_url TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  auth_type VARCHAR(64) CHARACTER SET ascii NOT NULL DEFAULT 'BEARER_API_KEY',
+  credential_mode ENUM('SECRET_REF','PLAINTEXT_DEV','AWS_IAM_ROLE') NOT NULL DEFAULT 'SECRET_REF',
   credential_ref VARCHAR(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   api_key_plaintext BLOB DEFAULT NULL,
-  active BOOLEAN NOT NULL DEFAULT TRUE,
+  default_dimension INT UNSIGNED DEFAULT NULL,
+  allowed_dimensions JSON DEFAULT NULL,
+  model_revision VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+  generation_defaults JSON DEFAULT NULL,
+  generation_limits JSON DEFAULT NULL,
+  is_builtin BOOLEAN NOT NULL DEFAULT TRUE,
+  is_default BOOLEAN NOT NULL DEFAULT FALSE,
+  status ENUM('ACTIVE','DISABLED','RETIRED') NOT NULL DEFAULT 'ACTIVE',
+  config_version BIGINT UNSIGNED NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY(config_id),
-  UNIQUE KEY uq_ai_model_version(model_name, capability, config_version),
-  KEY ix_ai_model_active(model_name, capability, active))
-  DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC";
-SET @str = CONCAT(@cmd, " ENCRYPTION='", @is_mysql_encrypted, "'");
-PREPARE stmt FROM @str;
-EXECUTE stmt;
-DROP PREPARE stmt;
-
-SET @cmd = "CREATE TABLE IF NOT EXISTS alisql_ai_tenant_binding (
-  tenant_id BIGINT UNSIGNED NOT NULL,
-  model_name VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  capability ENUM('TEXT_EMBEDDING','TEXT_GENERATION') NOT NULL,
-  config_id BIGINT UNSIGNED NOT NULL,
-  active BOOLEAN NOT NULL DEFAULT TRUE,
-  PRIMARY KEY(tenant_id, model_name, capability),
-  KEY ix_ai_tenant_config(config_id))
-  DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC";
-SET @str = CONCAT(@cmd, " ENCRYPTION='", @is_mysql_encrypted, "'");
-PREPARE stmt FROM @str;
-EXECUTE stmt;
-DROP PREPARE stmt;
-
-SET @cmd = "CREATE TABLE IF NOT EXISTS alisql_ai_tenant_account (
-  account_user VARCHAR(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  account_host VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  tenant_id BIGINT UNSIGNED NOT NULL,
-  active BOOLEAN NOT NULL DEFAULT TRUE,
-  PRIMARY KEY(account_user, account_host),
-  KEY ix_ai_tenant_account(tenant_id, active))
-  DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC";
-SET @str = CONCAT(@cmd, " ENCRYPTION='", @is_mysql_encrypted, "'");
-PREPARE stmt FROM @str;
-EXECUTE stmt;
-DROP PREPARE stmt;
-
-SET @cmd = "CREATE TABLE IF NOT EXISTS alisql_ai_call_audit (
-  call_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  tenant_id BIGINT UNSIGNED NOT NULL,
-  config_id BIGINT UNSIGNED NOT NULL,
-  config_version BIGINT UNSIGNED NOT NULL,
-  capability ENUM('TEXT_EMBEDDING','TEXT_GENERATION') NOT NULL,
-  status ENUM('STARTED','SUCCEEDED','FAILED') NOT NULL,
-  error_code VARCHAR(64) CHARACTER SET ascii DEFAULT NULL,
-  provider_request_id VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
-  prompt_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
-  completion_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
-  reasoning_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
-  cached_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
-  total_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  completed_at TIMESTAMP NULL DEFAULT NULL,
-  latency_ms BIGINT UNSIGNED NOT NULL DEFAULT 0,
-  http_status INT UNSIGNED NOT NULL DEFAULT 0,
-  PRIMARY KEY(call_id),
-  KEY ix_ai_audit_tenant_created(tenant_id, created_at),
-  KEY ix_ai_audit_config_created(config_id, created_at),
-  KEY ix_ai_audit_status_created(status, created_at))
+  PRIMARY KEY(Id),
+  UNIQUE KEY uq_ai_model_config(model_name, capability, config_version),
+  KEY ix_ai_model_active(model_name, capability, status),
+  KEY ix_ai_model_default(capability, is_default, status))
   DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC";
 SET @str = CONCAT(@cmd, " ENCRYPTION='", @is_mysql_encrypted, "'");
 PREPARE stmt FROM @str;

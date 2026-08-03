@@ -47,17 +47,5 @@ class Item_func_ai_model_info final : public Item_str_func {
   const char *func_name() const override { return "ai_model_info"; }
 };
 
-class Item_func_ai_audit_info final : public Item_str_func {
-  String buffer;
- public:
-  Item_func_ai_audit_info(const POS &pos, PT_item_list *list)
-      : Item_str_func(pos, list) {}
-  explicit Item_func_ai_audit_info(const POS &pos) : Item_str_func(pos) {}
-  Item_func_ai_audit_info(const POS &pos, Item *a) : Item_str_func(pos, a) {}
-  bool resolve_type(THD *thd) override;
-  String *val_str(String *str) override;
-  const char *func_name() const override { return "ai_audit_info"; }
-};
-
 }  // namespace alisql::ai
 #endif

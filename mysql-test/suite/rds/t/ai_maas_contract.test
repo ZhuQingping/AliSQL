@@ -1,62 +1,45 @@
---echo # AI_EMBEDDING preserves NULL input without egress.
+--echo # AI functions preserve NULL input without model resolution or egress.
 SELECT AI_EMBEDDING(NULL);
 
---echo # Protected profiles are created by bootstrap and accept only metadata.
-INSERT INTO mysql.alisql_ai_model_config
-  (config_version, model_name, capability, provider, provider_model_name,
-   endpoint_type, endpoint, credential_kind, credential_ref, dimension, active)
+--echo # The instance control plane resolves an ACTIVE default Profile without tenant mappings.
+GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
+DELETE FROM mysql.taurusdb_ai_model_config
+ WHERE model_name IN ('mtr/fixture-embedding', 'mtr/fixture-chat',
+                      'mtr/contract-disabled', 'mtr/plaintext-probe');
+INSERT INTO mysql.taurusdb_ai_model_config
+  (model_name, provider, capability, provider_model_name, endpoint_url,
+   credential_mode, credential_ref, default_dimension, is_default, status)
 VALUES
-  (1, 'huawei/bge-m3', 'TEXT_EMBEDDING', 'huawei', 'bge-m3',
-   'HTTPS_JSON', 'https://maas.example.invalid/v1/embeddings',
-   'SECRET_REF', 'mtr/does-not-exist', 1024, TRUE);
-INSERT INTO mysql.alisql_ai_tenant_binding
-  (tenant_id, model_name, capability, config_id, active)
-VALUES (0, 'huawei/bge-m3', 'TEXT_EMBEDDING', LAST_INSERT_ID(), TRUE);
-SELECT config_version, dimension FROM mysql.alisql_ai_model_config
-  WHERE model_name = 'huawei/bge-m3';
+  ('mtr/fixture-embedding', 'mtr', 'TEXT_EMBEDDING', 'fixture-embedding',
+   'https://db4ai-mtr-fixture.invalid/v1/embeddings',
+   'SECRET_REF', 'mtr/not-read', 1024, TRUE, 'ACTIVE'),
+  ('mtr/fixture-chat', 'mtr', 'TEXT_GENERATION', 'fixture-chat',
+   'https://db4ai-mtr-fixture.invalid/v2/chat/completions',
+   'SECRET_REF', 'mtr/not-read', NULL, TRUE, 'ACTIVE'),
+  ('mtr/contract-disabled', 'mtr', 'TEXT_EMBEDDING', 'contract-disabled',
+   'https://db4ai-mtr-fixture.invalid/v1/embeddings',
+   'SECRET_REF', 'mtr/not-read', 1024, FALSE, 'DISABLED');
 
-INSERT INTO mysql.alisql_ai_model_config
-  (config_version, model_name, capability, provider, provider_model_name,
-   endpoint_type, endpoint, credential_kind, credential_ref, active)
-VALUES
-  (1, 'huawei/glm-5.2', 'TEXT_GENERATION', 'huawei', 'glm-5.2',
-   'HTTPS_JSON', 'https://maas.example.invalid/v2/chat/completions',
-   'SECRET_REF', 'mtr/does-not-exist', TRUE);
-INSERT INTO mysql.alisql_ai_tenant_binding
-  (tenant_id, model_name, capability, config_id, active)
-VALUES (0, 'huawei/glm-5.2', 'TEXT_GENERATION', LAST_INSERT_ID(), TRUE);
+GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
+SELECT VECTOR_DIM(AI_EMBEDDING('default profile')) AS default_dimension;
+SELECT AI_ANALYZE('Summarize only.', JSON_OBJECT('rows', 1)) AS default_analysis;
+SELECT JSON_UNQUOTE(JSON_EXTRACT(AI_MODEL_INFO(), '$.model_name'))
+  AS default_model;
 
---echo # The authenticated account selects its tenant Profile before global fallback.
-INSERT INTO mysql.alisql_ai_model_config
-  (config_version, model_name, capability, provider, provider_model_name,
-   endpoint_type, endpoint, credential_kind, credential_ref, dimension, active)
-VALUES
-  (2, 'huawei/bge-m3', 'TEXT_EMBEDDING', 'huawei', 'bge-m3',
-   'HTTPS_JSON', 'https://maas.example.invalid/v1/embeddings',
-   'SECRET_REF', 'mtr/does-not-exist', 512, TRUE);
-INSERT INTO mysql.alisql_ai_tenant_binding
-  (tenant_id, model_name, capability, config_id, active)
-VALUES (77, 'huawei/bge-m3', 'TEXT_EMBEDDING', LAST_INSERT_ID(), TRUE);
-INSERT INTO mysql.alisql_ai_tenant_account
-  (account_user, account_host, tenant_id, active)
-VALUES ('root', 'localhost', 77, TRUE);
+--echo # A disabled Profile is rejected locally before credentials or network access.
+--error ER_NOT_SUPPORTED_YET
+SELECT AI_EMBEDDING('disabled', 'mtr/contract-disabled', 1024);
 
---echo # Debug plaintext profiles resolve the exact active config before HTTP dispatch.
---disable_query_log
-INSERT INTO mysql.alisql_ai_model_config
-  (config_version, model_name, capability, provider, provider_model_name,
-   endpoint_type, endpoint, credential_kind, api_key_plaintext, dimension, active)
+--echo # Debug plaintext lookup uses the resolved Id and config_version before protocol rejection.
+INSERT INTO mysql.taurusdb_ai_model_config
+  (model_name, provider, capability, provider_model_name, endpoint_url,
+   credential_mode, api_key_plaintext, default_dimension, status)
 VALUES
-  (3, 'huawei/bge-m3', 'TEXT_EMBEDDING', 'huawei', 'bge-m3',
-   'HTTPS_JSON', 'https://maas.example.invalid/v1/not-embeddings',
-   'PLAINTEXT_DEV', UNHEX('00'), 1024, TRUE);
-INSERT INTO mysql.alisql_ai_tenant_binding
-  (tenant_id, model_name, capability, config_id, active)
-VALUES (78, 'huawei/bge-m3', 'TEXT_EMBEDDING', LAST_INSERT_ID(), TRUE);
-UPDATE mysql.alisql_ai_tenant_account
-   SET tenant_id = 78
- WHERE account_user = 'root' AND account_host = 'localhost';
---enable_query_log
+  ('mtr/plaintext-probe', 'huawei', 'TEXT_EMBEDDING', 'bge-m3',
+   'https://api.modelarts-maas.com/v1/not-embeddings',
+   'PLAINTEXT_DEV', UNHEX('00'), 1024, 'ACTIVE');
+--error ER_NOT_SUPPORTED_YET
+SELECT AI_EMBEDDING('plaintext-probe', 'mtr/plaintext-probe', 1024);
 
 --echo # Registered functions enforce their public arity.
 --error ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT
@@ -66,27 +49,7 @@ SELECT AI_ANALYZE('task');
 --error ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT
 SELECT AI_MODEL_INFO('a', 'b');
 
---echo # A non-NULL call cannot silently use an unconfigured profile.
-GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
-GRANT AI_AUDIT_VIEWER ON *.* TO 'root'@'localhost';
---error ER_NOT_SUPPORTED_YET
-SELECT AI_EMBEDDING('text');
---disable_query_log
-UPDATE mysql.alisql_ai_tenant_account
-   SET tenant_id = 77
- WHERE account_user = 'root' AND account_host = 'localhost';
---enable_query_log
---error ER_NOT_SUPPORTED_YET
-SELECT AI_EMBEDDING('text');
---error ER_NOT_SUPPORTED_YET
-SELECT AI_ANALYZE('summarize', 'text');
---error ER_NOT_SUPPORTED_YET
-SELECT AI_ANALYZE('summarize', 'text',
-                  JSON_OBJECT('model_name', 'huawei/glm-5.2',
-                              'mode', 'summarize', 'timeout_ms', 15000));
---echo # Every resolved invocation has a completed redacted audit record.
-SELECT tenant_id, config_id, capability, status, error_code,
-       completed_at IS NOT NULL AS completed, http_status
-  FROM mysql.alisql_ai_call_audit
- ORDER BY call_id;
-SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/bge-m3'), '$.dimension');
+DELETE FROM mysql.taurusdb_ai_model_config
+ WHERE model_name IN ('mtr/fixture-embedding', 'mtr/fixture-chat',
+                      'mtr/contract-disabled', 'mtr/plaintext-probe');
+--source include/have_binlog_format_mixed_or_row.inc

@@ -490,12 +490,16 @@ CREATE TABLE mysql.taurusdb_ai_model_config (
 - `AI_INVOKE` 是 P0 唯一的调用权限：有效 MySQL 账号 `user@host` 持有该动态权限后，可
   调用全部 `ACTIVE` 的 P0 模型 Profile；P0 不提供按账号、模型或 capability 的二次
   allowlist。无 `AI_INVOKE` 时必须在 Profile/网络解析前拒绝。
-- `is_default=TRUE` 定义实例级默认模型；每个 capability 至多一个 `ACTIVE` 默认 Profile。
-  客户 SQL 显式传入 `model_name` 时直接解析该 Profile；省略模型名时解析对应 capability
-  的实例级默认值，不再按 tenant 或账号选择默认模型。
-- `AI_ADMIN` 只用于受控的模型 Profile 管理路径；动态权限的授予和回收仍遵循 MySQL 的
-  `GRANT`/`REVOKE` 与 `WITH GRANT OPTION` 管理规则，不能因为拥有 `AI_ADMIN` 而隐式扩大
-  其他账号的权限。
+- `is_default=TRUE` 定义实例级默认模型。客户 SQL 显式传入 `model_name` 时直接解析该
+  Profile；省略模型名时在对应 capability 的 `ACTIVE` 默认 Profile 中选择最高
+  `config_version`。发布新默认版本后应取消旧版本的默认标记；同一版本出现多个默认 Profile
+  时调用拒绝，不再按 tenant 或账号选择模型。
+- `AI_ADMIN` 保护 `mysql.taurusdb_ai_model_config` 的 `INSERT`、`UPDATE`、`DELETE` 及
+  结构性写操作（如 `ALTER`、`DROP`）。
+  管理员通过正常 SQL DML 发布新 `config_version` 或停用 Profile，因此配置变更进入 binlog
+  并复制到备机；仅有表 DML 权限而没有 `AI_ADMIN` 的账号会被拒绝。动态权限的授予和回收仍
+  遵循 MySQL 的 `GRANT`/`REVOKE` 与 `WITH GRANT OPTION` 管理规则，不能因为拥有
+  `AI_ADMIN` 而隐式扩大其他账号的权限。
 - `AI_AUDIT_VIEWER` 不作为 P0 的数据库内审计文件读取能力交付。删除系统表审计后，P0 不
   提供可由普通 SQL 直接读取审计文件的 `AI_AUDIT_INFO()`；审计查看由 TaurusDB 日志平台
   的访问控制负责。若后续提供受控审计查询服务，再定义该动态权限的查询语义。

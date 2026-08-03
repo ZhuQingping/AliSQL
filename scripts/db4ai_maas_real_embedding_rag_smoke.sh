@@ -5,7 +5,7 @@
 # ai_maas_embedding.test and the STORED-generated-column case in
 # ai_maas_rag.test. It never reads, accepts, prints, or writes an API key.
 # The database must already contain the active model Profile, server-side
-# credential, tenant binding, and grants for the selected database account.
+# credential and AI_INVOKE grant for the selected database account.
 
 set -euo pipefail
 
@@ -109,12 +109,6 @@ SET transaction_isolation = 'READ-COMMITTED';
 SET @model_name = '${DB4AI_EMBEDDING_MODEL}';
 SET @expected_dimension = ${DB4AI_EXPECTED_EMBEDDING_DIMENSION};
 
-SELECT JSON_EXTRACT(AI_MODEL_INFO(@model_name), '$.config_id')
-  INTO @embedding_config_id;
-SELECT COUNT(*) INTO @calls_before
-  FROM mysql.alisql_ai_call_audit
- WHERE config_id = @embedding_config_id;
-
 SET @direct_embedding = AI_EMBEDDING(
   'AliSQL real provider embedding smoke probe', @model_name, @expected_dimension);
 SELECT VECTOR_DIM(@direct_embedding) AS direct_dimension,
@@ -170,14 +164,9 @@ SELECT id INTO @top_id
 SELECT @top_id AS rag_top_id,
        @stored_dimension_rows AS stored_dimension_rows;
 
-SELECT COUNT(*) - @calls_before AS embedding_call_delta
-  FROM mysql.alisql_ai_call_audit
- WHERE config_id = @embedding_config_id;
 SELECT IF(VECTOR_DIM(@direct_embedding) = @expected_dimension
               AND @stored_dimension_rows = 4
-              AND @top_id = ${expected_top_id}
-              AND (SELECT COUNT(*) FROM mysql.alisql_ai_call_audit
-                    WHERE config_id = @embedding_config_id) - @calls_before = 7,
+              AND @top_id = ${expected_top_id},
           'PASS', 'FAIL');
 SQL
 )"

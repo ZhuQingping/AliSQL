@@ -19,6 +19,11 @@ struct Ai_audit_record {
   Ai_error error{Ai_error::k_ok};
   Ai_usage usage;
   std::string provider_request_id;
+  std::string instance_id;
+  std::string account;
+  std::string client_ip;
+  std::string model_name;
+  std::string endpoint_fingerprint;
   unsigned int http_status{0};
   uint64_t latency_ms{0};
 };
@@ -51,13 +56,7 @@ class Ai_memory_audit_sink final : public Ai_audit_sink {
   std::vector<Ai_audit_record> records_;
 };
 
-/** Writes redacted lifecycle telemetry in an independent system-table transaction. */
-class Ai_system_table_audit_sink final : public Ai_audit_sink {
- public:
-  Ai_error Start(THD *caller, const Ai_audit_record &record,
-                 uint64_t *call_id) override;
-  Ai_error Complete(THD *caller, uint64_t call_id,
-                    const Ai_audit_record &record) override;
-};
+/** Return the process-wide file sink when global AI audit is enabled. */
+Ai_audit_sink *Get_ai_invoke_audit_sink();
 }  // namespace alisql::ai
 #endif

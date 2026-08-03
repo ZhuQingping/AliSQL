@@ -2,24 +2,19 @@
 
 SET GLOBAL vidx_disabled = OFF;
 SET transaction_isolation = 'READ-COMMITTED';
-GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
+GRANT AI_INVOKE, AI_ADMIN ON *.* TO 'root'@'localhost';
 
 --echo # Debug-only fixture Profiles never contact a provider or read a secret.
-INSERT INTO mysql.alisql_ai_model_config
-  (config_version, model_name, capability, provider, provider_model_name,
-   endpoint_type, endpoint, credential_kind, credential_ref, dimension, active)
+INSERT INTO mysql.taurusdb_ai_model_config
+  (model_name, provider, capability, provider_model_name, endpoint_url,
+   credential_mode, credential_ref, default_dimension, status)
 VALUES
-  (1, 'mtr/fixture-embedding', 'TEXT_EMBEDDING', 'mtr', 'fixture-embedding',
-   'HTTPS_JSON', 'https://db4ai-mtr-fixture.invalid/v1/embeddings',
-   'SECRET_REF', 'mtr/not-read', 1024, TRUE),
-  (1, 'mtr/fixture-chat', 'TEXT_GENERATION', 'mtr', 'fixture-chat',
-   'HTTPS_JSON', 'https://db4ai-mtr-fixture.invalid/v2/chat/completions',
-   'SECRET_REF', 'mtr/not-read', NULL, TRUE);
-INSERT INTO mysql.alisql_ai_tenant_binding
-  (tenant_id, model_name, capability, config_id, active)
-SELECT 0, model_name, capability, config_id, TRUE
-  FROM mysql.alisql_ai_model_config
- WHERE model_name LIKE 'mtr/fixture-%';
+  ('mtr/fixture-embedding', 'mtr', 'TEXT_EMBEDDING', 'fixture-embedding',
+   'https://db4ai-mtr-fixture.invalid/v1/embeddings',
+   'SECRET_REF', 'mtr/not-read', 1024, 'ACTIVE'),
+  ('mtr/fixture-chat', 'mtr', 'TEXT_GENERATION', 'fixture-chat',
+   'https://db4ai-mtr-fixture.invalid/v2/chat/completions',
+   'SECRET_REF', 'mtr/not-read', NULL, 'ACTIVE');
 
 CREATE TABLE rag_manual_chunk (
   tenant_id BIGINT UNSIGNED NOT NULL,
@@ -76,12 +71,6 @@ VALUES
    'mtr/fixture-embedding', 2, 'mtr/fixture/other');
 
 --echo # STORED generated vectors synchronously embed document writes and updates.
-SELECT config_id INTO @rag_fixture_embedding_config_id
-  FROM mysql.alisql_ai_model_config
- WHERE model_name = 'mtr/fixture-embedding';
-SELECT COUNT(*) INTO @rag_fixture_embedding_calls_before
-  FROM mysql.alisql_ai_call_audit
- WHERE config_id = @rag_fixture_embedding_config_id;
 
 CREATE TABLE knowledge_base (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -101,22 +90,13 @@ INSERT INTO knowledge_base (doc) VALUES
 SELECT id, VECTOR_DIM(vec) AS dimension
   FROM knowledge_base
  ORDER BY id;
-SELECT COUNT(*) - @rag_fixture_embedding_calls_before AS generated_embedding_calls
-  FROM mysql.alisql_ai_call_audit
- WHERE config_id = @rag_fixture_embedding_config_id;
 
 UPDATE knowledge_base
    SET doc = 'Read replicas offload pressure from the primary database node.'
  WHERE id = 3;
-SELECT COUNT(*) - @rag_fixture_embedding_calls_before AS generated_embedding_calls
-  FROM mysql.alisql_ai_call_audit
- WHERE config_id = @rag_fixture_embedding_config_id;
 SET @rag_original_binlog_row_image = @@SESSION.binlog_row_image;
 SET SESSION binlog_row_image = 'MINIMAL';
 UPDATE knowledge_base SET category = 'operations' WHERE id = 3;
-SELECT COUNT(*) - @rag_fixture_embedding_calls_before AS generated_embedding_calls
-  FROM mysql.alisql_ai_call_audit
- WHERE config_id = @rag_fixture_embedding_config_id;
 
 SET @knowledge_query = AI_EMBEDDING(
   'How can read traffic be offloaded?', 'mtr/fixture-embedding', 1024);
@@ -142,6 +122,5 @@ SELECT JSON_ARRAYAGG(JSON_OBJECT('source_id', source_id, 'chunk_id', chunk_id))
  WHERE tenant_id = 42 AND source_id = 'manual-42';
 
 DROP TABLE rag_manual_chunk;
-DELETE FROM mysql.alisql_ai_tenant_binding WHERE model_name IN ('mtr/fixture-embedding', 'mtr/fixture-chat');
-DELETE FROM mysql.alisql_ai_model_config WHERE model_name IN ('mtr/fixture-embedding', 'mtr/fixture-chat');
+DELETE FROM mysql.taurusdb_ai_model_config WHERE model_name IN ('mtr/fixture-embedding', 'mtr/fixture-chat');
 SET GLOBAL vidx_disabled = ON;

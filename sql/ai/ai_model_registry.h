@@ -16,12 +16,16 @@ namespace alisql::ai {
 
 /** A non-secret projection of one protected model configuration row. */
 struct Ai_model_profile {
+  // tenant_id is retained in the in-memory type for source compatibility with
+  // existing offline tests. Production resolution is instance scoped and
+  // never reads an account or tenant mapping.
   uint64_t tenant_id{0};
   uint64_t config_id{0};
   uint64_t config_version{0};
   uint32_t dimension{0};
   Ai_capability capability{Ai_capability::k_text_generation};
   bool active{false};
+  bool is_default{false};
   std::string model_name;
   std::string provider;
   std::string provider_model_name;
@@ -64,9 +68,6 @@ class Ai_model_registry {
   /** Production entry point. Database-backed resolution is fail-closed. */
   Ai_error Resolve(THD *thd, std::string_view model_name,
                    Ai_capability capability, Ai_resolved_model *out) const;
-  /** Return the caller's effective DB4AI tenant without exposing credentials. */
-  Ai_error ResolveTenant(THD *thd, uint64_t *tenant_id) const;
-
   /** Test seam used by offline unit and MTR fixtures. */
   void AddProfileForTest(const Ai_model_profile &profile);
   Ai_error ResolveForTest(uint64_t tenant_id, std::string_view model_name,
@@ -76,10 +77,10 @@ class Ai_model_registry {
                              uint32_t requested_dimension) const;
 
  private:
- Ai_error ResolveProfiles(uint64_t tenant_id, std::string_view model_name,
-                          Ai_capability capability,
-                          const std::vector<Ai_model_profile> &profiles,
-                          Ai_resolved_model *out) const;
+  Ai_error ResolveProfiles(uint64_t tenant_id, std::string_view model_name,
+                           Ai_capability capability,
+                           const std::vector<Ai_model_profile> &profiles,
+                           Ai_resolved_model *out) const;
   Ai_error LoadProfiles(THD *thd, std::vector<Ai_model_profile> *profiles) const;
   std::vector<Ai_model_profile> test_profiles_;
 };

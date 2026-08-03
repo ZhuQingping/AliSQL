@@ -2,8 +2,8 @@
 # Copyright (c) 2026, Alibaba and/or its affiliates. All rights reserved.
 #
 # Explicit opt-in Huawei MaaS smoke check. This script never accepts or prints
-# an API key. The selected logical models must already be bound to the target
-# tenant and their server-side credentials must be available. It is
+# an API key. The selected logical models must be ACTIVE instance Profiles and
+# their server-side credentials must be available. It is
 # intentionally not called by MTR or CI.
 
 set -euo pipefail

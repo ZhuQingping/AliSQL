@@ -10,31 +10,19 @@ AliSQL 分支已经具备的内置函数、VECTOR 索引和离线验证；生产
 endpoint、API Key、provider JSON、厂商模型 ID 或 Adapter 名称。
 
 ```sql
--- 由 AI_ADMIN 管理员执行；credential_ref 是已有 keyring 中的名称，不是明文 key。
-INSERT INTO mysql.alisql_ai_model_config
-  (config_version, model_name, capability, provider, provider_model_name,
-   model_revision, endpoint_type, endpoint, dimension,
-   embedding_space_id, distance_metric, credential_kind, credential_ref, active)
+-- AI_ADMIN 管理员使用正常 DML 发布 Profile；credential_ref 是 keyring 名称，不是明文 key。
+-- 正常 DML 会写入 binlog 并复制到备机。
+INSERT INTO mysql.taurusdb_ai_model_config
+  (model_name, provider, capability, provider_model_name, endpoint_url,
+   credential_mode, credential_ref, default_dimension, is_default, status,
+   config_version)
 VALUES
-  (1, 'huawei/bge-m3', 'TEXT_EMBEDDING', 'huawei', 'bge-m3',
-   'current', 'HTTPS_JSON', 'https://<approved-maas-host>/v1/embeddings', 1024,
-   'huawei/bge-m3/current/1024/cosine', 'COSINE',
-   'SECRET_REF', 'prod/huawei-maas/token', TRUE),
-  (1, 'huawei/glm-5.2', 'TEXT_GENERATION', 'huawei', 'glm-5.2',
-   'current', 'HTTPS_JSON', 'https://<approved-maas-host>/v2/chat/completions', NULL,
-   '', 'COSINE', 'SECRET_REF', 'prod/huawei-maas/token', TRUE);
-
-INSERT INTO mysql.alisql_ai_tenant_binding
-  (tenant_id, model_name, capability, config_id, active)
-SELECT 42, model_name, capability, config_id, TRUE
-  FROM mysql.alisql_ai_model_config
- WHERE config_version = 1;
-
--- Authentication identity is resolved by the server; applications cannot
--- supply or override tenant_id in either AI function.
-INSERT INTO mysql.alisql_ai_tenant_account
-  (account_user, account_host, tenant_id, active)
-VALUES ('rag_app', '%', 42, TRUE);
+  ('huawei/bge-m3', 'huawei', 'TEXT_EMBEDDING', 'bge-m3',
+   'https://api.modelarts-maas.com/v1/embeddings',
+   'SECRET_REF', 'prod/huawei-maas/token', 1024, true, 'ACTIVE', 1),
+  ('huawei/glm-5.2', 'huawei', 'TEXT_GENERATION', 'glm-5.2',
+   'https://api.modelarts-maas.com/v2/chat/completions',
+   'SECRET_REF', 'prod/huawei-maas/token', NULL, true, 'ACTIVE', 1);
 
 GRANT AI_INVOKE ON *.* TO 'rag_app'@'%';
 ```
@@ -46,8 +34,8 @@ fixtures. `PLAINTEXT_DEV` is not a production configuration path.
 
 ### Debug-only 明文凭据
 
-本地 Debug 构建可在受控的 `mysql.alisql_ai_model_config` 行中使用
-`credential_kind='PLAINTEXT_DEV'` 和 `api_key_plaintext` 做短期联调。该路径仍不向
+本地 Debug 构建可由具备 `AI_ADMIN` 和表 DML 权限的管理员使用
+`credential_mode='PLAINTEXT_DEV'` 和 `api_key_plaintext` 做短期联调。该路径仍不向
 `AI_EMBEDDING`、`AI_ANALYZE`、`AI_MODEL_INFO` 添加任何密钥参数或输出：runtime 只按
 已解析 Profile 的 config id/version 在 dispatch 前读取该字段，值仅存在于短生命周期的
 内存 `Secure_string`。Release 构建拒绝 `PLAINTEXT_DEV`，生产必须使用 `SECRET_REF`。
@@ -55,13 +43,11 @@ fixtures. `PLAINTEXT_DEV` is not a production configuration path.
 不要把明文值写进 SQL 历史、general log、slow log、支持包、MTR fixture、文档、shell
 history 或 Git。Debug 配置必须使用 Huawei 的 embedding
 `/v1/embeddings` 与 V2 Chat `/v2/chat/completions` 路径；当前生成逻辑模型为
-`huawei/glm-5.2`。完成联调后立即删除临时 Profile、tenant binding 和账号映射。
+`huawei/glm-5.2`。完成联调后立即用
+`UPDATE mysql.taurusdb_ai_model_config SET status='DISABLED' ...` 停用临时 Profile。
 
-The resolver uses the authenticated MySQL `user@host` identity to look up
-`alisql_ai_tenant_account`, then resolves the matching tenant Profile. An
-account with no mapping can use only a deliberately configured tenant `0`
-global fallback. It cannot select a tenant through session variables or SQL
-function arguments.
+Profile 是实例级配置。拥有 `AI_INVOKE` 的有效 MySQL 账号可调用全部 `ACTIVE`
+Profile；业务数据的 tenant 过滤仍由业务 SQL 负责，不能通过 AI 函数参数绕过。
 
 Current P0 supports Huawei HTTPS JSON profiles. The runtime resolves a
 profile by capability and logical model, freezes its `config_id` and
@@ -70,23 +56,13 @@ dimensions. Future providers (Bailian OpenAI-compatible/DashScope, Bedrock
 Converse/Invoke and Ark Chat/Responses) add Adapter/Profile support; no new
 customer function is required.
 
-### 审计查询
+### 审计日志
 
-每次已解析 Profile 的调用会在读取凭据和 HTTP egress 之前创建一条
-`mysql.alisql_ai_call_audit` 记录，并在独立事务中更新为 `SUCCEEDED` 或 `FAILED`。
-审计数据不包含 API key、credential ref、endpoint、prompt、task、原始响应或完整
-embedding。`AI_AUDIT_VIEWER` 只能读取自身 tenant；`AI_ADMIN` 可读取跨 tenant 的相同
-脱敏投影。
-
-```sql
-GRANT AI_AUDIT_VIEWER ON *.* TO 'rag_app'@'%';
-SELECT AI_AUDIT_INFO(20);
-```
-
-`AI_AUDIT_INFO([limit])` 的 `limit` 为 1–100（默认 100）。每个 JSON 项只包含
-call/config/version/tenant、capability、status、有限错误码、provider request id、token
-usage、created/completed time、latency 和 HTTP status。它不是系统表 DML 权限；业务账号
-不应被授予对 `mysql.alisql_ai_call_audit` 的直接写权限。
+当全局 `ai_invoke_audit=ON`（默认）时，每个已解析 Profile 的调用会在 MaaS 出站前向
+受控本地文件写入并安全落盘 `AI_CALL_STARTED`；返回后追加成功或失败终态。日志包含调用时间、
+账号、客户端 IP、模型、配置版本、耗时、Token 用量和脱敏错误分类；不包含 API Key、
+Authorization、完整 prompt、完整响应或原始 embedding。日志文件由 TaurusDB 日志平台管理，
+P0 不提供 `AI_AUDIT_INFO()` 或普通 SQL 文件读取。
 
 ## 2. Enterprise-manual RAG
 
@@ -228,11 +204,9 @@ increasing concurrency.
 | Multi-cloud evolution | Profile/version plus canonical request/response and Adapter boundary | AliSQL design advantage; provider additions need Adapter tests. |
 | Vector/RAG governance | Native VECTOR and VECTOR INDEX; SQL retains tenant/scalar filters and sources | Demonstrated by the schema/query above; benchmark comparison remains future work. |
 | Data egress and errors | `AI_INVOKE`, keyring `SECRET_REF`, endpoint allow-list, redacted failures | No external PolarDB validation was run in this branch. |
-| Audit/operations | Independent persistent lifecycle audit plus tenant-scoped `AI_AUDIT_INFO` metadata | Persistent retry/retention policy and operator dashboards remain future work. |
+| Audit/operations | 两阶段、脱敏的受控审计文件；主备节点均可写入 | 日志采集、保留、告警与运维平台展示由 TaurusDB 日志平台提供。 |
 
-The remaining implementation work is intentionally visible: authenticated
-account-to-tenant resolution is implemented, with tenant `0` retained only as
-an explicit global fallback. AI_ADMIN Profile management surfaces and generic,
-Profile-driven embedding-space metadata enforcement remain before a
-production-complete P0 declaration. Offline RAG/analysis/diagnosis evidence is
-now covered by `rds.ai_maas_rag` and `rds.ai_maas_analysis`.
+当前 P0 使用实例级 Profile 和 `AI_INVOKE`，不提供账号到模型的细粒度授权。
+`AI_ADMIN` 负责受控 Profile 发布与停用；Profile 驱动的 embedding-space 元数据强制、
+多 Provider Adapter 和异步批量任务属于后续工作。离线 RAG/分析/诊断证据由
+`rds.ai_maas_rag` 与 `rds.ai_maas_analysis` 覆盖。

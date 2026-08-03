@@ -3,10 +3,15 @@
 #include "sql/ai/ai_runtime.h"
 
 #include <chrono>
+#include <iomanip>
+#include <sstream>
 
 #include "sql/ai/ai_huawei_maas_adapter.h"
 #include "sql/ai/ai_model_registry.h"
 #include "sql/ai/ai_vector_codec.h"
+#include "sql/auth/sql_security_ctx.h"
+#include "sql/mysqld.h"
+#include "sql/sql_class.h"
 
 namespace alisql::ai {
 namespace {
@@ -54,13 +59,35 @@ void ExecuteOfflineMtrChat(std::string_view mode,
 }
 #endif
 
-Ai_audit_record NewAuditRecord(const Ai_resolved_model &model,
+std::string EndpointFingerprint(const std::string &endpoint) {
+  // An opaque, stable correlation value. It deliberately avoids writing the
+  // configured URL or query string into the audit file.
+  uint64_t hash = 1469598103934665603ULL;
+  for (const char byte : endpoint) {
+    hash ^= static_cast<unsigned char>(byte);
+    hash *= 1099511628211ULL;
+  }
+  std::ostringstream result;
+  result << std::hex << std::setfill('0') << std::setw(16) << hash;
+  return result.str();
+}
+
+Ai_audit_record NewAuditRecord(THD *thd, const Ai_resolved_model &model,
                                Ai_capability capability) {
   Ai_audit_record record;
   record.tenant_id = model.tenant_id;
   record.config_id = model.config_id;
   record.config_version = model.config_version;
   record.capability = capability;
+  record.instance_id = server_uuid;
+  record.model_name = model.model_name;
+  record.endpoint_fingerprint = EndpointFingerprint(model.endpoint);
+  if (thd != nullptr && thd->security_context() != nullptr) {
+    const LEX_CSTRING account = thd->security_context()->priv_user();
+    const LEX_CSTRING client_ip = thd->security_context()->ip();
+    record.account.assign(account.str, account.length);
+    record.client_ip.assign(client_ip.str, client_ip.length);
+  }
   return record;
 }
 
@@ -71,7 +98,7 @@ Ai_error StartInvocation(THD *thd, Ai_audit_sink *sink,
   *call_id = 0;
   if (sink == nullptr) return Ai_error::k_ok;
   const Ai_error result =
-      sink->Start(thd, NewAuditRecord(model, capability), call_id);
+      sink->Start(thd, NewAuditRecord(thd, model, capability), call_id);
   return result == Ai_error::k_ok ? result : Ai_error::k_audit_unavailable;
 }
 
@@ -80,7 +107,7 @@ Ai_error CompleteInvocation(THD *thd, Ai_audit_sink *sink, uint64_t call_id,
                             Ai_capability capability,
                             const Ai_canonical_response *response,
                             uint64_t latency_ms, Ai_error result) {
-  Ai_audit_record record = NewAuditRecord(model, capability);
+  Ai_audit_record record = NewAuditRecord(thd, model, capability);
   record.status = result == Ai_error::k_ok ? Ai_audit_status::k_succeeded
                                             : Ai_audit_status::k_failed;
   record.error = result;
@@ -106,8 +133,7 @@ Ai_error Ai_runtime::Embed(THD *thd, const std::string &text,
   Ai_model_registry registry;
   Ai_resolved_model model;
   const Ai_error resolve = registry.Resolve(
-      thd, model_name.empty() ? "huawei/bge-m3" : model_name,
-      Ai_capability::k_text_embedding, &model);
+      thd, model_name, Ai_capability::k_text_embedding, &model);
   if (resolve != Ai_error::k_ok) return resolve;
 
   uint64_t call_id = 0;
@@ -179,8 +205,7 @@ Ai_error Ai_runtime::Analyze(THD *thd, const std::string &task,
   Ai_model_registry registry;
   Ai_resolved_model model;
   const Ai_error resolve = registry.Resolve(
-      thd, options.model_name.empty() ? "huawei/glm-5.2" : options.model_name,
-      Ai_capability::k_text_generation, &model);
+      thd, options.model_name, Ai_capability::k_text_generation, &model);
   if (resolve != Ai_error::k_ok) return resolve;
 
   uint64_t call_id = 0;

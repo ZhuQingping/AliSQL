@@ -8,12 +8,10 @@ namespace alisql::ai {
 
 namespace {
 
-Ai_model_profile MakeProfile(uint64_t tenant_id, const char *model_name,
-                             Ai_capability capability,
+Ai_model_profile MakeProfile(const char *model_name, Ai_capability capability,
                              uint64_t config_version) {
   Ai_model_profile profile;
-  profile.tenant_id = tenant_id;
-  profile.config_id = 100 + tenant_id;
+  profile.config_id = 100 + config_version;
   profile.config_version = config_version;
   profile.model_name = model_name;
   profile.capability = capability;
@@ -28,55 +26,99 @@ Ai_model_profile MakeProfile(uint64_t tenant_id, const char *model_name,
 
 }  // namespace
 
-TEST(AiModelRegistryTest, ResolvesActiveTenantProfileAndFreezesVersion) {
+TEST(AiModelRegistryTest, ResolvesActiveInstanceProfileAndFreezesVersion) {
   Ai_model_registry registry;
-  auto profile = MakeProfile(42, "huawei/bge-m3",
+  auto profile = MakeProfile("huawei/bge-m3",
                              Ai_capability::k_text_embedding, 7);
   registry.AddProfileForTest(profile);
   Ai_resolved_model out;
 
   EXPECT_EQ(Ai_error::k_ok,
-            registry.ResolveForTest(42, profile.model_name,
+            registry.ResolveForTest(0, profile.model_name,
                                     Ai_capability::k_text_embedding, &out));
   EXPECT_EQ(7U, out.config_version);
-  EXPECT_EQ(142U, out.config_id);
+  EXPECT_EQ(107U, out.config_id);
   EXPECT_EQ("huawei", out.provider);
 }
 
-TEST(AiModelRegistryTest, TenantProfileWinsOverDefaultProfile) {
+TEST(AiModelRegistryTest, ResolvesLatestActiveExplicitProfileVersion) {
   Ai_model_registry registry;
-  auto fallback = MakeProfile(0, "huawei/bge-m3",
-                              Ai_capability::k_text_embedding, 1);
-  fallback.config_id = 1;
-  auto tenant = MakeProfile(42, "huawei/bge-m3",
-                            Ai_capability::k_text_embedding, 9);
-  registry.AddProfileForTest(fallback);
-  registry.AddProfileForTest(tenant);
+  registry.AddProfileForTest(
+      MakeProfile("mtr/versioned", Ai_capability::k_text_embedding, 1));
+  registry.AddProfileForTest(
+      MakeProfile("mtr/versioned", Ai_capability::k_text_embedding, 2));
   Ai_resolved_model out;
 
   EXPECT_EQ(Ai_error::k_ok,
-            registry.ResolveForTest(42, "huawei/bge-m3",
+            registry.ResolveForTest(0, "mtr/versioned",
                                     Ai_capability::k_text_embedding, &out));
-  EXPECT_EQ(142U, out.config_id);
+  EXPECT_EQ(2U, out.config_version);
+}
+
+TEST(AiModelRegistryTest, ResolvesLatestActiveDefaultProfileVersion) {
+  Ai_model_registry registry;
+  auto first =
+      MakeProfile("mtr/default-v1", Ai_capability::k_text_embedding, 1);
+  auto second =
+      MakeProfile("mtr/default-v2", Ai_capability::k_text_embedding, 2);
+  first.is_default = true;
+  second.is_default = true;
+  registry.AddProfileForTest(first);
+  registry.AddProfileForTest(second);
+  Ai_resolved_model out;
+
+  EXPECT_EQ(Ai_error::k_ok,
+            registry.ResolveForTest(0, "", Ai_capability::k_text_embedding,
+                                    &out));
+  EXPECT_EQ(2U, out.config_version);
+}
+
+TEST(AiModelRegistryTest, ResolvesOnlyTheProfileMarkedAsDefault) {
+  Ai_model_registry registry;
+  auto profile = MakeProfile("huawei/bge-m3",
+                             Ai_capability::k_text_embedding, 9);
+  profile.is_default = true;
+  registry.AddProfileForTest(profile);
+  Ai_resolved_model out;
+
+  EXPECT_EQ(Ai_error::k_ok,
+            registry.ResolveForTest(0, "",
+                                    Ai_capability::k_text_embedding, &out));
+  EXPECT_EQ(109U, out.config_id);
   EXPECT_EQ(9U, out.config_version);
+}
+
+TEST(AiModelRegistryTest, RejectsAmbiguousDefaultProfiles) {
+  Ai_model_registry registry;
+  auto first = MakeProfile("mtr/first", Ai_capability::k_text_embedding, 1);
+  auto second = MakeProfile("mtr/second", Ai_capability::k_text_embedding, 1);
+  first.is_default = true;
+  second.is_default = true;
+  registry.AddProfileForTest(first);
+  registry.AddProfileForTest(second);
+  Ai_resolved_model out;
+
+  EXPECT_EQ(Ai_error::k_model_not_found,
+            registry.ResolveForTest(0, "", Ai_capability::k_text_embedding,
+                                    &out));
 }
 
 TEST(AiModelRegistryTest, DoesNotUseInactiveOrWrongCapabilityProfile) {
   Ai_model_registry registry;
-  auto inactive = MakeProfile(42, "huawei/bge-m3",
+  auto inactive = MakeProfile("huawei/bge-m3",
                               Ai_capability::k_text_embedding, 7);
   inactive.active = false;
   registry.AddProfileForTest(inactive);
   Ai_resolved_model out;
 
   EXPECT_NE(Ai_error::k_ok,
-            registry.ResolveForTest(42, inactive.model_name,
+            registry.ResolveForTest(0, inactive.model_name,
                                     Ai_capability::k_text_embedding, &out));
 }
 
 TEST(AiModelRegistryTest, RejectsBgeM3DimensionOtherThan1024) {
   Ai_model_registry registry;
-  auto profile = MakeProfile(42, "huawei/bge-m3",
+  auto profile = MakeProfile("huawei/bge-m3",
                              Ai_capability::k_text_embedding, 7);
 
   EXPECT_EQ(Ai_error::k_dimension_mismatch,
@@ -86,14 +128,14 @@ TEST(AiModelRegistryTest, RejectsBgeM3DimensionOtherThan1024) {
 
 TEST(AiModelRegistryTest, RejectsUnsupportedEndpointBeforeDispatch) {
   Ai_model_registry registry;
-  auto profile = MakeProfile(42, "huawei/bge-m3",
+  auto profile = MakeProfile("huawei/bge-m3",
                              Ai_capability::k_text_embedding, 7);
   profile.endpoint = "http://maas.example.invalid";
   registry.AddProfileForTest(profile);
   Ai_resolved_model out;
 
   EXPECT_EQ(Ai_error::k_model_not_found,
-            registry.ResolveForTest(42, profile.model_name,
+            registry.ResolveForTest(0, profile.model_name,
                                     Ai_capability::k_text_embedding, &out));
 }
 

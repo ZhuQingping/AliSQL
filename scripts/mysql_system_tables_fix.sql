@@ -1582,91 +1582,74 @@ ALTER TABLE mysql.columns_priv DROP PRIMARY KEY,
 ALTER TABLE mysql.procs_priv DROP PRIMARY KEY,
                               ADD PRIMARY KEY (`Host`,`User`,`Db`,`Routine_name`,`Routine_type`);
 
--- Add DB4AI MaaS system tables during an in-place upgrade. They intentionally
--- contain configuration metadata and redacted metering only; credentials are
--- referenced through the keyring.
-SET @cmd = "CREATE TABLE IF NOT EXISTS mysql.alisql_ai_model_config (
-  config_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  config_version BIGINT UNSIGNED NOT NULL,
-  model_name VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  capability ENUM('TEXT_EMBEDDING','TEXT_GENERATION') NOT NULL,
+-- Migrate DB4AI to the instance-level control plane. Legacy tables are not
+-- dropped here: they are retained for backup and rollback until an explicit
+-- operational cleanup, but the new runtime does not read them.
+SET @cmd = "CREATE TABLE IF NOT EXISTS mysql.taurusdb_ai_model_config (
+  Id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  model_name VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   provider VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  capability ENUM('TEXT_EMBEDDING','TEXT_GENERATION') NOT NULL,
   provider_model_name VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  model_revision VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '',
-  endpoint_type ENUM('HTTPS_JSON') NOT NULL,
-  endpoint VARCHAR(1024) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  dimension INT UNSIGNED DEFAULT NULL,
-  embedding_space_id VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '',
-  distance_metric ENUM('COSINE','EUCLIDEAN') NOT NULL DEFAULT 'COSINE',
-  credential_kind ENUM('SECRET_REF','PLAINTEXT_DEV') NOT NULL DEFAULT 'SECRET_REF',
+  endpoint_url TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  auth_type VARCHAR(64) CHARACTER SET ascii NOT NULL DEFAULT 'BEARER_API_KEY',
+  credential_mode ENUM('SECRET_REF','PLAINTEXT_DEV','AWS_IAM_ROLE') NOT NULL DEFAULT 'SECRET_REF',
   credential_ref VARCHAR(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   api_key_plaintext BLOB DEFAULT NULL,
-  active BOOLEAN NOT NULL DEFAULT TRUE,
+  default_dimension INT UNSIGNED DEFAULT NULL,
+  allowed_dimensions JSON DEFAULT NULL,
+  model_revision VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+  generation_defaults JSON DEFAULT NULL,
+  generation_limits JSON DEFAULT NULL,
+  is_builtin BOOLEAN NOT NULL DEFAULT TRUE,
+  is_default BOOLEAN NOT NULL DEFAULT FALSE,
+  status ENUM('ACTIVE','DISABLED','RETIRED') NOT NULL DEFAULT 'ACTIVE',
+  config_version BIGINT UNSIGNED NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY(config_id), UNIQUE KEY uq_ai_model_version(model_name, capability, config_version),
-  KEY ix_ai_model_active(model_name, capability, active)) ENGINE=InnoDB
+  PRIMARY KEY(Id),
+  UNIQUE KEY uq_ai_model_config(model_name, capability, config_version),
+  KEY ix_ai_model_active(model_name, capability, status),
+  KEY ix_ai_model_default(capability, is_default, status)) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC";
 SET @str = CONCAT(@cmd, " ENCRYPTION='", @is_mysql_encrypted, "'");
 PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
 
-SET @cmd = "ALTER TABLE mysql.alisql_ai_model_config
-  ADD COLUMN IF NOT EXISTS embedding_space_id VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT '' AFTER dimension,
-  ADD COLUMN IF NOT EXISTS distance_metric ENUM('COSINE','EUCLIDEAN') NOT NULL DEFAULT 'COSINE' AFTER embedding_space_id";
-PREPARE stmt FROM @cmd;
-EXECUTE stmt;
-DROP PREPARE stmt;
-
-SET @cmd = "CREATE TABLE IF NOT EXISTS mysql.alisql_ai_tenant_binding (
-  tenant_id BIGINT UNSIGNED NOT NULL,
-  model_name VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  capability ENUM('TEXT_EMBEDDING','TEXT_GENERATION') NOT NULL,
-  config_id BIGINT UNSIGNED NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE,
-  PRIMARY KEY(tenant_id, model_name, capability), KEY ix_ai_tenant_config(config_id))
-  ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC";
-SET @str = CONCAT(@cmd, " ENCRYPTION='", @is_mysql_encrypted, "'");
+SET @has_legacy_ai_model_config =
+  (SELECT COUNT(*) FROM information_schema.tables
+   WHERE table_schema = 'mysql' AND table_name = 'alisql_ai_model_config');
+SET @cmd = "INSERT INTO mysql.taurusdb_ai_model_config
+  (model_name, provider, capability, provider_model_name, endpoint_url,
+   auth_type, credential_mode, credential_ref, api_key_plaintext,
+   default_dimension, model_revision, is_builtin, is_default, status,
+   config_version, created_at, updated_at)
+ SELECT legacy.model_name, legacy.provider, legacy.capability, legacy.provider_model_name,
+        endpoint, 'BEARER_API_KEY', credential_kind, credential_ref,
+        api_key_plaintext, dimension, model_revision, TRUE, FALSE,
+        IF(active, 'ACTIVE', 'DISABLED'), config_version, created_at, updated_at
+   FROM mysql.alisql_ai_model_config AS legacy
+  WHERE NOT EXISTS (
+    SELECT 1 FROM mysql.taurusdb_ai_model_config AS target
+     WHERE target.model_name = legacy.model_name
+       AND target.capability = legacy.capability
+       AND target.config_version = legacy.config_version)";
+SET @str = IF(@has_legacy_ai_model_config, @cmd, "SET @dummy = 0");
 PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
 
-SET @cmd = "CREATE TABLE IF NOT EXISTS mysql.alisql_ai_tenant_account (
-  account_user VARCHAR(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  account_host VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  tenant_id BIGINT UNSIGNED NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE,
-  PRIMARY KEY(account_user, account_host), KEY ix_ai_tenant_account(tenant_id, active))
-  ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC";
-SET @str = CONCAT(@cmd, " ENCRYPTION='", @is_mysql_encrypted, "'");
-PREPARE stmt FROM @str;
-EXECUTE stmt;
-DROP PREPARE stmt;
-
-SET @cmd = "CREATE TABLE IF NOT EXISTS mysql.alisql_ai_call_audit (
-  call_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, tenant_id BIGINT UNSIGNED NOT NULL,
-  config_id BIGINT UNSIGNED NOT NULL, config_version BIGINT UNSIGNED NOT NULL,
-  capability ENUM('TEXT_EMBEDDING','TEXT_GENERATION') NOT NULL,
-  status ENUM('STARTED','SUCCEEDED','FAILED') NOT NULL,
-  error_code VARCHAR(64) CHARACTER SET ascii DEFAULT NULL,
-  provider_request_id VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
-  prompt_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0, completion_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
-  reasoning_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0, cached_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
-  total_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  completed_at TIMESTAMP NULL DEFAULT NULL, latency_ms BIGINT UNSIGNED NOT NULL DEFAULT 0,
-  http_status INT UNSIGNED NOT NULL DEFAULT 0, PRIMARY KEY(call_id),
-  KEY ix_ai_audit_tenant_created(tenant_id, created_at),
-  KEY ix_ai_audit_config_created(config_id, created_at),
-  KEY ix_ai_audit_status_created(status, created_at)) ENGINE=InnoDB
-  DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC";
-SET @str = CONCAT(@cmd, " ENCRYPTION='", @is_mysql_encrypted, "'");
-PREPARE stmt FROM @str;
-EXECUTE stmt;
-DROP PREPARE stmt;
-
-ALTER TABLE mysql.alisql_ai_call_audit
-  ADD COLUMN IF NOT EXISTS latency_ms BIGINT UNSIGNED NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS http_status INT UNSIGNED NOT NULL DEFAULT 0,
-  ADD KEY IF NOT EXISTS ix_ai_audit_config_created(config_id, created_at),
-  ADD KEY IF NOT EXISTS ix_ai_audit_status_created(status, created_at);
+-- Give each capability an instance default only when exactly one ACTIVE
+-- migrated Profile exists. Multiple profiles require an administrator choice.
+UPDATE mysql.taurusdb_ai_model_config c
+JOIN (
+  SELECT capability, MIN(Id) AS Id
+    FROM mysql.taurusdb_ai_model_config
+   WHERE status = 'ACTIVE'
+   GROUP BY capability
+  HAVING COUNT(*) = 1
+) only_profile ON only_profile.Id = c.Id
+SET c.is_default = TRUE;
 
 SET @@session.sql_mode = @old_sql_mode;

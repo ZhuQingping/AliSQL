@@ -1,47 +1,49 @@
-# AI_EMBEDDING preserves NULL input without egress.
+# AI functions preserve NULL input without model resolution or egress.
 SELECT AI_EMBEDDING(NULL);
 AI_EMBEDDING(NULL)
 NULL
-# Protected profiles are created by bootstrap and accept only metadata.
-INSERT INTO mysql.alisql_ai_model_config
-(config_version, model_name, capability, provider, provider_model_name,
-endpoint_type, endpoint, credential_kind, credential_ref, dimension, active)
+# The instance control plane resolves an ACTIVE default Profile without tenant mappings.
+GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
+DELETE FROM mysql.taurusdb_ai_model_config
+WHERE model_name IN ('mtr/fixture-embedding', 'mtr/fixture-chat',
+'mtr/contract-disabled', 'mtr/plaintext-probe');
+INSERT INTO mysql.taurusdb_ai_model_config
+(model_name, provider, capability, provider_model_name, endpoint_url,
+credential_mode, credential_ref, default_dimension, is_default, status)
 VALUES
-(1, 'huawei/bge-m3', 'TEXT_EMBEDDING', 'huawei', 'bge-m3',
-'HTTPS_JSON', 'https://maas.example.invalid/v1/embeddings',
-'SECRET_REF', 'mtr/does-not-exist', 1024, TRUE);
-INSERT INTO mysql.alisql_ai_tenant_binding
-(tenant_id, model_name, capability, config_id, active)
-VALUES (0, 'huawei/bge-m3', 'TEXT_EMBEDDING', LAST_INSERT_ID(), TRUE);
-SELECT config_version, dimension FROM mysql.alisql_ai_model_config
-WHERE model_name = 'huawei/bge-m3';
-config_version	dimension
-1	1024
-INSERT INTO mysql.alisql_ai_model_config
-(config_version, model_name, capability, provider, provider_model_name,
-endpoint_type, endpoint, credential_kind, credential_ref, active)
+('mtr/fixture-embedding', 'mtr', 'TEXT_EMBEDDING', 'fixture-embedding',
+'https://db4ai-mtr-fixture.invalid/v1/embeddings',
+'SECRET_REF', 'mtr/not-read', 1024, TRUE, 'ACTIVE'),
+('mtr/fixture-chat', 'mtr', 'TEXT_GENERATION', 'fixture-chat',
+'https://db4ai-mtr-fixture.invalid/v2/chat/completions',
+'SECRET_REF', 'mtr/not-read', NULL, TRUE, 'ACTIVE'),
+('mtr/contract-disabled', 'mtr', 'TEXT_EMBEDDING', 'contract-disabled',
+'https://db4ai-mtr-fixture.invalid/v1/embeddings',
+'SECRET_REF', 'mtr/not-read', 1024, FALSE, 'DISABLED');
+GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
+SELECT VECTOR_DIM(AI_EMBEDDING('default profile')) AS default_dimension;
+default_dimension
+1024
+SELECT AI_ANALYZE('Summarize only.', JSON_OBJECT('rows', 1)) AS default_analysis;
+default_analysis
+offline analysis
+SELECT JSON_UNQUOTE(JSON_EXTRACT(AI_MODEL_INFO(), '$.model_name'))
+AS default_model;
+default_model
+mtr/fixture-embedding
+# A disabled Profile is rejected locally before credentials or network access.
+SELECT AI_EMBEDDING('disabled', 'mtr/contract-disabled', 1024);
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI model configuration was not found'
+# Debug plaintext lookup uses the resolved Id and config_version before protocol rejection.
+INSERT INTO mysql.taurusdb_ai_model_config
+(model_name, provider, capability, provider_model_name, endpoint_url,
+credential_mode, api_key_plaintext, default_dimension, status)
 VALUES
-(1, 'huawei/glm-5.2', 'TEXT_GENERATION', 'huawei', 'glm-5.2',
-'HTTPS_JSON', 'https://maas.example.invalid/v2/chat/completions',
-'SECRET_REF', 'mtr/does-not-exist', TRUE);
-INSERT INTO mysql.alisql_ai_tenant_binding
-(tenant_id, model_name, capability, config_id, active)
-VALUES (0, 'huawei/glm-5.2', 'TEXT_GENERATION', LAST_INSERT_ID(), TRUE);
-# The authenticated account selects its tenant Profile before global fallback.
-INSERT INTO mysql.alisql_ai_model_config
-(config_version, model_name, capability, provider, provider_model_name,
-endpoint_type, endpoint, credential_kind, credential_ref, dimension, active)
-VALUES
-(2, 'huawei/bge-m3', 'TEXT_EMBEDDING', 'huawei', 'bge-m3',
-'HTTPS_JSON', 'https://maas.example.invalid/v1/embeddings',
-'SECRET_REF', 'mtr/does-not-exist', 512, TRUE);
-INSERT INTO mysql.alisql_ai_tenant_binding
-(tenant_id, model_name, capability, config_id, active)
-VALUES (77, 'huawei/bge-m3', 'TEXT_EMBEDDING', LAST_INSERT_ID(), TRUE);
-INSERT INTO mysql.alisql_ai_tenant_account
-(account_user, account_host, tenant_id, active)
-VALUES ('root', 'localhost', 77, TRUE);
-# Debug plaintext profiles resolve the exact active config before HTTP dispatch.
+('mtr/plaintext-probe', 'huawei', 'TEXT_EMBEDDING', 'bge-m3',
+'https://api.modelarts-maas.com/v1/not-embeddings',
+'PLAINTEXT_DEV', UNHEX('00'), 1024, 'ACTIVE');
+SELECT AI_EMBEDDING('plaintext-probe', 'mtr/plaintext-probe', 1024);
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI model endpoint is incompatible with its capability'
 # Registered functions enforce their public arity.
 SELECT AI_EMBEDDING();
 ERROR 42000: Incorrect parameter count in the call to native function 'AI_EMBEDDING'
@@ -49,29 +51,6 @@ SELECT AI_ANALYZE('task');
 ERROR 42000: Incorrect parameter count in the call to native function 'AI_ANALYZE'
 SELECT AI_MODEL_INFO('a', 'b');
 ERROR 42000: Incorrect parameter count in the call to native function 'AI_MODEL_INFO'
-# A non-NULL call cannot silently use an unconfigured profile.
-GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
-GRANT AI_AUDIT_VIEWER ON *.* TO 'root'@'localhost';
-SELECT AI_EMBEDDING('text');
-ERROR 42000: This version of MySQL doesn't yet support 'DB4AI model endpoint is incompatible with its capability'
-SELECT AI_EMBEDDING('text');
-ERROR 42000: This version of MySQL doesn't yet support 'DB4AI embedding dimension is incompatible with the model'
-SELECT AI_ANALYZE('summarize', 'text');
-ERROR 42000: This version of MySQL doesn't yet support 'DB4AI credential is unavailable'
-SELECT AI_ANALYZE('summarize', 'text',
-JSON_OBJECT('model_name', 'huawei/glm-5.2',
-'mode', 'summarize', 'timeout_ms', 15000));
-ERROR 42000: This version of MySQL doesn't yet support 'DB4AI credential is unavailable'
-# Every resolved invocation has a completed redacted audit record.
-SELECT tenant_id, config_id, capability, status, error_code,
-completed_at IS NOT NULL AS completed, http_status
-FROM mysql.alisql_ai_call_audit
-ORDER BY call_id;
-tenant_id	config_id	capability	status	error_code	completed	http_status
-78	4	TEXT_EMBEDDING	FAILED	PROTOCOL_MISMATCH	1	0
-77	3	TEXT_EMBEDDING	FAILED	DIMENSION_MISMATCH	1	0
-77	2	TEXT_GENERATION	FAILED	CREDENTIAL_UNAVAILABLE	1	0
-77	2	TEXT_GENERATION	FAILED	CREDENTIAL_UNAVAILABLE	1	0
-SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/bge-m3'), '$.dimension');
-JSON_EXTRACT(AI_MODEL_INFO('huawei/bge-m3'), '$.dimension')
-512
+DELETE FROM mysql.taurusdb_ai_model_config
+WHERE model_name IN ('mtr/fixture-embedding', 'mtr/fixture-chat',
+'mtr/contract-disabled', 'mtr/plaintext-probe');

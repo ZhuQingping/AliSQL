@@ -2408,6 +2408,17 @@ static Sys_var_bool Sys_local_infile("local_infile",
                                      GLOBAL_VAR(opt_local_infile),
                                      CMD_LINE(OPT_ARG), DEFAULT(false));
 
+static Sys_var_bool Sys_ai_invoke_audit(
+    "ai_invoke_audit",
+    "Write two-stage AI invocation audit events to the protected audit file",
+    GLOBAL_VAR(opt_ai_invoke_audit), CMD_LINE(OPT_ARG), DEFAULT(true));
+
+static Sys_var_charptr Sys_ai_invoke_audit_log_file(
+    "ai_invoke_audit_log_file",
+    "Path of the protected AI invocation audit log file",
+    READ_ONLY NON_PERSIST GLOBAL_VAR(opt_ai_invoke_audit_log_file),
+    CMD_LINE(REQUIRED_ARG), IN_FS_CHARSET, DEFAULT(nullptr));
+
 static Sys_var_ulong Sys_lock_wait_timeout(
     "lock_wait_timeout",
     "Timeout in seconds to wait for a lock before returning an error.",

@@ -406,6 +406,8 @@ extern ulong connection_errors_internal;
 extern ulong connection_errors_peer_addr;
 extern char *opt_log_error_suppression_list;
 extern char *opt_log_error_services;
+extern bool opt_ai_invoke_audit;
+extern char *opt_ai_invoke_audit_log_file;
 extern char *opt_protocol_compression_algorithms;
 /** The size of the host_cache. */
 extern uint host_cache_size;

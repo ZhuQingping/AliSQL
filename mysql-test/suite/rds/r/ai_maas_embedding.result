@@ -1,31 +1,20 @@
 # AI_EMBEDDING offline fixture: setup is isolated and never reads a credential or performs HTTP.
+GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
 CREATE USER 'ai_embedding_tester'@'localhost';
 GRANT AI_INVOKE ON *.* TO 'ai_embedding_tester'@'localhost';
-GRANT AI_AUDIT_VIEWER ON *.* TO 'ai_embedding_tester'@'localhost';
-INSERT INTO mysql.alisql_ai_model_config
-(config_version, model_name, capability, provider, provider_model_name,
-endpoint_type, endpoint, credential_kind, credential_ref, dimension,
-embedding_space_id, distance_metric, active)
+INSERT INTO mysql.taurusdb_ai_model_config
+(model_name, provider, capability, provider_model_name, endpoint_url,
+credential_mode, credential_ref, default_dimension, status)
 VALUES
-(1, 'mtr/fixture-embedding', 'TEXT_EMBEDDING', 'mtr', 'fixture-embedding',
-'HTTPS_JSON', 'https://db4ai-mtr-fixture.invalid/v1/embeddings',
-'SECRET_REF', 'mtr/not-read', 1024,
-'mtr/fixture-embedding/current/1024/cosine', 'COSINE', TRUE);
+('mtr/fixture-embedding', 'mtr', 'TEXT_EMBEDDING', 'fixture-embedding',
+'https://db4ai-mtr-fixture.invalid/v1/embeddings',
+'SECRET_REF', 'mtr/not-read', 1024, 'ACTIVE');
 SET @ai_embedding_fixture_config_id = LAST_INSERT_ID();
-INSERT INTO mysql.alisql_ai_tenant_binding
-(tenant_id, model_name, capability, config_id, active)
-VALUES
-(0, 'mtr/fixture-embedding', 'TEXT_EMBEDDING',
-@ai_embedding_fixture_config_id, TRUE);
-INSERT INTO mysql.alisql_ai_tenant_account
-(account_user, account_host, tenant_id, active)
-VALUES ('ai_embedding_tester', 'localhost', 0, TRUE);
 # The resolved metadata exposes the fixed fixture dimension, not a secret or endpoint override.
 SELECT JSON_UNQUOTE(JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.model_name')),
-JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.dimension'),
-JSON_UNQUOTE(JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.distance_metric'));
-JSON_UNQUOTE(JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.model_name'))	JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.dimension')	JSON_UNQUOTE(JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.distance_metric'))
-mtr/fixture-embedding	1024	COSINE
+JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.dimension');
+JSON_UNQUOTE(JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.model_name'))	JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.dimension')
+mtr/fixture-embedding	1024
 # The Debug-only fixture returns a deterministic vector through the normal SQL, audit, and codec path.
 SET @embedding = AI_EMBEDDING(
 'offline embedding regression probe', 'mtr/fixture-embedding', 1024);
@@ -33,11 +22,6 @@ SELECT VECTOR_DIM(@embedding) AS dimension,
 VEC_DISTANCE_COSINE(@embedding, @embedding) AS self_distance;
 dimension	self_distance
 1024	0
-SELECT JSON_CONTAINS_PATH(AI_AUDIT_INFO(100), 'one', '$[0].endpoint',
-'$[0].credential_ref', '$[0].input')
-AS audit_contains_sensitive_fields;
-audit_contains_sensitive_fields
-0
 # The AI result is convertible to text and supports the explicit Euclidean distance function.
 SELECT LEFT(VEC_TOTEXT(@embedding), 4) = '[1,0' AS vector_text_prefix_is_expected,
 VEC_DISTANCE_EUCLIDEAN(@embedding, @embedding) AS euclidean_self_distance;
@@ -56,29 +40,15 @@ ORDER BY VEC_DISTANCE(embedding, @embedding), id;
 id	indexed_auto_distance
 1	0
 DROP TABLE ai_embedding_vector_probe;
-# A fixed-dimension profile rejects a mismatched request and completes a failed audit record.
+# A fixed-dimension profile rejects a mismatched request.
 SELECT AI_EMBEDDING(
 'offline embedding regression probe', 'mtr/fixture-embedding', 512);
 ERROR 42000: This version of MySQL doesn't yet support 'DB4AI embedding dimension is incompatible with the model'
 SELECT AI_EMBEDDING(NULL, 'mtr/fixture-embedding', 1024);
 AI_EMBEDDING(NULL, 'mtr/fixture-embedding', 1024)
 NULL
-SELECT status, error_code, total_tokens, http_status,
-completed_at IS NOT NULL AS completed
-FROM mysql.alisql_ai_call_audit
-WHERE config_id = @ai_embedding_fixture_config_id
-ORDER BY call_id;
-status	error_code	total_tokens	http_status	completed
-SUCCEEDED	OK	1	200	1
-FAILED	DIMENSION_MISMATCH	0	0	1
-# Resource cleanup leaves no user, account mapping, Profile binding, Profile, or audit record.
-DELETE FROM mysql.alisql_ai_call_audit
-WHERE config_id = @ai_embedding_fixture_config_id;
-DELETE FROM mysql.alisql_ai_tenant_binding
-WHERE config_id = @ai_embedding_fixture_config_id;
-DELETE FROM mysql.alisql_ai_tenant_account
-WHERE account_user = 'ai_embedding_tester' AND account_host = 'localhost';
-DELETE FROM mysql.alisql_ai_model_config
-WHERE config_id = @ai_embedding_fixture_config_id;
+# Resource cleanup leaves no user or Profile.
+DELETE FROM mysql.taurusdb_ai_model_config
+WHERE Id = @ai_embedding_fixture_config_id;
 SET GLOBAL vidx_disabled = @ai_embedding_fixture_old_vidx_disabled;
 DROP USER 'ai_embedding_tester'@'localhost';

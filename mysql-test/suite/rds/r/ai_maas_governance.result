@@ -1,30 +1,60 @@
-# AI_AUDIT_INFO requires an audit-specific dynamic privilege.
+# AI invocation audit is globally enabled by default and has no SESSION scope.
+SELECT @@GLOBAL.ai_invoke_audit AS audit_default;
+audit_default
+1
 CREATE USER 'ai_audit_reader'@'localhost';
-SELECT AI_AUDIT_INFO();
-ERROR 42000: Access denied; you need (at least one of) the AI_AUDIT_VIEWER privilege(s) for this operation
-INSERT INTO mysql.alisql_ai_tenant_account
-(account_user, account_host, tenant_id, active)
-VALUES ('ai_audit_reader', 'localhost', 42, TRUE);
-INSERT INTO mysql.alisql_ai_call_audit
-(tenant_id, config_id, config_version, capability, status, error_code,
-prompt_tokens, completion_tokens, total_tokens, latency_ms, http_status)
-VALUES (77, 9, 2, 'TEXT_GENERATION', 'FAILED', 'ACCESS_DENIED',
-3, 4, 7, 5, 403),
-(42, 8, 1, 'TEXT_EMBEDDING', 'SUCCEEDED', 'OK',
-2, 0, 2, 3, 200);
-GRANT AI_AUDIT_VIEWER ON *.* TO 'ai_audit_reader'@'localhost';
-# An audit viewer gets its own tenant's allowlisted telemetry only.
-SELECT JSON_UNQUOTE(JSON_EXTRACT(AI_AUDIT_INFO(1), '$[0].tenant_id')),
-JSON_UNQUOTE(JSON_EXTRACT(AI_AUDIT_INFO(1), '$[0].status')),
-JSON_EXTRACT(AI_AUDIT_INFO(1), '$[0].total_tokens'),
-JSON_CONTAINS_PATH(AI_AUDIT_INFO(1), 'one', '$[0].endpoint',
-'$[0].credential_ref', '$[0].input');
-JSON_UNQUOTE(JSON_EXTRACT(AI_AUDIT_INFO(1), '$[0].tenant_id'))	JSON_UNQUOTE(JSON_EXTRACT(AI_AUDIT_INFO(1), '$[0].status'))	JSON_EXTRACT(AI_AUDIT_INFO(1), '$[0].total_tokens')	JSON_CONTAINS_PATH(AI_AUDIT_INFO(1), 'one', '$[0].endpoint',
-'$[0].credential_ref', '$[0].input')
-42	SUCCEEDED	2	0
+GRANT AI_INVOKE ON *.* TO 'ai_audit_reader'@'localhost';
+# AI_INVOKE does not permit disabling the instance audit trail.
+SET GLOBAL ai_invoke_audit = OFF;
+ERROR 42000: Access denied; you need (at least one of) the SUPER or SYSTEM_VARIABLES_ADMIN privilege(s) for this operation
+# Administrators can dynamically control only the GLOBAL switch.
+SET GLOBAL ai_invoke_audit = OFF;
+SELECT @@GLOBAL.ai_invoke_audit AS audit_disabled;
+audit_disabled
+0
+SET GLOBAL ai_invoke_audit = ON;
+SELECT @@GLOBAL.ai_invoke_audit AS audit_reenabled;
+audit_reenabled
+1
+# Both normal table DML and AI_ADMIN are required for Profile management.
+GRANT SELECT, INSERT, UPDATE, DELETE, ALTER ON mysql.taurusdb_ai_model_config
+TO 'ai_audit_reader'@'localhost';
+INSERT INTO mysql.taurusdb_ai_model_config
+(model_name, provider, capability, provider_model_name, endpoint_url,
+credential_mode, credential_ref, default_dimension, status, config_version)
+VALUES
+('mtr/admin-profile', 'mtr', 'TEXT_EMBEDDING', 'fixture-embedding',
+'https://db4ai-mtr-fixture.invalid/v1/embeddings',
+'SECRET_REF', 'mtr/not-read', 1024, 'ACTIVE', 1);
+ERROR 42000: Access denied; you need (at least one of) the AI_ADMIN privilege(s) for this operation
+ALTER TABLE mysql.taurusdb_ai_model_config COMMENT = 'must not change';
+ERROR 42000: Access denied; you need (at least one of) the AI_ADMIN privilege(s) for this operation
 GRANT AI_ADMIN ON *.* TO 'ai_audit_reader'@'localhost';
-# AI_ADMIN can inspect the cross-tenant sanitized projection.
-SELECT JSON_LENGTH(AI_AUDIT_INFO(2));
-JSON_LENGTH(AI_AUDIT_INFO(2))
+INSERT INTO mysql.taurusdb_ai_model_config
+(model_name, provider, capability, provider_model_name, endpoint_url,
+credential_mode, credential_ref, default_dimension, status, config_version)
+VALUES
+('mtr/admin-profile', 'mtr', 'TEXT_EMBEDDING', 'fixture-embedding-v1',
+'https://db4ai-mtr-fixture.invalid/v1/embeddings',
+'SECRET_REF', 'mtr/not-read', 1024, 'ACTIVE', 1),
+('mtr/admin-profile', 'mtr', 'TEXT_EMBEDDING', 'fixture-embedding-v2',
+'https://db4ai-mtr-fixture.invalid/v1/embeddings',
+'SECRET_REF', 'mtr/not-read', 1024, 'ACTIVE', 2);
+SELECT JSON_EXTRACT(AI_MODEL_INFO('mtr/admin-profile'), '$.config_version')
+AS resolved_latest_config_version;
+resolved_latest_config_version
 2
+UPDATE mysql.taurusdb_ai_model_config
+SET status = 'DISABLED'
+ WHERE model_name = 'mtr/admin-profile';
+SELECT AI_MODEL_INFO('mtr/admin-profile');
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI model configuration was not found'
+DELETE FROM mysql.taurusdb_ai_model_config
+WHERE model_name = 'mtr/admin-profile';
+# AI_AUDIT_VIEWER remains grant-compatible but does not expose audit files by SQL.
+GRANT AI_AUDIT_VIEWER ON *.* TO 'ai_audit_reader'@'localhost';
+REVOKE AI_AUDIT_VIEWER ON *.* FROM 'ai_audit_reader'@'localhost';
+REVOKE AI_ADMIN ON *.* FROM 'ai_audit_reader'@'localhost';
+REVOKE SELECT, INSERT, UPDATE, DELETE, ALTER ON mysql.taurusdb_ai_model_config
+FROM 'ai_audit_reader'@'localhost';
 DROP USER 'ai_audit_reader'@'localhost';

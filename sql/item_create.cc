@@ -1377,7 +1377,6 @@ static const std::pair<const char *, Create_func *> func_array[] = {
     {"AES_DECRYPT", SQL_FN_V(Item_func_aes_decrypt, 2, 6)},
     {"AES_ENCRYPT", SQL_FN_V(Item_func_aes_encrypt, 2, 6)},
     {"AI_ANALYZE", SQL_FN_V(alisql::ai::Item_func_ai_analyze, 2, 3)},
-    {"AI_AUDIT_INFO", SQL_FN_V(alisql::ai::Item_func_ai_audit_info, 0, 1)},
     {"AI_EMBEDDING", SQL_FN_V(alisql::ai::Item_func_ai_embedding, 1, 3)},
     {"AI_MODEL_INFO", SQL_FN_V(alisql::ai::Item_func_ai_model_info, 0, 1)},
     {"ANY_VALUE", SQL_FN(Item_func_any_value, 1)},

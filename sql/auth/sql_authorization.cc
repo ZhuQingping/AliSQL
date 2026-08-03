@@ -2373,9 +2373,30 @@ bool check_table_access(THD *thd, Access_bitmask requirements,
                ("table: %s derived: %d  view: %d", table_ref->table_name,
                 table_ref->is_derived(), table_ref->is_view()));
 
-    if (table_ref->is_internal()) continue;
-
     thd->set_security_context(sctx);
+
+    /*
+      Profile lifecycle changes use ordinary SQL DML, so they are written to
+      the binary log and replicated. A table privilege alone must not grant
+      control of the instance AI configuration; structural writes are guarded
+      as well. Replication appliers skip this check: the primary authorized
+      the DML before it entered the binary log.
+    */
+    const bool is_ai_model_control_write =
+        (want_access & (INSERT_ACL | UPDATE_ACL | DELETE_ACL | ALTER_ACL |
+                        DROP_ACL | INDEX_ACL)) != 0 &&
+        my_strcasecmp(system_charset_info, table_ref->get_db_name(), "mysql") ==
+            0 &&
+        my_strcasecmp(system_charset_info, table_ref->get_table_name(),
+                      "taurusdb_ai_model_config") == 0;
+    if (is_ai_model_control_write && !thd->slave_thread &&
+        !sctx->has_global_grant(STRING_WITH_LEN("AI_ADMIN")).first) {
+      if (!no_errors)
+        my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), "AI_ADMIN");
+      goto deny;
+    }
+
+    if (table_ref->is_internal()) continue;
 
     if (check_access(thd, want_access, table_ref->get_db_name(),
                      &table_ref->grant.privilege, &table_ref->grant.m_internal,
@@ -3775,6 +3796,24 @@ bool check_grant(THD *thd, Access_bitmask want_access, Table_ref *tables,
     sctx = (t_ref->security_ctx != nullptr) ? t_ref->security_ctx
                                             : thd->security_context();
     const char *db_name = t_ref->get_db_name();
+
+    /* See the matching early check in check_table_access().  System tables
+       can reach check_grant() directly, so enforce the control-plane gate
+       here as well. */
+    const bool is_ai_model_control_write =
+        (orig_want_access &
+         (INSERT_ACL | UPDATE_ACL | DELETE_ACL | ALTER_ACL | DROP_ACL |
+          INDEX_ACL)) != 0 &&
+        my_strcasecmp(system_charset_info, db_name, "mysql") == 0 &&
+        my_strcasecmp(system_charset_info, t_ref->get_table_name(),
+                      "taurusdb_ai_model_config") == 0;
+    if (is_ai_model_control_write && !thd->slave_thread &&
+        !sctx->has_global_grant(STRING_WITH_LEN("AI_ADMIN")).first) {
+      if (!no_errors)
+        my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), "AI_ADMIN");
+      goto err;
+    }
+
     const ACL_internal_table_access *access = get_cached_table_access(
         &t_ref->grant.m_internal, db_name, t_ref->get_table_name());
 

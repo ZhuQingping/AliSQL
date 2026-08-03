@@ -1,21 +1,21 @@
 # AliSQL DB4AI MaaS P0 验证状态
 
-更新日期：2026-07-30。本文是当前 `ai_maas` 分支的证据清单，不以设计文档、
+更新日期：2026-08-03。本文是当前 `ai_maas` 分支的证据清单，不以设计文档、
 mock 或成功编译替代真实云端验收。
 
 ## 已验证
 
 | 范围 | 证据 | 结果 |
 |---|---|---|
-| Debug 服务端 | `cmake --build build-debug --target mysqld --parallel 8` | 通过 |
+| Debug 服务端 | `cmake --build build-control-audit --target mysqld ai_file_audit-t ai_model_registry-t --parallel 8` | 通过 |
 | 规范响应 | `runtime_output_directory/ai_types-t` | reasoning-only、length finish 和空 final 均拒绝 |
-| Profile 解析 | `runtime_output_directory/ai_model_registry-t` | active/capability/tenant 优先级、1024 维 bge-m3、端点、Debug plaintext 策略和凭据 fail-closed 均覆盖 |
+| Profile 解析 | `runtime_output_directory/ai_model_registry-t` | active/capability、实例默认、1024 维 bge-m3、端点、Debug plaintext 策略和凭据 fail-closed 均覆盖 |
 | Huawei Adapter | `runtime_output_directory/ai_huawei_maas_adapter-t` | embedding/chat payload、final-only、超时/输出限制、HTTP 403/429/404 分类、协议不匹配和 request ID 覆盖 |
 | Runtime options | `runtime_output_directory/ai_runtime-t` | 白名单选项和私有厂商参数拒绝覆盖 |
-| Persistent audit | `runtime_output_directory/ai_audit-t` + `rds.ai_maas_contract` | dispatch 前 call id、独立完成更新、token/request/status telemetry 和无敏感字段的投影覆盖 |
+| 文件审计 | `runtime_output_directory/ai_file_audit-t` + `rds.ai_maas_governance` | 出站前 `STARTED`、终态、JSON Lines 脱敏字段、文件安全权限与全局动态开关覆盖 |
 | VECTOR 编码 | `runtime_output_directory/ai_vector_codec-t` | native float VECTOR 编码、维度和非有限数拒绝覆盖 |
-| SQL/MTR 契约 | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_contract` | SQL arity、NULL 无 egress、`AI_INVOKE`、tenant account→Profile 优先级、Debug plaintext 精确 Profile 读取后本地协议拒绝、维度失败、无凭据失败、脱敏 model metadata 覆盖 |
-| 审计授权读取 | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_governance` | 无权限拒绝、viewer tenant 隔离、AI_ADMIN 跨 tenant、limit 和敏感字段缺失覆盖 |
+| SQL/MTR 契约 | `cd build-control-audit && perl mysql-test/mysql-test-run.pl --suite=rds ai_maas_contract ai_maas_embedding ai_maas_analysis ai_maas_governance ai_maas_rag` | 5 个用例通过；覆盖 SQL arity、NULL 无 egress、`AI_INVOKE`、实例默认 Profile、维度失败和脱敏元数据 |
+| 控制面权限 | `rds.ai_maas_governance` | 无 `AI_ADMIN` 时拒绝发布；`AI_ADMIN` 可发布和停用受控华为 Profile；无 `AI_INVOKE` 的账号不能关闭全局审计 |
 | 受控 RAG | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_rag` | Debug 离线 fixture 经实际 `AI_EMBEDDING` 写入 VECTOR INDEX；tenant/业务/embedding-space 过滤、schema contract 拒绝与来源回传覆盖 |
 | 分析与只读诊断 | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_analysis` | JSON input、analyze/diagnose mode 和私有 provider options 拒绝覆盖；fixture 不读取 secret、不发起 HTTP |
 | Release 明文门禁 | 临时 Release `mysqld` 隔离实例，含 `PLAINTEXT_DEV` fixture 的 `AI_EMBEDDING` | 调用前返回 `DB4AI credential is unavailable`；未发生 HTTP 请求 |
@@ -37,10 +37,11 @@ plaintext fixture 仅触发 Adapter 的本地端点协议拒绝，不会发送�
 
 ## 明确未完成的生产门禁
 
-- `mysql.alisql_ai_call_audit` 已有独立、持久的创建/完成生命周期和
-  `AI_AUDIT_VIEWER` 查询面；审计保留、重试和运营仪表盘仍未完成。
-- `AI_ADMIN` 已注册，尚没有受该权限保护的 Profile 管理 SQL 管理面；当前系统表
-  应仅由受控运维流程修改。
+- 审计写入本地受控文件；日志采集、保留、磁盘满告警和运维平台查询由 TaurusDB 日志平台
+  提供，不在 P0 SQL 面交付。
+- `AI_ADMIN` 与普通表 DML 权限共同保护
+  `mysql.taurusdb_ai_model_config` 的 Profile 发布和停用；该 DML 进入 binlog，不提供通用
+  任意 Provider/Endpoint 的 SQL 透传。
 - embedding-space、distance metric 和 index compatibility 已在 RAG schema/查询
   示例中强制过滤；服务器尚未把它们做成 Profile 元数据和通用写入时强制校验。
 - 百炼、Bedrock、方舟 Adapter 仅由 canonical Adapter 边界预留，P0 只实现华为
@@ -54,15 +55,15 @@ plaintext fixture 仅触发 Adapter 的本地端点协议拒绝，不会发送�
 ## 交付前复验命令
 
 ```text
-cmake --build build-debug --target mysqld ai_types-t ai_model_registry-t \
-  ai_huawei_maas_adapter-t ai_audit-t ai_runtime-t ai_vector_codec-t --parallel 8
-build-debug/runtime_output_directory/ai_types-t
-build-debug/runtime_output_directory/ai_model_registry-t
-build-debug/runtime_output_directory/ai_huawei_maas_adapter-t
-build-debug/runtime_output_directory/ai_audit-t
-build-debug/runtime_output_directory/ai_runtime-t
-build-debug/runtime_output_directory/ai_vector_codec-t
-cd build-debug/mysql-test && ./mtr --suite=rds \
+cmake --build build-control-audit --target mysqld ai_types-t ai_model_registry-t \
+  ai_huawei_maas_adapter-t ai_file_audit-t ai_runtime-t ai_vector_codec-t --parallel 8
+build-control-audit/runtime_output_directory/ai_types-t
+build-control-audit/runtime_output_directory/ai_model_registry-t
+build-control-audit/runtime_output_directory/ai_huawei_maas_adapter-t
+build-control-audit/runtime_output_directory/ai_file_audit-t
+build-control-audit/runtime_output_directory/ai_runtime-t
+build-control-audit/runtime_output_directory/ai_vector_codec-t
+cd build-control-audit && perl mysql-test/mysql-test-run.pl --suite=rds \
   ai_maas_contract ai_maas_governance ai_maas_rag ai_maas_analysis vidx_func
 ```
 
@@ -70,8 +71,8 @@ cd build-debug/mysql-test && ./mtr --suite=rds \
 
 以 `-DCMAKE_BUILD_TYPE=Release` 配置一个仓库外临时构建目录（并指定本仓库
 `extra/boost` 和系统 curl），构建 `mysqld`。在 `--skip-networking` 的临时 datadir
-初始化该服务器，插入仅含 `UNHEX('00')` fixture 的 `PLAINTEXT_DEV` embedding Profile、
-tenant binding、`root@localhost` tenant account 与 `AI_INVOKE` 授权，然后执行：
+初始化该服务器，通过受控管理路径发布仅含 `UNHEX('00')` fixture 的
+`PLAINTEXT_DEV` embedding Profile 并授予 `AI_INVOKE`，然后执行：
 
 ```text
 SELECT AI_EMBEDDING('release-gate');

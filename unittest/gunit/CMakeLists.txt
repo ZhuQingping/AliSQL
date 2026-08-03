@@ -123,6 +123,7 @@ SET(TESTS
   ai_model_registry
   ai_huawei_maas_adapter
   ai_audit
+  ai_file_audit
   ai_runtime
   ai_vector_codec
   alignment
@@ -406,6 +407,9 @@ TARGET_SOURCES(ai_huawei_maas_adapter-t PRIVATE
   ${CMAKE_SOURCE_DIR}/sql/ai/ai_huawei_maas_adapter.cc)
 TARGET_SOURCES(ai_audit-t PRIVATE
   ${CMAKE_SOURCE_DIR}/sql/ai/ai_types.cc)
+TARGET_SOURCES(ai_file_audit-t PRIVATE
+  ${CMAKE_SOURCE_DIR}/sql/ai/ai_types.cc
+  ${CMAKE_SOURCE_DIR}/sql/ai/ai_file_audit.cc)
 TARGET_SOURCES(ai_runtime-t PRIVATE
   ${CMAKE_SOURCE_DIR}/sql/ai/ai_runtime.cc)
 TARGET_SOURCES(ai_vector_codec-t PRIVATE

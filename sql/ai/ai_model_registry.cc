@@ -34,12 +34,8 @@ class Ai_system_table_access final : public System_table_access {
 };
 
 const LEX_CSTRING k_mysql_schema = {STRING_WITH_LEN("mysql")};
-const LEX_CSTRING k_tenant_binding_table = {
-    STRING_WITH_LEN("alisql_ai_tenant_binding")};
-const LEX_CSTRING k_tenant_account_table = {
-    STRING_WITH_LEN("alisql_ai_tenant_account")};
 const LEX_CSTRING k_model_config_table = {
-    STRING_WITH_LEN("alisql_ai_model_config")};
+    STRING_WITH_LEN("taurusdb_ai_model_config")};
 
 std::string FieldValue(Field *field) {
   if (field->is_null()) return {};
@@ -48,9 +44,9 @@ std::string FieldValue(Field *field) {
   return std::string(value.ptr(), value.length());
 }
 
-Ai_capability CapabilityFromEnum(longlong value) {
-  return value == 1 ? Ai_capability::k_text_embedding
-                    : Ai_capability::k_text_generation;
+Ai_capability CapabilityFromValue(std::string_view value) {
+  return value == "TEXT_EMBEDDING" ? Ai_capability::k_text_embedding
+                                    : Ai_capability::k_text_generation;
 }
 
 // System_table_access::close_table() commits the supplied THD. Metadata
@@ -132,7 +128,7 @@ Ai_error ReadPlaintextDevFromSystemTable(THD *thd,
   Ai_system_table_access access;
   Open_tables_backup backup;
   TABLE *table = nullptr;
-  if (access.open_table(thd, k_mysql_schema, k_model_config_table, 16,
+  if (access.open_table(thd, k_mysql_schema, k_model_config_table, 21,
                         TL_READ, &table, &backup))
     return Ai_error::k_credential_unavailable;
 
@@ -148,12 +144,13 @@ Ai_error ReadPlaintextDevFromSystemTable(THD *thd,
     if (!IsPlaintextDevConfig(
             model.config_id, model.config_version,
             static_cast<uint64_t>(table->field[0]->val_int()),
-            static_cast<uint64_t>(table->field[1]->val_int()),
-            table->field[15]->val_int() != 0, FieldValue(table->field[12])))
+            static_cast<uint64_t>(table->field[18]->val_int()),
+            FieldValue(table->field[17]) == "ACTIVE",
+            FieldValue(table->field[7])))
       continue;
-    if (!table->field[14]->is_null()) {
+    if (!table->field[9]->is_null()) {
       String plaintext;
-      String *value = table->field[14]->val_str(&plaintext, &plaintext);
+      String *value = table->field[9]->val_str(&plaintext, &plaintext);
       if (value != nullptr)
         result = ReadPlaintextDevCredential(
             true, model.credential_kind,
@@ -176,61 +173,10 @@ Ai_error Ai_model_registry::Resolve(THD *thd, std::string_view model_name,
                                     Ai_capability capability,
                                     Ai_resolved_model *out) const {
   if (thd == nullptr) return Ai_error::k_model_not_found;
-  uint64_t tenant_id = 0;
-  const Ai_error tenant_error = ResolveTenant(thd, &tenant_id);
-  if (tenant_error != Ai_error::k_ok) return tenant_error;
   std::vector<Ai_model_profile> profiles;
   const Ai_error load_error = LoadProfiles(thd, &profiles);
   if (load_error != Ai_error::k_ok) return load_error;
-  const Ai_error result =
-      ResolveProfiles(tenant_id, model_name, capability, profiles, out);
-  if (result == Ai_error::k_ok) out->tenant_id = tenant_id;
-  return result;
-}
-
-Ai_error Ai_model_registry::ResolveTenant(THD *thd, uint64_t *tenant_id) const {
-#ifdef EXTRA_CODE_FOR_UNIT_TESTING
-  (void)thd;
-  if (tenant_id == nullptr) return Ai_error::k_provider_error;
-  *tenant_id = 0;
-  return Ai_error::k_ok;
-#else
-  if (tenant_id == nullptr || thd == nullptr || thd->security_context() == nullptr)
-    return Ai_error::k_model_not_found;
-  *tenant_id = 0;
-  const auto user = thd->security_context()->priv_user();
-  const auto host = thd->security_context()->priv_host();
-  Ai_system_table_access access;
-  Open_tables_backup backup;
-  TABLE *table = nullptr;
-  if (access.open_table(thd, k_mysql_schema, k_tenant_account_table, 4,
-                        TL_READ, &table, &backup))
-    return Ai_error::k_model_not_found;
-  bool read_error = table->file->ha_rnd_init(true) != 0;
-  bool found = false;
-  while (!read_error) {
-    const int scan = table->file->ha_rnd_next(table->record[0]);
-    if (scan == HA_ERR_END_OF_FILE) break;
-    if (scan != 0) {
-      read_error = true;
-      break;
-    }
-    if (table->field[3]->val_int() == 0 ||
-        FieldValue(table->field[0]) != std::string(user.str, user.length) ||
-        FieldValue(table->field[1]) != std::string(host.str, host.length))
-      continue;
-    *tenant_id = static_cast<uint64_t>(table->field[2]->val_int());
-    found = true;
-    break;
-  }
-  if (!read_error) table->file->ha_rnd_end();
-  CloseReadOnlySystemTable(thd, table, &backup);
-  if (read_error)
-    return Ai_error::k_model_not_found;
-  // An absent account mapping is the explicit global tenant fallback.
-  (void)found;
-  return Ai_error::k_ok;
-#endif
+  return ResolveProfiles(0, model_name, capability, profiles, out);
 }
 
 Ai_error Ai_model_registry::LoadProfiles(
@@ -243,39 +189,12 @@ Ai_error Ai_model_registry::LoadProfiles(
 #else
   if (profiles == nullptr) return Ai_error::k_provider_error;
   Ai_system_table_access access;
-  Open_tables_backup binding_backup;
-  TABLE *binding_table = nullptr;
-  if (access.open_table(thd, k_mysql_schema, k_tenant_binding_table, 5,
-                        TL_READ, &binding_table, &binding_backup))
-    return Ai_error::k_model_not_found;
-
-  struct Binding { uint64_t tenant_id; std::string model_name; Ai_capability capability; uint64_t config_id; };
-  std::vector<Binding> bindings;
-  bool read_error = binding_table->file->ha_rnd_init(true) != 0;
-  while (!read_error) {
-    const int scan = binding_table->file->ha_rnd_next(binding_table->record[0]);
-    if (scan == HA_ERR_END_OF_FILE) break;
-    if (scan != 0) {
-      read_error = true;
-      break;
-    }
-    if (binding_table->field[4]->val_int() == 0) continue;
-    bindings.push_back({static_cast<uint64_t>(binding_table->field[0]->val_int()),
-                        FieldValue(binding_table->field[1]),
-                        CapabilityFromEnum(binding_table->field[2]->val_int()),
-                        static_cast<uint64_t>(binding_table->field[3]->val_int())});
-  }
-  if (!read_error) binding_table->file->ha_rnd_end();
-  CloseReadOnlySystemTable(thd, binding_table, &binding_backup);
-  if (read_error)
-    return Ai_error::k_model_not_found;
-
   Open_tables_backup config_backup;
   TABLE *config_table = nullptr;
-  if (access.open_table(thd, k_mysql_schema, k_model_config_table, 16,
+  if (access.open_table(thd, k_mysql_schema, k_model_config_table, 21,
                         TL_READ, &config_table, &config_backup))
     return Ai_error::k_model_not_found;
-  read_error = config_table->file->ha_rnd_init(true) != 0;
+  bool read_error = config_table->file->ha_rnd_init(true) != 0;
   while (!read_error) {
     const int scan = config_table->file->ha_rnd_next(config_table->record[0]);
     if (scan == HA_ERR_END_OF_FILE) break;
@@ -283,29 +202,25 @@ Ai_error Ai_model_registry::LoadProfiles(
       read_error = true;
       break;
     }
-    const uint64_t config_id = static_cast<uint64_t>(config_table->field[0]->val_int());
-    if (config_table->field[15]->val_int() == 0) continue;
-    for (const auto &binding : bindings) {
-      if (binding.config_id != config_id) continue;
-      Ai_model_profile profile;
-      profile.tenant_id = binding.tenant_id;
-      profile.config_id = config_id;
-      profile.config_version = static_cast<uint64_t>(config_table->field[1]->val_int());
-      profile.model_name = FieldValue(config_table->field[2]);
-      profile.capability = CapabilityFromEnum(config_table->field[3]->val_int());
-      profile.provider = FieldValue(config_table->field[4]);
-      profile.provider_model_name = FieldValue(config_table->field[5]);
-      profile.model_revision = FieldValue(config_table->field[6]);
-      profile.endpoint_type = FieldValue(config_table->field[7]);
-      profile.endpoint = FieldValue(config_table->field[8]);
-      profile.dimension = config_table->field[9]->is_null() ? 0 : static_cast<uint32_t>(config_table->field[9]->val_int());
-      profile.embedding_space_id = FieldValue(config_table->field[10]);
-      profile.distance_metric = FieldValue(config_table->field[11]);
-      profile.credential_kind = FieldValue(config_table->field[12]);
-      profile.credential_ref = FieldValue(config_table->field[13]);
-      profile.active = profile.model_name == binding.model_name && profile.capability == binding.capability;
-      if (profile.active) profiles->push_back(std::move(profile));
-    }
+    if (FieldValue(config_table->field[17]) != "ACTIVE") continue;
+    Ai_model_profile profile;
+    profile.config_id = static_cast<uint64_t>(config_table->field[0]->val_int());
+    profile.config_version = static_cast<uint64_t>(config_table->field[18]->val_int());
+    profile.model_name = FieldValue(config_table->field[1]);
+    profile.provider = FieldValue(config_table->field[2]);
+    profile.capability = CapabilityFromValue(FieldValue(config_table->field[3]));
+    profile.provider_model_name = FieldValue(config_table->field[4]);
+    profile.endpoint_type = "HTTPS_JSON";
+    profile.endpoint = FieldValue(config_table->field[5]);
+    profile.credential_kind = FieldValue(config_table->field[7]);
+    profile.credential_ref = FieldValue(config_table->field[8]);
+    profile.dimension = config_table->field[10]->is_null()
+                            ? 0
+                            : static_cast<uint32_t>(config_table->field[10]->val_int());
+    profile.model_revision = FieldValue(config_table->field[12]);
+    profile.active = true;
+    profile.is_default = config_table->field[16]->val_int() != 0;
+    profiles->push_back(std::move(profile));
   }
   if (!read_error) config_table->file->ha_rnd_end();
   CloseReadOnlySystemTable(thd, config_table, &config_backup);
@@ -331,49 +246,49 @@ Ai_error Ai_model_registry::ResolveProfiles(
     const std::vector<Ai_model_profile> &profiles, Ai_resolved_model *out) const {
   if (out == nullptr) return Ai_error::k_provider_error;
 
-  const Ai_model_profile *fallback = nullptr;
+  const Ai_model_profile *default_profile = nullptr;
+  const Ai_model_profile *named_profile = nullptr;
   for (const auto &profile : profiles) {
-    if (!profile.active || profile.model_name != model_name ||
+    if (!profile.active ||
+        (!model_name.empty() && profile.model_name != model_name) ||
+        (model_name.empty() && !profile.is_default) ||
         profile.capability != capability || profile.endpoint_type != "HTTPS_JSON" ||
         profile.endpoint.rfind("https://", 0) != 0)
       continue;
-    if (profile.tenant_id == tenant_id) {
-      out->tenant_id = tenant_id;
-      out->config_id = profile.config_id;
-      out->config_version = profile.config_version;
-      out->dimension = profile.dimension;
-      out->capability = profile.capability;
-      out->model_name = profile.model_name;
-      out->provider = profile.provider;
-      out->provider_model_name = profile.provider_model_name;
-      out->model_revision = profile.model_revision;
-      out->endpoint_type = profile.endpoint_type;
-      out->endpoint = profile.endpoint;
-      out->embedding_space_id = profile.embedding_space_id;
-      out->distance_metric = profile.distance_metric;
-      out->credential_kind = profile.credential_kind;
-      out->credential_ref = profile.credential_ref;
-      return Ai_error::k_ok;
+    if (model_name.empty()) {
+      if (default_profile == nullptr ||
+          profile.config_version > default_profile->config_version) {
+        default_profile = &profile;
+      } else if (profile.config_version == default_profile->config_version) {
+        return Ai_error::k_model_not_found;
+      }
+      continue;
     }
-    if (profile.tenant_id == 0) fallback = &profile;
+    if (named_profile == nullptr ||
+        profile.config_version > named_profile->config_version) {
+      named_profile = &profile;
+    } else if (profile.config_version == named_profile->config_version) {
+      return Ai_error::k_model_not_found;
+    }
   }
-  if (fallback == nullptr) return Ai_error::k_model_not_found;
-
-  out->config_id = fallback->config_id;
+  const Ai_model_profile *profile =
+      model_name.empty() ? default_profile : named_profile;
+  if (profile == nullptr) return Ai_error::k_model_not_found;
   out->tenant_id = tenant_id;
-  out->config_version = fallback->config_version;
-  out->dimension = fallback->dimension;
-  out->capability = fallback->capability;
-  out->model_name = fallback->model_name;
-  out->provider = fallback->provider;
-  out->provider_model_name = fallback->provider_model_name;
-  out->model_revision = fallback->model_revision;
-  out->endpoint_type = fallback->endpoint_type;
-  out->endpoint = fallback->endpoint;
-  out->embedding_space_id = fallback->embedding_space_id;
-  out->distance_metric = fallback->distance_metric;
-  out->credential_kind = fallback->credential_kind;
-  out->credential_ref = fallback->credential_ref;
+  out->config_id = profile->config_id;
+  out->config_version = profile->config_version;
+  out->dimension = profile->dimension;
+  out->capability = profile->capability;
+  out->model_name = profile->model_name;
+  out->provider = profile->provider;
+  out->provider_model_name = profile->provider_model_name;
+  out->model_revision = profile->model_revision;
+  out->endpoint_type = profile->endpoint_type;
+  out->endpoint = profile->endpoint;
+  out->embedding_space_id = profile->embedding_space_id;
+  out->distance_metric = profile->distance_metric;
+  out->credential_kind = profile->credential_kind;
+  out->credential_ref = profile->credential_ref;
   return Ai_error::k_ok;
 }
 

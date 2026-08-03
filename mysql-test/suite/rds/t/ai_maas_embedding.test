@@ -1,25 +1,12 @@
 --echo # AI_EMBEDDING offline fixture: setup is isolated and never reads a credential or performs HTTP.
+GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
 --disable_query_log
 SELECT AUTO_INCREMENT INTO @ai_embedding_fixture_next_config_id
   FROM INFORMATION_SCHEMA.TABLES
  WHERE TABLE_SCHEMA = 'mysql'
-   AND TABLE_NAME = 'alisql_ai_model_config';
-SELECT AUTO_INCREMENT INTO @ai_embedding_fixture_next_audit_id
-  FROM INFORMATION_SCHEMA.TABLES
- WHERE TABLE_SCHEMA = 'mysql'
-   AND TABLE_NAME = 'alisql_ai_call_audit';
-DELETE a
-  FROM mysql.alisql_ai_call_audit AS a
-  JOIN mysql.alisql_ai_model_config AS c ON c.config_id = a.config_id
- WHERE c.model_name = 'mtr/fixture-embedding';
-DELETE b
-  FROM mysql.alisql_ai_tenant_binding AS b
-  JOIN mysql.alisql_ai_model_config AS c ON c.config_id = b.config_id
- WHERE c.model_name = 'mtr/fixture-embedding';
-DELETE FROM mysql.alisql_ai_model_config
+   AND TABLE_NAME = 'taurusdb_ai_model_config';
+DELETE FROM mysql.taurusdb_ai_model_config
  WHERE model_name = 'mtr/fixture-embedding';
-DELETE FROM mysql.alisql_ai_tenant_account
- WHERE account_user = 'ai_embedding_tester' AND account_host = 'localhost';
 --disable_warnings
 DROP USER IF EXISTS 'ai_embedding_tester'@'localhost';
 --enable_warnings
@@ -29,26 +16,15 @@ SET GLOBAL vidx_disabled = OFF;
 
 CREATE USER 'ai_embedding_tester'@'localhost';
 GRANT AI_INVOKE ON *.* TO 'ai_embedding_tester'@'localhost';
-GRANT AI_AUDIT_VIEWER ON *.* TO 'ai_embedding_tester'@'localhost';
 
-INSERT INTO mysql.alisql_ai_model_config
-  (config_version, model_name, capability, provider, provider_model_name,
-   endpoint_type, endpoint, credential_kind, credential_ref, dimension,
-   embedding_space_id, distance_metric, active)
+INSERT INTO mysql.taurusdb_ai_model_config
+  (model_name, provider, capability, provider_model_name, endpoint_url,
+   credential_mode, credential_ref, default_dimension, status)
 VALUES
-  (1, 'mtr/fixture-embedding', 'TEXT_EMBEDDING', 'mtr', 'fixture-embedding',
-   'HTTPS_JSON', 'https://db4ai-mtr-fixture.invalid/v1/embeddings',
-   'SECRET_REF', 'mtr/not-read', 1024,
-   'mtr/fixture-embedding/current/1024/cosine', 'COSINE', TRUE);
+  ('mtr/fixture-embedding', 'mtr', 'TEXT_EMBEDDING', 'fixture-embedding',
+   'https://db4ai-mtr-fixture.invalid/v1/embeddings',
+   'SECRET_REF', 'mtr/not-read', 1024, 'ACTIVE');
 SET @ai_embedding_fixture_config_id = LAST_INSERT_ID();
-INSERT INTO mysql.alisql_ai_tenant_binding
-  (tenant_id, model_name, capability, config_id, active)
-VALUES
-  (0, 'mtr/fixture-embedding', 'TEXT_EMBEDDING',
-   @ai_embedding_fixture_config_id, TRUE);
-INSERT INTO mysql.alisql_ai_tenant_account
-  (account_user, account_host, tenant_id, active)
-VALUES ('ai_embedding_tester', 'localhost', 0, TRUE);
 
 --connect (embedding,localhost,ai_embedding_tester,,test)
 --disable_query_log
@@ -56,17 +32,13 @@ SET transaction_isolation = 'READ-COMMITTED';
 --enable_query_log
 --echo # The resolved metadata exposes the fixed fixture dimension, not a secret or endpoint override.
 SELECT JSON_UNQUOTE(JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.model_name')),
-       JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.dimension'),
-       JSON_UNQUOTE(JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.distance_metric'));
+       JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.dimension');
 
 --echo # The Debug-only fixture returns a deterministic vector through the normal SQL, audit, and codec path.
 SET @embedding = AI_EMBEDDING(
   'offline embedding regression probe', 'mtr/fixture-embedding', 1024);
 SELECT VECTOR_DIM(@embedding) AS dimension,
        VEC_DISTANCE_COSINE(@embedding, @embedding) AS self_distance;
-SELECT JSON_CONTAINS_PATH(AI_AUDIT_INFO(100), 'one', '$[0].endpoint',
-                          '$[0].credential_ref', '$[0].input')
-       AS audit_contains_sensitive_fields;
 
 --echo # The AI result is convertible to text and supports the explicit Euclidean distance function.
 SELECT LEFT(VEC_TOTEXT(@embedding), 4) = '[1,0' AS vector_text_prefix_is_expected,
@@ -86,7 +58,7 @@ DROP TABLE ai_embedding_vector_probe;
 --disconnect embedding
 --connection default
 
---echo # A fixed-dimension profile rejects a mismatched request and completes a failed audit record.
+--echo # A fixed-dimension profile rejects a mismatched request.
 --connect (embedding,localhost,ai_embedding_tester,,test)
 --error ER_NOT_SUPPORTED_YET
 SELECT AI_EMBEDDING(
@@ -94,32 +66,15 @@ SELECT AI_EMBEDDING(
 SELECT AI_EMBEDDING(NULL, 'mtr/fixture-embedding', 1024);
 --disconnect embedding
 --connection default
-SELECT status, error_code, total_tokens, http_status,
-       completed_at IS NOT NULL AS completed
-  FROM mysql.alisql_ai_call_audit
- WHERE config_id = @ai_embedding_fixture_config_id
- ORDER BY call_id;
 
---echo # Resource cleanup leaves no user, account mapping, Profile binding, Profile, or audit record.
-DELETE FROM mysql.alisql_ai_call_audit
- WHERE config_id = @ai_embedding_fixture_config_id;
-DELETE FROM mysql.alisql_ai_tenant_binding
- WHERE config_id = @ai_embedding_fixture_config_id;
-DELETE FROM mysql.alisql_ai_tenant_account
- WHERE account_user = 'ai_embedding_tester' AND account_host = 'localhost';
-DELETE FROM mysql.alisql_ai_model_config
- WHERE config_id = @ai_embedding_fixture_config_id;
+--echo # Resource cleanup leaves no user or Profile.
+DELETE FROM mysql.taurusdb_ai_model_config
+ WHERE Id = @ai_embedding_fixture_config_id;
 SET GLOBAL vidx_disabled = @ai_embedding_fixture_old_vidx_disabled;
 --disable_query_log
 SET @ai_embedding_fixture_sql = CONCAT(
-  'ALTER TABLE mysql.alisql_ai_model_config AUTO_INCREMENT = ',
+  'ALTER TABLE mysql.taurusdb_ai_model_config AUTO_INCREMENT = ',
   @ai_embedding_fixture_next_config_id);
-PREPARE ai_embedding_fixture_stmt FROM @ai_embedding_fixture_sql;
-EXECUTE ai_embedding_fixture_stmt;
-DEALLOCATE PREPARE ai_embedding_fixture_stmt;
-SET @ai_embedding_fixture_sql = CONCAT(
-  'ALTER TABLE mysql.alisql_ai_call_audit AUTO_INCREMENT = ',
-  @ai_embedding_fixture_next_audit_id);
 PREPARE ai_embedding_fixture_stmt FROM @ai_embedding_fixture_sql;
 EXECUTE ai_embedding_fixture_stmt;
 DEALLOCATE PREPARE ai_embedding_fixture_stmt;

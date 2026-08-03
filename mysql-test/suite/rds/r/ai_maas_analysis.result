@@ -1,16 +1,11 @@
-GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
-INSERT INTO mysql.alisql_ai_model_config
-(config_version, model_name, capability, provider, provider_model_name,
-endpoint_type, endpoint, credential_kind, credential_ref, active)
+GRANT AI_INVOKE, AI_ADMIN ON *.* TO 'root'@'localhost';
+INSERT INTO mysql.taurusdb_ai_model_config
+(model_name, provider, capability, provider_model_name, endpoint_url,
+credential_mode, credential_ref, status)
 VALUES
-(1, 'mtr/fixture-chat', 'TEXT_GENERATION', 'mtr', 'fixture-chat',
-'HTTPS_JSON', 'https://db4ai-mtr-fixture.invalid/v2/chat/completions',
-'SECRET_REF', 'mtr/not-read', TRUE);
-INSERT INTO mysql.alisql_ai_tenant_binding
-(tenant_id, model_name, capability, config_id, active)
-SELECT 0, model_name, capability, config_id, TRUE
-FROM mysql.alisql_ai_model_config
-WHERE model_name = 'mtr/fixture-chat';
+('mtr/fixture-chat', 'mtr', 'TEXT_GENERATION', 'fixture-chat',
+'https://db4ai-mtr-fixture.invalid/v2/chat/completions',
+'SECRET_REF', 'mtr/not-read', 'ACTIVE');
 # Bounded aggregate JSON reaches the stable analyze mode.
 SELECT AI_ANALYZE(
 'Summarize only the supplied aggregates.',
@@ -39,5 +34,4 @@ SELECT AI_ANALYZE('task', JSON_OBJECT('rows', JSON_ARRAY()),
 JSON_OBJECT('model_name', 'mtr/fixture-chat',
 'temperature', 0));
 ERROR HY000: Incorrect arguments to ai_analyze
-DELETE FROM mysql.alisql_ai_tenant_binding WHERE model_name = 'mtr/fixture-chat';
-DELETE FROM mysql.alisql_ai_model_config WHERE model_name = 'mtr/fixture-chat';
+DELETE FROM mysql.taurusdb_ai_model_config WHERE model_name = 'mtr/fixture-chat';

@@ -92,36 +92,36 @@ endpoint, enforces the resolved timeout and a 1 MiB response limit, and records
 only redacted provider status and error class. It does not log request bodies,
 Authorization headers or raw provider responses.
 
-## Model, credential and tenant data
+## Model, credential and invocation governance
 
-The bootstrap/upgrade scripts create these protected InnoDB tables in `mysql`:
+The bootstrap/upgrade scripts retain one protected InnoDB control-plane table
+in `mysql`:
 
 ```text
-alisql_ai_model_config
-  config_id, config_version, model_name, capability, provider,
-  provider_model_name, model_revision, endpoint_type, endpoint, dimension,
-  embedding_space_id, distance_metric, credential_kind, credential_ref,
-  api_key_plaintext, active, created_at, updated_at
-
-alisql_ai_tenant_binding
-  tenant_id, model_name, capability, config_id, active
-
-alisql_ai_tenant_account
-  account_user, account_host, tenant_id, active
-
-alisql_ai_call_audit
-  call_id, tenant_id, config_id, config_version, capability, status,
-  error_code, provider_request_id, prompt_tokens, completion_tokens,
-  reasoning_tokens, cached_tokens, total_tokens, created_at, completed_at,
-  latency_ms, http_status
+taurusdb_ai_model_config
+  Id, model_name, provider, capability, provider_model_name, endpoint_url,
+  credential_mode, credential_ref, api_key_plaintext, default_dimension,
+  model_revision, is_default, status, config_version, created_at, updated_at
 ```
 
-Model resolution uses `alisql_ai_tenant_account` to select an `ACTIVE` Profile
-for the authenticated account's tenant, then falls back to tenant `0` only
-when no account mapping exists and a global Profile is explicitly configured.
-The result is a fixed `(id, config_version)` for the call.
+Model resolution is instance-scoped: it selects the highest-version explicit
+active Profile, or the highest-version active default Profile for the requested
+capability. A duplicate selected `config_version` fails closed. The result is a
+fixed `(Id, config_version)` for the call. `AI_INVOKE` is the only P0
+invocation permission; it is checked before Profile resolution and network
+egress. `AI_ADMIN` is required in addition to normal table DML privileges for
+`INSERT`/`UPDATE`/`DELETE` on this control table. Publishing inserts a new
+`config_version` rather than overwriting a previously published Profile; the
+normal DML path is binlogged and replicated to read-only nodes.
 `status='ACTIVE'` means configuration lifecycle only; it is distinct from model
 visibility, account entitlement, successful inference and complete response.
+
+When `ai_invoke_audit=ON`, the runtime appends a redacted JSON Lines
+`AI_CALL_STARTED` event before egress and a terminal event after completion to
+the protected local audit file. Failure to persist `STARTED` fails the call
+closed; a missing terminal event is operationally treated as `UNKNOWN` because
+the provider request may already have been sent. Audit files are not readable
+through ordinary SQL in P0.
 
 Production credentials use `credential_ref` and the existing server keyring
 reader service. The secret is held only in request memory and zeroed after use.
