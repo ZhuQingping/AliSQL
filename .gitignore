@@ -20,6 +20,7 @@ source_downloads
 .vscode/
 
 build/
+.worktrees/
 datatool/
 datatools/
 __pycache__/
