@@ -5,6 +5,8 @@
 -- First select a dedicated validation schema, for example:
 --   mysql> CREATE DATABASE IF NOT EXISTS db4ai_validation;
 --   mysql> USE db4ai_validation;
+-- VECTOR columns and indexes require the following instance/session setup:
+--   mysql> SET GLOBAL vidx_disabled = OFF;
 --
 -- This file makes billable MaaS calls. It creates and drops only
 -- db4ai_live_embedding_probe and db4ai_live_knowledge_base in the current
@@ -16,6 +18,9 @@ SET @db4ai_embedding_model = 'huawei/bge-m3';
 SET @db4ai_expected_embedding_dimension = 1024;
 SET @db4ai_vector_distance = 'cosine';
 SET @db4ai_expected_top_id = 3;
+
+-- VECTOR indexes require READ-COMMITTED in the current AliSQL implementation.
+SET SESSION transaction_isolation = 'READ-COMMITTED';
 
 -- Clean up leftovers from a previous interrupted run. No other tables change.
 DROP TABLE IF EXISTS db4ai_live_knowledge_base;
@@ -60,7 +65,7 @@ SET @db4ai_sql = CONCAT(
   'doc TEXT NOT NULL, '
   'category VARCHAR(32) NOT NULL DEFAULT ''general'', '
   'vec VECTOR(', @db4ai_expected_embedding_dimension, ') AS '
-  '(AI_EMBEDDING(doc, ', QUOTE(@db4ai_embedding_model), ', '
+  '(AI_EMBEDDING(doc, ', QUOTE(@db4ai_embedding_model), ', ',
   @db4ai_expected_embedding_dimension, ')) STORED, '
   'VECTOR INDEX ix_knowledge_vec (vec) m=3 distance=',
   @db4ai_vector_distance, ') ENGINE=InnoDB');
