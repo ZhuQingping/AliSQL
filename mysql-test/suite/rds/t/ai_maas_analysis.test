@@ -80,6 +80,20 @@ SELECT AI_ANALYZE(
   JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
               'output_format', 'json'));
 
+--echo # MySQL executable version comments cannot hide DDL or DML.
+--error ER_NOT_SUPPORTED_YET
+SELECT AI_ANALYZE(
+  'Diagnose the supplied evidence only.',
+  JSON_OBJECT('fixture', 'mtr_fixture_version_comment_alter'),
+  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
+              'output_format', 'json'));
+--error ER_NOT_SUPPORTED_YET
+SELECT AI_ANALYZE(
+  'Diagnose the supplied evidence only.',
+  JSON_OBJECT('fixture', 'mtr_fixture_version_comment_replace'),
+  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
+              'output_format', 'json'));
+
 --echo # Diagnose requires a JSON object evidence bundle.
 --error ER_WRONG_ARGUMENTS
 SELECT AI_ANALYZE(

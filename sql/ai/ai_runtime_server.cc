@@ -109,6 +109,10 @@ std::string StripSqlComments(std::string_view content) {
   return stripped;
 }
 
+bool HasExecutableMysqlComment(std::string_view content) {
+  return content.find("/*!") != std::string_view::npos;
+}
+
 std::vector<std::string> SqlWords(std::string_view content) {
   std::vector<std::string> words;
   std::string word;
@@ -125,8 +129,11 @@ std::vector<std::string> SqlWords(std::string_view content) {
 }
 
 bool HasForbiddenDiagnoseOutput(const std::string &content) {
-  const std::string normalized =
-      StripSqlComments(DecodeJsonUnicodeEscapes(content));
+  const std::string decoded = DecodeJsonUnicodeEscapes(content);
+  // MySQL executes version comments (`/*!80000 ... */`), unlike ordinary
+  // comments. Reject them before generic comment stripping can hide payloads.
+  if (HasExecutableMysqlComment(decoded)) return true;
+  const std::string normalized = StripSqlComments(decoded);
   // Code blocks are intentionally not a diagnostic-output format: refusing
   // them closes syntax, whitespace, and language-tag based SQL evasions.
   if (normalized.find("```") != std::string::npos) return true;
@@ -295,6 +302,15 @@ void ExecuteOfflineMtrChat(std::string_view mode, std::string_view input,
   } else if (mode == "diagnose" &&
              input.find("mtr_fixture_replace_into") != std::string_view::npos) {
     response->final_content = "REPLACE INTO orders (tenant_id) VALUES (42)";
+  } else if (mode == "diagnose" &&
+             input.find("mtr_fixture_version_comment_alter") !=
+                 std::string_view::npos) {
+    response->final_content =
+        "/*!80000 ALTER TABLE orders ADD INDEX ix_diagnose (tenant_id) */";
+  } else if (mode == "diagnose" &&
+             input.find("mtr_fixture_version_comment_replace") !=
+                 std::string_view::npos) {
+    response->final_content = "/*!80000 REPLACE INTO orders VALUES (42) */";
   } else if (mode == "diagnose" &&
              input.find("mtr_fixture_repair_sql") != std::string_view::npos) {
     response->final_content =

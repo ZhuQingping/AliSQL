@@ -75,6 +75,19 @@ JSON_OBJECT('fixture', 'mtr_fixture_replace_into'),
 JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
 'output_format', 'json'));
 ERROR 42000: This version of MySQL doesn't yet support 'DB4AI diagnosis output violated the read-only contract'
+# MySQL executable version comments cannot hide DDL or DML.
+SELECT AI_ANALYZE(
+'Diagnose the supplied evidence only.',
+JSON_OBJECT('fixture', 'mtr_fixture_version_comment_alter'),
+JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
+'output_format', 'json'));
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI diagnosis output violated the read-only contract'
+SELECT AI_ANALYZE(
+'Diagnose the supplied evidence only.',
+JSON_OBJECT('fixture', 'mtr_fixture_version_comment_replace'),
+JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
+'output_format', 'json'));
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI diagnosis output violated the read-only contract'
 # Diagnose requires a JSON object evidence bundle.
 SELECT AI_ANALYZE(
 'Diagnose only supplied evidence.',
