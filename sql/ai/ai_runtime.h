@@ -3,12 +3,18 @@
 #define SQL_AI_AI_RUNTIME_INCLUDED
 
 #include <string>
+#include <vector>
 #include "sql/ai/ai_audit.h"
 #include "sql/ai/ai_provider_adapter.h"
 
 class THD;
 
 namespace alisql::ai {
+struct Ai_analyze_source {
+  std::string source_id;
+  uint64_t chunk_id{0};
+};
+
 struct Ai_analyze_options {
   std::string model_name;
   std::string mode{"analyze"};

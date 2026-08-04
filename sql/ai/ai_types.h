@@ -56,7 +56,8 @@ struct Ai_resolved_model {
 struct Ai_canonical_request {
   Ai_capability capability{Ai_capability::k_text_generation};
   Ai_resolved_model model;
-  std::string task;
+  // The runtime, rather than SQL callers, owns the system message.
+  std::string system_prompt;
   std::string input;
   uint32_t max_output_tokens{0};
   uint32_t timeout_ms{0};

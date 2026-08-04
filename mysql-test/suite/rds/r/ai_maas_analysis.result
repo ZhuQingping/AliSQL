@@ -21,7 +21,7 @@ JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'analyze',
 'output_format', 'json', 'max_output_tokens', 128))
 AS analysis_result;
 analysis_result
-offline analysis
+{"content":"offline analysis","model_name":"mtr/fixture-chat","config_version":1,"usage":{"prompt_tokens":0,"completion_tokens":0,"reasoning_tokens":0,"cached_tokens":0,"total_tokens":1}}
 # Diagnosis returns evidence only and is not an automatic repair path.
 SELECT AI_ANALYZE(
 'Return evidence and risk only. Do not execute or propose a repair.',
@@ -33,7 +33,20 @@ JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
 'output_format', 'json', 'max_output_tokens', 128))
 AS diagnosis_result;
 diagnosis_result
-offline diagnosis: evidence only
+{"content":"offline diagnosis: evidence only","model_name":"mtr/fixture-chat","config_version":1,"usage":{"prompt_tokens":0,"completion_tokens":0,"reasoning_tokens":0,"cached_tokens":0,"total_tokens":1}}
+# Diagnose requires a JSON object evidence bundle.
+SELECT AI_ANALYZE(
+'Diagnose only supplied evidence.',
+JSON_ARRAY(JSON_OBJECT('elapsed_ms', 4210)),
+JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
+'output_format', 'json'));
+ERROR HY000: Incorrect arguments to ai_analyze
+# Source provenance is a RAG JSON-only output feature.
+SELECT AI_ANALYZE(
+'Analyze supplied aggregates.', JSON_OBJECT('rows', 1),
+JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'analyze',
+'output_format', 'json', 'return_sources', true));
+ERROR HY000: Incorrect arguments to ai_analyze
 # Provider-private options remain outside the SQL contract.
 SELECT AI_ANALYZE('task', JSON_OBJECT('rows', JSON_ARRAY()),
 JSON_OBJECT('model_name', 'mtr/fixture-chat',

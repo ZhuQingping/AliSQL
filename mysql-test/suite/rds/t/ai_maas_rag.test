@@ -109,13 +109,23 @@ DROP TABLE knowledge_base;
 SET SESSION binlog_row_image = @rag_original_binlog_row_image;
 
 --echo # RAG output is paired with database-generated source metadata.
-SELECT AI_ANALYZE(
+SELECT JSON_EXTRACT(AI_ANALYZE(
   'Answer from supplied database chunks only.',
   JSON_OBJECT('question', 'How do I handle an offline gateway?',
               'sources', JSON_ARRAY(JSON_OBJECT('source_id', 'manual-42',
-                                                'chunk_id', 1))),
+                                                'chunk_id', 1,
+                                                'content', 'Tenant 42 gateway procedure.'))),
   JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'rag',
-              'output_format', 'json', 'return_sources', true)) AS rag_answer;
+              'output_format', 'json', 'return_sources', true)),
+  '$.sources[0].source_id') AS rag_source_id;
+
+--echo # RAG must receive source chunks from the SQL retrieval path.
+--error ER_WRONG_ARGUMENTS
+SELECT AI_ANALYZE(
+  'Answer from supplied database chunks only.',
+  JSON_OBJECT('question', 'How do I handle an offline gateway?'),
+  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'rag',
+              'output_format', 'json', 'return_sources', true));
 SELECT JSON_ARRAYAGG(JSON_OBJECT('source_id', source_id, 'chunk_id', chunk_id))
        AS sources
   FROM rag_manual_chunk

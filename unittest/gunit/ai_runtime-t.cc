@@ -13,17 +13,17 @@ TEST(AiRuntimeTest, RejectsProviderPrivateOptions) {
             runtime.ParseAnalyzeOptions("{\"temperature\":0}", &options));
 }
 
-TEST(AiRuntimeTest, ParsesOnlyStableAnalyzeOptions) {
+TEST(AiRuntimeTest, ParsesRagJsonSourceOptions) {
   Ai_runtime runtime(nullptr, nullptr);
   Ai_analyze_options options;
   EXPECT_EQ(Ai_error::k_ok,
             runtime.ParseAnalyzeOptions(
-                "{\"model_name\":\"huawei/glm-5.2\",\"mode\":\"summarize\","
+                "{\"model_name\":\"huawei/glm-5.2\",\"mode\":\"rag\","
                 "\"output_format\":\"json\",\"return_sources\":true,"
                 "\"max_output_tokens\":128,\"timeout_ms\":5000}",
                 &options));
   EXPECT_EQ("huawei/glm-5.2", options.model_name);
-  EXPECT_EQ("summarize", options.mode);
+  EXPECT_EQ("rag", options.mode);
   EXPECT_TRUE(options.return_sources);
   EXPECT_EQ(128U, options.max_output_tokens);
 }

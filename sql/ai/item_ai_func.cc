@@ -195,6 +195,10 @@ String *Item_func_ai_analyze::val_str(String *str) {
   const Ai_error error = runtime.Analyze(
       current_thd, std::string(task->ptr(), task->length()),
       std::string(input->ptr(), input->length()), options, &final_content);
+  if (error == Ai_error::k_invalid_options) {
+    my_error(ER_WRONG_ARGUMENTS, MYF(0), func_name());
+    return error_str();
+  }
   if (error != Ai_error::k_ok) {
     RaiseAiRuntimeError(error);
     return error_str();
@@ -202,6 +206,7 @@ String *Item_func_ai_analyze::val_str(String *str) {
   if (buffer.mem_realloc(final_content.size())) return error_str();
   memcpy(buffer.ptr(), final_content.data(), final_content.size());
   buffer.length(final_content.size());
+  buffer.set_charset(&my_charset_utf8mb4_0900_ai_ci);
   return &buffer;
 }
 

@@ -34,6 +34,21 @@ SELECT AI_ANALYZE(
               'output_format', 'json', 'max_output_tokens', 128))
   AS diagnosis_result;
 
+--echo # Diagnose requires a JSON object evidence bundle.
+--error ER_WRONG_ARGUMENTS
+SELECT AI_ANALYZE(
+  'Diagnose only supplied evidence.',
+  JSON_ARRAY(JSON_OBJECT('elapsed_ms', 4210)),
+  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
+              'output_format', 'json'));
+
+--echo # Source provenance is a RAG JSON-only output feature.
+--error ER_WRONG_ARGUMENTS
+SELECT AI_ANALYZE(
+  'Analyze supplied aggregates.', JSON_OBJECT('rows', 1),
+  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'analyze',
+              'output_format', 'json', 'return_sources', true));
+
 --echo # Provider-private options remain outside the SQL contract.
 --error ER_WRONG_ARGUMENTS
 SELECT AI_ANALYZE('task', JSON_OBJECT('rows', JSON_ARRAY()),

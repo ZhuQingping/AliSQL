@@ -23,10 +23,12 @@ Ai_error Ai_runtime::ParseAnalyzeOptions(const std::string &json,
     else if (key == "timeout_ms" && value.IsUint()) out->timeout_ms = value.GetUint();
     else return Ai_error::k_invalid_options;
   }
-  if ((out->mode != "analyze" && out->mode != "rag" && out->mode != "diagnose" &&
+  if (out->model_name.empty() ||
+      (out->mode != "analyze" && out->mode != "rag" && out->mode != "diagnose" &&
        out->mode != "summarize" && out->mode != "classify" && out->mode != "extract") ||
       (out->output_format != "text" && out->output_format != "json") ||
-      (out->return_sources && out->output_format != "json"))
+      (out->return_sources &&
+       (out->mode != "rag" || out->output_format != "json")))
     return Ai_error::k_invalid_options;
   return Ai_error::k_ok;
 }
