@@ -89,9 +89,10 @@ void WriteRecord(TABLE *table, const Ai_model_admin_request &request, uint64_t v
     table->field[9]->set_notnull();
     Store(table->field[9], std::string(request.credential_value.view()));
   }
-  if (request.capability == Ai_capability::k_text_embedding)
+  if (request.capability == Ai_capability::k_text_embedding) {
+    table->field[10]->set_notnull();
     table->field[10]->store(1024, false);
-  else
+  } else
     table->field[10]->set_null();
   table->field[11]->set_null(); table->field[12]->set_null();
   table->field[13]->set_null(); table->field[14]->set_null();

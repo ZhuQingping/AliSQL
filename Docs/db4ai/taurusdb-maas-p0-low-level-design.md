@@ -123,3 +123,11 @@ Endpoint 不再由 SQL 管理员输入，运行时只接受由 capability 派生
 使用 `scripts/db4ai_maas_real_embedding_rag_smoke.sql` 验证 Embedding、向量索引、STORED
 生成列和 RAG。生产 `SECRET_REF`、主备/只读节点、日志采集和跨 Region 网络路径必须在
 TaurusDB 目标环境执行并记录为发布验收证据。
+
+2026-08-04 的本地 Debug 回归已离线通过 `ai_maas_embedding`、`ai_maas_analysis`、
+`ai_maas_contract`、`ai_maas_governance`、`ai_maas_rag` 和 `ai_maas_model_admin`。本机
+3344 验证实例尚未部署本分支的 `dbms_ai` 过程；为保护既有安装和数据目录，未覆盖该旧实例。
+改用当前分支 Debug 二进制建立隔离临时实例后，`dbms_ai` 的 bge-m3/1024 解析与两阶段审计
+事件均已实测；首次真实 Embedding 则收到 MaaS HTTP 401（SQL 脱敏为 `ACCESS_DENIED`），未继续
+产生 Analyze 或 STORED/RAG 请求。更新为已授权的凭据后，仍须显式执行上述两个脚本并保存脱敏
+成功结果；不得将本次离线回归或一次认证失败代替真实 Provider 验证。

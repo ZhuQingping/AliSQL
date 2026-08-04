@@ -12,6 +12,18 @@
 -- db4ai_live_embedding_probe and db4ai_live_knowledge_base in the current
 -- schema. The caller needs AI_INVOKE, CREATE, DROP, and permission to set
 -- SESSION binlog_row_image. It never reads, stores, or prints an API key.
+--
+-- Register the embedding model once through dbms_ai as an AI_ADMIN account;
+-- do not modify mysql.taurusdb_ai_model_config directly. For a Debug/development
+-- instance, replace <DEVELOPMENT_API_KEY> only in an interactive session:
+--
+-- CALL dbms_ai.register_model('huawei/bge-m3', 'TEXT_EMBEDDING', 'bge-m3',
+--                             'PLAINTEXT_DEV', '<DEVELOPMENT_API_KEY>');
+--
+-- For a production/Release instance, use an existing keyring/CSMS reference:
+--
+-- CALL dbms_ai.register_model('huawei/bge-m3', 'TEXT_EMBEDDING', 'bge-m3',
+--                             'SECRET_REF', '<EXISTING_SECRET_REFERENCE>');
 
 -- Edit these values for the configured Embedding Profile under test.
 SET @db4ai_embedding_model = 'huawei/bge-m3';

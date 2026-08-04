@@ -16,6 +16,13 @@ ERROR 42000: Access denied; you need (at least one of) the AI_ADMIN privilege(s)
 GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
 CALL dbms_ai.register_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION',
 'glm-5.2', 'SECRET_REF', 'mtr/not-read');
+# The package makes its fixed bge-m3/1024 embedding contract resolvable.
+CALL dbms_ai.register_model('huawei/mtr-model-admin-embedding', 'TEXT_EMBEDDING',
+'bge-m3', 'SECRET_REF', 'mtr/not-read');
+SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/mtr-model-admin-embedding'), '$.dimension');
+JSON_EXTRACT(AI_MODEL_INFO('huawei/mtr-model-admin-embedding'), '$.dimension')
+1024
+CALL dbms_ai.delete_model('huawei/mtr-model-admin-embedding', 'TEXT_EMBEDDING');
 # Duplicate names and unsupported embedding profiles are rejected locally.
 CALL dbms_ai.register_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION',
 'glm-5.2', 'SECRET_REF', 'mtr/not-read');

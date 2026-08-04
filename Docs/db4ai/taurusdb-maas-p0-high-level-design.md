@@ -1044,6 +1044,20 @@ P0 必须覆盖：
   Runtime 持久配置来源。
 - 输出和日志不得包含真实 API Key。
 
+### 12.1 2026-08-04 实现验证状态
+
+- 当前分支的 Debug `mysqld` 和 `merge_small_tests-t` 已构建成功；`rds` suite 的
+  `ai_maas_embedding`、`ai_maas_analysis`、`ai_maas_contract`、
+  `ai_maas_governance`、`ai_maas_rag`、`ai_maas_model_admin` 均已离线通过，未访问真实
+  MaaS 或读取真实凭据。
+- 两个 sourceable smoke 脚本只通过 `dbms_ai` 管理包说明模型注册路径，脚本本身不含系统表
+  DML、API Key 或 Secret 值。开发 `PLAINTEXT_DEV` 与生产 `SECRET_REF` 都仅作为注释示例。
+- 本机 3344 验证实例仍是 2026-08-03 安装的旧 Debug 二进制，未注册 `dbms_ai` 过程；本轮
+  未覆盖或重启该实例。改用当前分支 Debug 二进制启动独立的临时 data/socket/log 实例，并通过
+  `dbms_ai` 注册开发模型后，已验证模型解析为 bge-m3/1024 和审计 `STARTED`/`FAILED` 事件。
+  真实 Embedding 出站收到 MaaS HTTP 401（脱敏为 `ACCESS_DENIED`），因此没有继续发起 Analyze
+  或 STORED/RAG 调用。更新为已授权的凭据后，必须重新执行两个 smoke 脚本并保存三项成功结果。
+
 ## 13. P0 交付物映射
 
 | P0 目标 | HLD 对应章节 | 验收方式 |
