@@ -62,3 +62,19 @@
 - The lexical guard intentionally favors safety over prose fidelity. A
   diagnosis that quotes an executable repair statement is rejected rather
   than attempting fragile context-aware SQL interpretation.
+
+## Review round 2
+
+- Replaced the adjacent-pair recognizer with a fail-closed diagnose policy:
+  JSON Unicode escapes are decoded, SQL comments are removed, code fences are
+  refused, and any SQL mutation/DDL/administrative action token is rejected.
+  This policy applies only to `mode='diagnose'`; analysis and RAG behavior is
+  unchanged.
+- Debug MTR fixtures prove local rejection of commented/whitespace `ALTER`,
+  fenced `ALTER`, JSON-escaped `ALTER\\u0020TABLE`, `CREATE INDEX`, and
+  `REPLACE INTO`, while the evidence-only diagnosis remains accepted.
+- Verification: `cmake --build . --target mysqld ai_runtime-t
+  ai_huawei_maas_adapter-t -j4`; `./runtime_output_directory/ai_runtime-t`
+  (4/4); `./runtime_output_directory/ai_huawei_maas_adapter-t` (10/10); and
+  `./mtr --suite=rds --record ai_maas_analysis ai_maas_rag ai_maas_contract`
+  (all passed). Commit: pending.

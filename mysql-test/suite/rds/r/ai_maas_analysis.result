@@ -41,6 +41,40 @@ JSON_OBJECT('fixture', 'mtr_fixture_repair_sql', 'elapsed_ms', 4210),
 JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
 'output_format', 'json'));
 ERROR 42000: This version of MySQL doesn't yet support 'DB4AI diagnosis output violated the read-only contract'
+# Comments and whitespace cannot hide repair SQL.
+SELECT AI_ANALYZE(
+'Diagnose the supplied evidence only.',
+JSON_OBJECT('fixture', 'mtr_fixture_commented_whitespace_alter'),
+JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
+'output_format', 'json'));
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI diagnosis output violated the read-only contract'
+# Code fences cannot hide repair SQL.
+SELECT AI_ANALYZE(
+'Diagnose the supplied evidence only.',
+JSON_OBJECT('fixture', 'mtr_fixture_code_fence_alter'),
+JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
+'output_format', 'json'));
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI diagnosis output violated the read-only contract'
+# JSON Unicode escapes cannot hide repair SQL.
+SELECT AI_ANALYZE(
+'Diagnose the supplied evidence only.',
+JSON_OBJECT('fixture', 'mtr_fixture_escaped_json_alter'),
+JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
+'output_format', 'json'));
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI diagnosis output violated the read-only contract'
+# Index DDL and REPLACE DML cannot escape diagnosis output.
+SELECT AI_ANALYZE(
+'Diagnose the supplied evidence only.',
+JSON_OBJECT('fixture', 'mtr_fixture_create_index'),
+JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
+'output_format', 'json'));
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI diagnosis output violated the read-only contract'
+SELECT AI_ANALYZE(
+'Diagnose the supplied evidence only.',
+JSON_OBJECT('fixture', 'mtr_fixture_replace_into'),
+JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
+'output_format', 'json'));
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI diagnosis output violated the read-only contract'
 # Diagnose requires a JSON object evidence bundle.
 SELECT AI_ANALYZE(
 'Diagnose only supplied evidence.',

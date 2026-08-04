@@ -42,6 +42,44 @@ SELECT AI_ANALYZE(
   JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
               'output_format', 'json'));
 
+--echo # Comments and whitespace cannot hide repair SQL.
+--error ER_NOT_SUPPORTED_YET
+SELECT AI_ANALYZE(
+  'Diagnose the supplied evidence only.',
+  JSON_OBJECT('fixture', 'mtr_fixture_commented_whitespace_alter'),
+  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
+              'output_format', 'json'));
+
+--echo # Code fences cannot hide repair SQL.
+--error ER_NOT_SUPPORTED_YET
+SELECT AI_ANALYZE(
+  'Diagnose the supplied evidence only.',
+  JSON_OBJECT('fixture', 'mtr_fixture_code_fence_alter'),
+  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
+              'output_format', 'json'));
+
+--echo # JSON Unicode escapes cannot hide repair SQL.
+--error ER_NOT_SUPPORTED_YET
+SELECT AI_ANALYZE(
+  'Diagnose the supplied evidence only.',
+  JSON_OBJECT('fixture', 'mtr_fixture_escaped_json_alter'),
+  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
+              'output_format', 'json'));
+
+--echo # Index DDL and REPLACE DML cannot escape diagnosis output.
+--error ER_NOT_SUPPORTED_YET
+SELECT AI_ANALYZE(
+  'Diagnose the supplied evidence only.',
+  JSON_OBJECT('fixture', 'mtr_fixture_create_index'),
+  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
+              'output_format', 'json'));
+--error ER_NOT_SUPPORTED_YET
+SELECT AI_ANALYZE(
+  'Diagnose the supplied evidence only.',
+  JSON_OBJECT('fixture', 'mtr_fixture_replace_into'),
+  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
+              'output_format', 'json'));
+
 --echo # Diagnose requires a JSON object evidence bundle.
 --error ER_WRONG_ARGUMENTS
 SELECT AI_ANALYZE(
