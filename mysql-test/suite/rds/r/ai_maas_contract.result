@@ -1,8 +1,8 @@
 # AI functions preserve NULL input without model resolution or egress.
-SELECT AI_EMBEDDING(NULL);
-AI_EMBEDDING(NULL)
+SELECT AI_EMBEDDING(NULL, 'mtr/fixture-embedding', 1024);
+AI_EMBEDDING(NULL, 'mtr/fixture-embedding', 1024)
 NULL
-# The instance control plane resolves an ACTIVE default Profile without tenant mappings.
+# AI calls require an explicit active Profile and remain offline with fixture credentials.
 GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
 DELETE FROM mysql.taurusdb_ai_model_config
 WHERE model_name IN ('mtr/fixture-embedding', 'mtr/fixture-chat',
@@ -21,15 +21,22 @@ VALUES
 'https://db4ai-mtr-fixture.invalid/v1/embeddings',
 'SECRET_REF', 'mtr/not-read', 1024, FALSE, 'DISABLED');
 GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
-SELECT VECTOR_DIM(AI_EMBEDDING('default profile')) AS default_dimension;
-default_dimension
+SELECT AI_EMBEDDING('text');
+ERROR HY000: Incorrect arguments to ai_embedding
+SELECT AI_ANALYZE('task', JSON_OBJECT('x', 1));
+ERROR HY000: Incorrect arguments to ai_analyze
+SELECT VECTOR_DIM(AI_EMBEDDING('explicit profile', 'mtr/fixture-embedding', 1024))
+AS explicit_dimension;
+explicit_dimension
 1024
-SELECT AI_ANALYZE('Summarize only.', JSON_OBJECT('rows', 1)) AS default_analysis;
-default_analysis
+SELECT AI_ANALYZE('Summarize only.', JSON_OBJECT('rows', 1),
+JSON_OBJECT('model_name', 'mtr/fixture-chat',
+'mode', 'analyze')) AS explicit_analysis;
+explicit_analysis
 offline analysis
-SELECT JSON_UNQUOTE(JSON_EXTRACT(AI_MODEL_INFO(), '$.model_name'))
-AS default_model;
-default_model
+SELECT JSON_UNQUOTE(JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.model_name'))
+AS explicit_model;
+explicit_model
 mtr/fixture-embedding
 # A disabled Profile is rejected locally before credentials or network access.
 SELECT AI_EMBEDDING('disabled', 'mtr/contract-disabled', 1024);

@@ -1,0 +1,28 @@
+# dbms_ai accepts only the governed model-management package.
+CREATE USER 'ai_model_admin_dml'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON mysql.taurusdb_ai_model_config
+TO 'ai_model_admin_dml'@'localhost';
+# Table DML alone cannot administer models through the package.
+CALL dbms_ai.register_model('mtr/model-admin-forbidden-embedding', 'TEXT_EMBEDDING',
+'fixture-embedding', 'SECRET_REF', 'mtr/not-read');
+ERROR 42000: Access denied; you need (at least one of) the AI_ADMIN privilege(s) for this operation
+GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
+CALL dbms_ai.register_model('mtr/model-admin-lifecycle-embedding', 'TEXT_EMBEDDING',
+'fixture-embedding', 'SECRET_REF', 'mtr/not-read');
+# The public model list exposes exactly safe lifecycle metadata.
+CALL dbms_ai.show_models();
+MODEL_NAME	CAPABILITY	PROVIDER_MODEL_NAME	DIMENSION	CONFIG_VERSION
+mtr/model-admin-lifecycle-embedding	TEXT_EMBEDDING	fixture-embedding	1024	1
+CALL dbms_ai.update_model('mtr/model-admin-lifecycle-embedding', 'TEXT_EMBEDDING',
+'fixture-embedding-v2', 'SECRET_REF', 'mtr/not-read');
+# Updating exposes only the replacement active configuration.
+CALL dbms_ai.show_models();
+MODEL_NAME	CAPABILITY	PROVIDER_MODEL_NAME	DIMENSION	CONFIG_VERSION
+mtr/model-admin-lifecycle-embedding	TEXT_EMBEDDING	fixture-embedding-v2	1024	2
+CALL dbms_ai.delete_model('mtr/model-admin-lifecycle-embedding', 'TEXT_EMBEDDING');
+# Deleting retires every version from the public model list.
+CALL dbms_ai.show_models();
+MODEL_NAME	CAPABILITY	PROVIDER_MODEL_NAME	DIMENSION	CONFIG_VERSION
+REVOKE SELECT, INSERT, UPDATE, DELETE ON mysql.taurusdb_ai_model_config
+FROM 'ai_model_admin_dml'@'localhost';
+DROP USER 'ai_model_admin_dml'@'localhost';
