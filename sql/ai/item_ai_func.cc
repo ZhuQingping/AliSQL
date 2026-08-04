@@ -120,18 +120,14 @@ String *Item_func_ai_embedding::val_str(String *str) {
     null_value = true;
     return nullptr;
   }
-  if (CheckAiInvokePrivilege(current_thd)) return error_str();
-
-  std::string model_name;
-  if (arg_count >= 2) {
-    String model_buffer;
-    String *model = args[1]->val_str(&model_buffer);
-    if (model == nullptr) {
-      null_value = true;
-      return nullptr;
-    }
-    model_name.assign(model->ptr(), model->length());
+  String model_buffer;
+  String *model = args[1]->val_str(&model_buffer);
+  if (model == nullptr || model->length() == 0) {
+    my_error(ER_WRONG_ARGUMENTS, MYF(0), func_name());
+    return error_str();
   }
+  const std::string model_name(model->ptr(), model->length());
+  if (CheckAiInvokePrivilege(current_thd)) return error_str();
 
   uint32_t dimension = 0;
   if (arg_count == 3) {

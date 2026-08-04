@@ -19,6 +19,16 @@ SET GLOBAL vidx_disabled = OFF;
 --enable_query_log
 
 CREATE USER 'ai_embedding_tester'@'localhost';
+
+--connect (embedding_unprivileged,localhost,ai_embedding_tester,,test)
+--echo # An empty or NULL model is rejected locally before the AI_INVOKE privilege check.
+--error ER_WRONG_ARGUMENTS
+SELECT AI_EMBEDDING('empty model', '', 1024);
+--error ER_WRONG_ARGUMENTS
+SELECT AI_EMBEDDING('NULL model', NULL, 1024);
+--disconnect embedding_unprivileged
+--connection default
+
 GRANT AI_INVOKE ON *.* TO 'ai_embedding_tester'@'localhost';
 
 INSERT INTO mysql.taurusdb_ai_model_config

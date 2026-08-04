@@ -4,6 +4,11 @@ ERROR HY000: Incorrect arguments to ai_embedding
 # AI_EMBEDDING offline fixture: setup is isolated and never reads a credential or performs HTTP.
 GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
 CREATE USER 'ai_embedding_tester'@'localhost';
+# An empty or NULL model is rejected locally before the AI_INVOKE privilege check.
+SELECT AI_EMBEDDING('empty model', '', 1024);
+ERROR HY000: Incorrect arguments to ai_embedding
+SELECT AI_EMBEDDING('NULL model', NULL, 1024);
+ERROR HY000: Incorrect arguments to ai_embedding
 GRANT AI_INVOKE ON *.* TO 'ai_embedding_tester'@'localhost';
 INSERT INTO mysql.taurusdb_ai_model_config
 (model_name, provider, capability, provider_model_name, endpoint_url,
