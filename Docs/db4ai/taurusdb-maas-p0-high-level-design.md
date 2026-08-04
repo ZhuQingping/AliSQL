@@ -93,6 +93,44 @@ P0 不承诺：
 区域和实例下未完成验证，不能外推为产品能力不存在。完整 SQL、脚本、脱敏输出和环境
 清理记录见 `Docs/db4ai_tasks/taurusdb-maas-engineering-and-validation.md`。
 
+### Databricks AI Functions 与 Snowflake Cortex
+
+**接口事实：**
+
+- Databricks 将 SQL AI Functions 分为两类：`ai_gen(prompt)` 等任务型简易函数，以及
+  `ai_query(endpoint, request, ...)` 通用调用入口。后者通过命名的 `modelParameters`、
+  `responseFormat` 和 `failOnError` 扩展模型参数、结构化输出和错误返回；其文档明确建议当
+  任务型函数满足需求时优先使用任务型函数。`ai_query` 的 Endpoint 与 request 面向
+  Databricks 管理的、外部或自定义模型服务，因此调用方需要理解 Endpoint 类型和请求形态。
+  官方依据：
+  https://docs.databricks.com/aws/en/large-language-models/ai-functions ，
+  https://docs.databricks.com/aws/en/sql/language-manual/functions/ai_query 。
+- Snowflake 的通用文本入口为
+  `AI_COMPLETE(model, prompt [, model_parameters, response_format, show_details])`。
+  `model_parameters` 是 SQL 对象，用于 `temperature`、`top_p`、`max_tokens` 和
+  guardrails；`response_format` 单独表达 JSON Schema 或 SQL 类型形式的结构化输出，
+  `show_details` 单独控制 usage 等调用详情。官方依据：
+  https://docs.snowflake.com/en/sql-reference/functions/ai_complete-single-string 。
+- 两者的共同点是：客户首先提供稳定的模型/Endpoint 标识和自然语言 prompt；可选行为通过
+  对象或命名参数扩展，而不是把“RAG”“DBA 诊断”等业务场景编码为模式枚举。结构化抽取在
+  Databricks 中有 `ai_extract(content, schema [, options])` 这类具有明确输入和输出契约的
+  专用函数，而不是无限扩张一个通用函数。
+
+**P0 设计输入：**
+
+1. TaurusDB 采用 Snowflake 类似的“逻辑模型名 + prompt + 受控 options”形态，但逻辑模型名
+   解析为 TaurusDB Model Profile，而不是暴露云厂商 Endpoint 或原始 Provider JSON。
+2. 不照搬 Databricks `ai_query` 的 Endpoint/request 透传能力。TaurusDB 必须保留
+   `AI_INVOKE`、Endpoint allowlist、凭据隔离、审计和 Provider Adapter 边界。
+3. `options_json` 只容纳跨 Provider、调用级且可验证的配置；未知字段必须在 MaaS 出站前
+   失败。Endpoint、API Key、原始 messages、工具调用、异步/批量控制和厂商私有 JSON 不进入
+   客户 SQL 契约。
+4. RAG、SQL 诊断、经营分析是 prompt 和数据库数据准备方式，不是 `options_json` 的
+   `mode`。RAG 的召回、tenant/权限/标量过滤和来源保留必须在数据库 SQL 中完成。
+5. 若后续需要字段抽取和类型保证，新增 `AI_EXTRACT(model_name, content, json_schema
+   [, options_json])` 等专用接口；不要以 `AI_ANALYZE` 的 mode 或任意 JSON 透传替代输出
+   Schema 校验。
+
 ### AWS Aurora 与 Amazon Bedrock
 
 **接口与实测事实：**
@@ -342,6 +380,26 @@ AI_ANALYZE(task_text, input_value, options_json)
 受控 system prompt 与调用方任务、业务数据组合为 provider 请求。这样既保留通用分析能力，
 又避免客户自行覆盖诊断边界或把第一个参数误解为角色设定。当前 AliSQL 原型将
 `task_text` 映射为 provider `system` message；该行为是后续需要收敛的接口语义差异。
+
+**接口冻结前的演进结论（未实现）。** 当前代码的三段式
+`AI_ANALYZE(task_text, input_value [, options_json])` 仅作为 P0 原型兼容接口，不能直接冻结为
+长期客户契约。结合 Databricks 与 Snowflake 调研，目标客户接口收敛为：
+
+```sql
+AI_ANALYZE(model_name, prompt [, options_json])
+```
+
+其中 `model_name` 和 `prompt` 必填；客户只提供自然语言问题及其已授权上下文，TaurusDB Runtime
+在内部追加不可由调用方覆盖的 system policy。目标接口首版的 `options_json` 仅支持
+`max_output_tokens` 和 `timeout_ms`；未来可在兼容基础上增加经过 Profile allowlist 校验的
+`temperature` 或 `response_format`。未知字段必须失败。`rag`、`dba`、`diagnose`、`summarize`
+等业务模式不再进入 options：它们通过 prompt、数据库侧数据准备或后续具有专用返回契约的函数
+表达。
+
+该函数始终返回 `utf8mb4` 文本；未来即使要求 JSON 输出，也先以有效 JSON 文本返回，由 SQL
+JSON 函数消费，不能根据 options 改变函数的 SQL 返回类型。需要可验证 JSON Schema、类型、
+引用或置信度时，应新增专用结构化接口，而不是继续扩张 `AI_ANALYZE`。在该接口完成实现、MTR
+和真实 MaaS 回归前，文档中的“当前实现”仍以本节前述旧签名和现有测试为准。
 
 ### 4.2 内部 AI Runtime 接口
 
