@@ -22,9 +22,9 @@ VALUES
 'SECRET_REF', 'mtr/not-read', 1024, FALSE, 'DISABLED');
 GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
 SELECT AI_EMBEDDING('text');
-ERROR HY000: Incorrect arguments to ai_embedding
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI model configuration was not found'
 SELECT AI_ANALYZE('task', JSON_OBJECT('x', 1));
-ERROR HY000: Incorrect arguments to ai_analyze
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI model configuration was not found'
 SELECT VECTOR_DIM(AI_EMBEDDING('explicit profile', 'mtr/fixture-embedding', 1024))
 AS explicit_dimension;
 explicit_dimension
@@ -50,7 +50,7 @@ VALUES
 'https://api.modelarts-maas.com/v1/not-embeddings',
 'PLAINTEXT_DEV', UNHEX('00'), 1024, 'ACTIVE');
 SELECT AI_EMBEDDING('plaintext-probe', 'mtr/plaintext-probe', 1024);
-ERROR 42000: This version of MySQL doesn't yet support 'DB4AI model endpoint is incompatible with its capability'
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI provider request failed'
 # Registered functions enforce their public arity.
 SELECT AI_EMBEDDING();
 ERROR 42000: Incorrect parameter count in the call to native function 'AI_EMBEDDING'

@@ -15,15 +15,15 @@ CALL dbms_ai.register_model('mtr/model-admin-forbidden-embedding', 'TEXT_EMBEDDI
 --connection default
 
 GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
-CALL dbms_ai.register_model('mtr/model-admin-lifecycle-embedding', 'TEXT_EMBEDDING',
-                            'fixture-embedding', 'SECRET_REF', 'mtr/not-read');
+CALL dbms_ai.register_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION',
+                            'glm-5.2', 'SECRET_REF', 'mtr/not-read');
 --echo # The public model list exposes exactly safe lifecycle metadata.
 CALL dbms_ai.show_models();
-CALL dbms_ai.update_model('mtr/model-admin-lifecycle-embedding', 'TEXT_EMBEDDING',
-                          'fixture-embedding-v2', 'SECRET_REF', 'mtr/not-read');
+CALL dbms_ai.update_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION',
+                          'kimi-k2.6', 'SECRET_REF', 'mtr/not-read');
 --echo # Updating exposes only the replacement active configuration.
 CALL dbms_ai.show_models();
-CALL dbms_ai.delete_model('mtr/model-admin-lifecycle-embedding', 'TEXT_EMBEDDING');
+CALL dbms_ai.delete_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION');
 --echo # Deleting retires every version from the public model list.
 CALL dbms_ai.show_models();
 

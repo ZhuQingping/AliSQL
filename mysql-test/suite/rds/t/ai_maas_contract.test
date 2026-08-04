@@ -21,9 +21,9 @@ VALUES
    'SECRET_REF', 'mtr/not-read', 1024, FALSE, 'DISABLED');
 
 GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
---error ER_WRONG_ARGUMENTS
+--error ER_NOT_SUPPORTED_YET
 SELECT AI_EMBEDDING('text');
---error ER_WRONG_ARGUMENTS
+--error ER_NOT_SUPPORTED_YET
 SELECT AI_ANALYZE('task', JSON_OBJECT('x', 1));
 SELECT VECTOR_DIM(AI_EMBEDDING('explicit profile', 'mtr/fixture-embedding', 1024))
   AS explicit_dimension;

@@ -172,7 +172,9 @@ Ai_error ReadPlaintextDevFromSystemTable(THD *thd,
 Ai_error Ai_model_registry::Resolve(THD *thd, std::string_view model_name,
                                     Ai_capability capability,
                                     Ai_resolved_model *out) const {
-  if (thd == nullptr) return Ai_error::k_model_not_found;
+  // P0 deliberately has no implicit/default production model.  A caller must
+  // name the governed profile it wants to invoke.
+  if (thd == nullptr || model_name.empty()) return Ai_error::k_model_not_found;
   std::vector<Ai_model_profile> profiles;
   const Ai_error load_error = LoadProfiles(thd, &profiles);
   if (load_error != Ai_error::k_ok) return load_error;
@@ -208,10 +210,35 @@ Ai_error Ai_model_registry::LoadProfiles(
     profile.config_version = static_cast<uint64_t>(config_table->field[18]->val_int());
     profile.model_name = FieldValue(config_table->field[1]);
     profile.provider = FieldValue(config_table->field[2]);
-    profile.capability = CapabilityFromValue(FieldValue(config_table->field[3]));
+    const std::string capability = FieldValue(config_table->field[3]);
+    if (capability != "TEXT_EMBEDDING" && capability != "TEXT_GENERATION")
+      continue;
+    profile.capability = CapabilityFromValue(capability);
     profile.provider_model_name = FieldValue(config_table->field[4]);
     profile.endpoint_type = "HTTPS_JSON";
-    profile.endpoint = FieldValue(config_table->field[5]);
+    // Endpoint selection is owned by the server.  A stored endpoint is never
+    // trusted for a production Huawei profile.
+    if (profile.provider == "huawei") {
+      profile.endpoint = profile.capability == Ai_capability::k_text_embedding
+                             ? "https://api.modelarts-maas.com/v1/embeddings"
+                             : "https://api.modelarts-maas.com/v2/chat/completions";
+    }
+#ifndef NDEBUG
+    // Existing MTR fixtures are intentionally table-seeded/offline.  Keep the
+    // exception narrow so it cannot create a non-Huawei production route.
+    else if ((profile.model_name == "mtr/fixture-embedding" &&
+              profile.capability == Ai_capability::k_text_embedding) ||
+             (profile.model_name == "mtr/fixture-chat" &&
+              profile.capability == Ai_capability::k_text_generation)) {
+      profile.endpoint = FieldValue(config_table->field[5]);
+    } else {
+      continue;
+    }
+#else
+    else {
+      continue;
+    }
+#endif
     profile.credential_kind = FieldValue(config_table->field[7]);
     profile.credential_ref = FieldValue(config_table->field[8]);
     profile.dimension = config_table->field[10]->is_null()
@@ -219,7 +246,11 @@ Ai_error Ai_model_registry::LoadProfiles(
                             : static_cast<uint32_t>(config_table->field[10]->val_int());
     profile.model_revision = FieldValue(config_table->field[12]);
     profile.active = true;
-    profile.is_default = config_table->field[16]->val_int() != 0;
+    profile.is_default = false;
+    if (profile.provider == "huawei" &&
+        profile.capability == Ai_capability::k_text_embedding &&
+        (profile.provider_model_name != "bge-m3" || profile.dimension != 1024))
+      continue;
     profiles->push_back(std::move(profile));
   }
   if (!read_error) config_table->file->ha_rnd_end();
