@@ -1,4 +1,5 @@
 --echo # AI invocation audit is globally enabled by default and has no SESSION scope.
+CALL mtr.add_suppression("AUDIT_TERMINAL_WRITE_FAILED");
 SELECT @@GLOBAL.ai_invoke_audit AS audit_default;
 
 CREATE USER 'ai_audit_reader'@'localhost';
@@ -11,10 +12,42 @@ SET GLOBAL ai_invoke_audit = OFF;
 --connection default
 
 --echo # Administrators can dynamically control only the GLOBAL switch.
+--error ER_GLOBAL_VARIABLE
+SET SESSION ai_invoke_audit = OFF;
 SET GLOBAL ai_invoke_audit = OFF;
 SELECT @@GLOBAL.ai_invoke_audit AS audit_disabled;
 SET GLOBAL ai_invoke_audit = ON;
 SELECT @@GLOBAL.ai_invoke_audit AS audit_reenabled;
+
+--echo # A terminal audit write failure fails the SQL call after STARTED and logs only correlation metadata.
+GRANT AI_ADMIN, AI_INVOKE ON *.* TO 'root'@'localhost';
+DELETE FROM mysql.taurusdb_ai_model_config
+ WHERE model_name = 'mtr/fixture-embedding';
+INSERT INTO mysql.taurusdb_ai_model_config
+  (model_name, provider, capability, provider_model_name, endpoint_url,
+   credential_mode, credential_ref, default_dimension, status)
+VALUES
+  ('mtr/fixture-embedding', 'mtr', 'TEXT_EMBEDDING', 'fixture-embedding',
+   'https://db4ai-mtr-fixture.invalid/v1/embeddings',
+   'SECRET_REF', 'mtr/not-read', 1024, 'ACTIVE');
+SET debug = '+d,db4ai_audit_terminal_write_failure';
+--error ER_NOT_SUPPORTED_YET
+SELECT AI_EMBEDDING('request-secret-must-not-reach-the-error-log',
+                    'mtr/fixture-embedding', 1024);
+SET debug = '';
+--let $assert_text= Terminal audit failure has a call id, capability, and logical model only
+--let $assert_file= $MYSQLTEST_VARDIR/log/mysqld.1.err
+--let $assert_select= AUDIT_TERMINAL_WRITE_FAILED
+--let $assert_match= AUDIT_TERMINAL_WRITE_FAILED call_id=[1-9][0-9]* capability=TEXT_EMBEDDING model_name=mtr/fixture-embedding
+--source include/assert_grep.inc
+--let $assert_text= Terminal audit failure never writes request content to the error log
+--let $assert_file= $MYSQLTEST_VARDIR/log/mysqld.1.err
+--let $assert_select= request-secret-must-not-reach-the-error-log
+--let $assert_match=
+--let $assert_count= 0
+--source include/assert_grep.inc
+DELETE FROM mysql.taurusdb_ai_model_config
+ WHERE model_name = 'mtr/fixture-embedding';
 
 --echo # Both normal table DML and AI_ADMIN are required for Profile management.
 GRANT SELECT, INSERT, UPDATE, DELETE, ALTER ON mysql.taurusdb_ai_model_config
@@ -25,7 +58,7 @@ INSERT INTO mysql.taurusdb_ai_model_config
   (model_name, provider, capability, provider_model_name, endpoint_url,
    credential_mode, credential_ref, default_dimension, status, config_version)
 VALUES
-  ('mtr/admin-profile', 'mtr', 'TEXT_EMBEDDING', 'fixture-embedding',
+  ('huawei/admin-profile', 'huawei', 'TEXT_EMBEDDING', 'bge-m3',
    'https://db4ai-mtr-fixture.invalid/v1/embeddings',
    'SECRET_REF', 'mtr/not-read', 1024, 'ACTIVE', 1);
 --error ER_SPECIFIC_ACCESS_DENIED_ERROR
@@ -39,21 +72,21 @@ INSERT INTO mysql.taurusdb_ai_model_config
   (model_name, provider, capability, provider_model_name, endpoint_url,
    credential_mode, credential_ref, default_dimension, status, config_version)
 VALUES
-  ('mtr/admin-profile', 'mtr', 'TEXT_EMBEDDING', 'fixture-embedding-v1',
+  ('huawei/admin-profile', 'huawei', 'TEXT_EMBEDDING', 'bge-m3',
    'https://db4ai-mtr-fixture.invalid/v1/embeddings',
    'SECRET_REF', 'mtr/not-read', 1024, 'ACTIVE', 1),
-  ('mtr/admin-profile', 'mtr', 'TEXT_EMBEDDING', 'fixture-embedding-v2',
+  ('huawei/admin-profile', 'huawei', 'TEXT_EMBEDDING', 'bge-m3',
    'https://db4ai-mtr-fixture.invalid/v1/embeddings',
    'SECRET_REF', 'mtr/not-read', 1024, 'ACTIVE', 2);
-SELECT JSON_EXTRACT(AI_MODEL_INFO('mtr/admin-profile'), '$.config_version')
+SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/admin-profile'), '$.config_version')
   AS resolved_latest_config_version;
 UPDATE mysql.taurusdb_ai_model_config
    SET status = 'DISABLED'
- WHERE model_name = 'mtr/admin-profile';
+ WHERE model_name = 'huawei/admin-profile';
 --error ER_NOT_SUPPORTED_YET
-SELECT AI_MODEL_INFO('mtr/admin-profile');
+SELECT AI_MODEL_INFO('huawei/admin-profile');
 DELETE FROM mysql.taurusdb_ai_model_config
- WHERE model_name = 'mtr/admin-profile';
+ WHERE model_name = 'huawei/admin-profile';
 --disconnect reader
 --connection default
 

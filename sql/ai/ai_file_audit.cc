@@ -11,10 +11,21 @@
 #include <rapidjson/writer.h>
 
 #include "my_io.h"
+#include "my_dbug.h"
 #include "my_systime.h"
 #include "my_sys.h"
 
 namespace alisql::ai {
+
+Ai_error CompleteAiInvocationAudit(THD *caller, Ai_audit_sink *sink,
+                                   uint64_t call_id,
+                                   const Ai_audit_record &record) {
+  if (sink == nullptr) return Ai_error::k_ok;
+  const Ai_error complete = sink->Complete(caller, call_id, record);
+  return complete == Ai_error::k_ok ? Ai_error::k_ok
+                                    : Ai_error::k_audit_unavailable;
+}
+
 namespace {
 
 const char *CapabilityName(Ai_capability capability) {
@@ -81,10 +92,20 @@ Ai_error Ai_file_audit_sink::Start(THD *, const Ai_audit_record &record,
 Ai_error Ai_file_audit_sink::Complete(THD *, uint64_t call_id,
                                        const Ai_audit_record &record) {
   if (call_id == 0 || path_.empty()) return Ai_error::k_audit_unavailable;
+#ifndef NDEBUG
+  // Debug-only fault injection for the end-to-end fail-closed regression.
+  // It runs after Start() has durably emitted its event and before any
+  // terminal data is serialized or written.
+  DBUG_EXECUTE_IF("db4ai_audit_terminal_write_failure",
+                  return Ai_error::k_audit_unavailable;);
+#endif
   std::lock_guard<std::mutex> guard(mutex_);
   const char *event_type = record.status == Ai_audit_status::k_succeeded
                                ? "AI_CALL_SUCCEEDED"
                                : "AI_CALL_FAILED";
+  // If this append fails, retain only the durable STARTED event.  Runtime logs
+  // the redacted failure marker; collectors classify the missing terminal as
+  // UNKNOWN rather than treating an unpersisted terminal status as durable.
   return Append(event_type, call_id, record, true);
 }
 

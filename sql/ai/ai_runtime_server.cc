@@ -12,6 +12,8 @@
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
+#include "mysql/components/services/log_builtins.h"
+#include "mysqld_error.h"
 #include "sql/ai/ai_huawei_maas_adapter.h"
 #include "sql/ai/ai_model_registry.h"
 #include "sql/ai/ai_vector_codec.h"
@@ -20,6 +22,11 @@
 #include "sql/sql_class.h"
 
 namespace alisql::ai {
+
+Ai_error CompleteAiInvocationAudit(THD *caller, Ai_audit_sink *sink,
+                                   uint64_t call_id,
+                                   const Ai_audit_record &record);
+
 namespace {
 
 std::string EndpointAuthority(const std::string &endpoint) {
@@ -340,6 +347,41 @@ std::string EndpointFingerprint(const std::string &endpoint) {
   return result.str();
 }
 
+const char *CapabilityForAuditLog(Ai_capability capability) {
+  return capability == Ai_capability::k_text_embedding ? "TEXT_EMBEDDING"
+                                                       : "TEXT_GENERATION";
+}
+
+std::string SafeLogicalModelForAuditLog(std::string_view model_name) {
+  // The model name is governed metadata, not a request payload.  Still keep
+  // the error log single-line and bounded: an unsafe identifier must not turn
+  // a terminal-audit failure into a log-injection or data-leak vector.
+  constexpr size_t k_max_length = 128;
+  std::string safe;
+  safe.reserve(std::min(model_name.size(), k_max_length));
+  for (const unsigned char byte : model_name) {
+    if (safe.size() == k_max_length) break;
+    safe.push_back((std::isalnum(byte) || byte == '.' || byte == '_' ||
+                    byte == '-' || byte == '/')
+                       ? static_cast<char>(byte)
+                       : '_');
+  }
+  return safe;
+}
+
+void LogIncompleteAuditTerminal(uint64_t call_id,
+                                const Ai_resolved_model &model,
+                                Ai_capability capability) {
+  // A STARTED event is durable but its terminal event was not.  Do not write a
+  // substitute audit event: downstream collectors must classify this call as
+  // UNKNOWN.  This server warning contains correlation metadata only.
+  std::ostringstream message;
+  message << "AUDIT_TERMINAL_WRITE_FAILED call_id=" << call_id
+          << " capability=" << CapabilityForAuditLog(capability)
+          << " model_name=" << SafeLogicalModelForAuditLog(model.model_name);
+  LogErr(WARNING_LEVEL, ER_LOG_PRINTF_MSG, message.str().c_str());
+}
+
 Ai_audit_record NewAuditRecord(THD *thd, const Ai_resolved_model &model,
                                Ai_capability capability) {
   Ai_audit_record record;
@@ -385,9 +427,10 @@ Ai_error CompleteInvocation(THD *thd, Ai_audit_sink *sink, uint64_t call_id,
     record.provider_request_id = response->provider_request_id;
     record.http_status = response->http_status;
   }
-  if (sink != nullptr) {
-    const Ai_error complete = sink->Complete(thd, call_id, record);
-    if (complete != Ai_error::k_ok) return Ai_error::k_audit_unavailable;
+  if (CompleteAiInvocationAudit(thd, sink, call_id, record) !=
+      Ai_error::k_ok) {
+    LogIncompleteAuditTerminal(call_id, model, capability);
+    return Ai_error::k_audit_unavailable;
   }
   return result;
 }
