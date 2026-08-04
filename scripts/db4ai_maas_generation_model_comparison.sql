@@ -126,7 +126,7 @@ DELIMITER ;
 
 CALL db4ai_run_generation_model_comparison();
 
-SELECT use_case, model_name, elapsed_ms, status, analysis_result
+SELECT use_case, model_name, elapsed_ms, status, analysis_result, error_message
   FROM db4ai_generation_model_results
  ORDER BY use_case, model_name;
 SELECT status, COUNT(*) AS result_count
