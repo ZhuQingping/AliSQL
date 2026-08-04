@@ -4,7 +4,7 @@
 
 **目标版本：** 2026-09-30 P0 预览版本
 
-**代码基线：** `ai_maas` 分支，`b66194ad06d`
+**代码基线：** `ai_maas` 分支（`AI_ANALYZE` 契约迁移提交待合入）
 
 **读者：** TaurusDB / AliSQL Committer、架构师、测试与运维负责人
 
@@ -22,7 +22,7 @@ P0 已实现并通过离线回归的能力包括：
 
 - `AI_EMBEDDING()`：华为 `bge-m3` 文本向量化，固定 1024 维；可写入 `VECTOR` 列、
   `VECTOR INDEX` 和 `STORED` 生成列。
-- `AI_ANALYZE()` 原型：文本生成、RAG 上下文回答、SQL 结果分析和只读 DBA 诊断。
+- `AI_ANALYZE(model_name, prompt [, options_json])`：文本生成、RAG 上下文回答、SQL 结果分析和只读 DBA 诊断。
 - `dbms_ai`：受控模型注册、更新、删除、展示；直接修改模型控制表被拒绝。
 - 动态权限 `AI_INVOKE`、`AI_ADMIN`，以及出站前/结束后的两阶段、脱敏本地审计文件。
 - Huawei MaaS HTTP/HTTPS Adapter、离线 fixture MTR、显式授权的真实 MaaS SQL smoke。
@@ -31,19 +31,18 @@ P0 不交付异步/批量推理、多 Provider 生产 Adapter、流式/多模态
 按模型细粒度授权。它也不承诺模型时延、吞吐或可用性 SLA；这些受 MaaS、网络路径、Region
 和配额影响。
 
-**接口冻结建议：** `AI_EMBEDDING(text, model_name [, dimension])` 保持；文本生成接口在
-外部 GA 前从当前原型三段式签名收敛为
-`AI_ANALYZE(model_name, prompt [, options_json])`。该目标签名尚未实现，不得在代码或验收中
-写成已交付功能。
+**接口冻结结论：** `AI_EMBEDDING(text, model_name [, dimension])` 保持；文本生成接口已收敛为
+`AI_ANALYZE(model_name, prompt [, options_json])`。旧的 `task/input/options` 调用不兼容，必须
+在出站前失败；文档、离线 MTR 和真实 smoke 均使用新契约。
 
 ### 1.1 当前实现的关键限制与 Committer 决策
 
 下列事项必须在 Committer 评审中明确接受、修复或列为 GA 阻断；它们不是可由文档掩盖的
 产品承诺：
 
-1. 当前 RAG 原型只校验调用方 `question/sources` JSON 的形状，并回显调用方给出的来源标签；
-   Runtime 不验证该来源是否来自内部表、当前 tenant、账号 ACL 或实际向量检索结果。因此它只
-   适用于应用已完成授权过滤的受控集成，不构成数据库级 RAG 行级授权或不可伪造引用。
+1. `AI_ANALYZE` 是通用文本生成入口：Runtime 不持有检索语句、tenant、账号 ACL 或不可伪造的
+   来源句柄。RAG 调用方必须先用 SQL 完成授权过滤，并把问题和已筛选资料拼成 `prompt`；UI 应展示
+   SQL 查询得到的来源 ID，而不能相信模型自行生成的引用。
 2. `ai_invoke_audit=OFF` 时 Runtime 不创建 audit sink，允许正常出站但不写两阶段审计。
    “STARTED 不可写则 fail closed”仅在审计开关为 ON 时成立；关闭审计是管理员级、全实例的
    无审计外呼风险事件。
@@ -142,62 +141,11 @@ Aurora 官方参考（调研日期均为 2026-08-05）：
 
 ### 4.1 架构图
 
-```mermaid
-flowchart TB
-  Client[应用 / CES / DBA 客户端] -->|MySQL 协议 SQL| Server
-  subgraph Server[TaurusDB mysqld：租户 VPC]
-    SQL[SQL 内置函数\nAI_EMBEDDING / AI_ANALYZE]
-    Auth[动态权限\nAI_INVOKE / AI_ADMIN]
-    Runtime[AI Runtime\nCanonical request/response]
-    Registry[Model Registry\nProfile + config version]
-    Credential[Credential Resolver\nSECRET_REF / Debug PLAINTEXT_DEV]
-    Audit[AI File Audit Sink\nSTARTED -> terminal]
-    Adapter[Huawei MaaS Adapter]
-    Curl[libcurl HTTPS Transport\nserver-owned Endpoint + timeout + 1 MiB limit]
-    Vector[VECTOR / HNSW / RAG SQL]
-    SQL --> Auth --> Runtime
-    Runtime --> Registry
-    Runtime --> Audit
-    Runtime --> Credential
-    Runtime --> Adapter --> Curl
-    SQL --> Vector
-  end
-  Curl -.部署前提：Policy Route / NAT / EIP / DNS / TLS / 安全组.-> MaaS[Huawei Cloud MaaS\nEmbedding / V2 Chat]
-  Curl -->|HTTPS request| MaaS
-  MaaS -->|HTTPS response| Curl
-  Curl --> Adapter --> Runtime --> SQL
-  Runtime --> Audit
-```
+![TaurusDB MaaS vertical architecture](assets/taurusdb-maas-architecture.svg)
 
 ### 4.2 一次调用的时序
 
-```mermaid
-sequenceDiagram
-  participant C as Client
-  participant S as SQL function / Runtime
-  participant R as Model Registry
-  participant A as Audit file
-  participant K as Credential Resolver
-  participant H as Huawei MaaS
-
-  C->>S: SELECT AI_* (...)
-  S->>S: 参数、NULL、AI_INVOKE、本地范围校验
-  S->>R: 解析显式 model_name -> 固定 config_id/version
-  R-->>S: Provider / capability / endpoint / limits
-  S->>A: durable AI_CALL_STARTED
-  alt STARTED 写入失败
-    A-->>S: audit unavailable
-    S-->>C: 本地失败；不出站
-  else STARTED 成功
-    S->>K: 解析 SECRET_REF 或 Debug 凭据
-    K-->>S: 本次调用内存中的 credential
-    S->>H: HTTPS POST（Bearer token）
-    H-->>S: 响应、usage、x-request-id 或错误
-    S->>S: JSON、维度/最终内容、长度和安全边界校验
-    S->>A: AI_CALL_SUCCEEDED / AI_CALL_FAILED
-    S-->>C: VECTOR 或 utf8mb4 文本 / 错误码
-  end
-```
+![AI_ANALYZE controlled invocation flow](assets/taurusdb-maas-invocation-flow.svg)
 
 **图例与返回路径说明：** 实线是 mysqld 代码路径；虚线是每个 Region 必须由云网络/运维完成
 并验收的部署前提，不是 mysqld 自动创建的网络资源。HTTPS 响应与请求使用同一连接的反向流量，
@@ -210,74 +158,71 @@ sequenceDiagram
 
 ## 5. 典型应用场景
 
-### 5.1 文档向量化与语义检索
+### 5.1 企业产品手册 RAG 问答
 
-应用在写入知识库时调用 `AI_EMBEDDING()`，将文本转换为 `VECTOR(1024)`，配合向量索引和
-业务过滤检索。华为 `bge-m3` 当前 Profile 固定为 1024 维。
-
-```sql
-CREATE TABLE product_manual_chunk (
-  tenant_id BIGINT NOT NULL,
-  source_id VARCHAR(64) NOT NULL,
-  chunk_id INT NOT NULL,
-  access_label VARCHAR(32) NOT NULL,
-  content TEXT NOT NULL,
-  embedding VECTOR(1024) NOT NULL,
-  PRIMARY KEY (tenant_id, source_id, chunk_id),
-  VECTOR INDEX ix_embedding (embedding) M=6 DISTANCE=COSINE
-);
-
-INSERT INTO product_manual_chunk
-  (tenant_id, source_id, chunk_id, access_label, content, embedding)
-VALUES
-  (42, 'manual-001', 3, 'support',
-   '一个 TaurusDB 实例最多可以添加 15 个只读副本。',
-   AI_EMBEDDING('一个 TaurusDB 实例最多可以添加 15 个只读副本。',
-                'huawei/bge-m3', 1024));
-```
-
-### 5.2 RAG 问答
-
-RAG 不是一个 `options_json` 中的 `rag=true` 开关。推荐的应用模式是：应用先向量化问题，在 SQL
-中完成 tenant、业务标签和访问控制过滤，再把选出的片段和来源标识交给文本生成模型。P0 当前
-Runtime **不**持有检索语句、ACL 或不可伪造的来源句柄；它只校验调用者传入 `question/sources`
-JSON 的形状，并把该内容发送给模型。因此“资料已授权”“来源可信”是调用应用的责任，而不是
-当前服务端能够证明的安全属性。
-
-```mermaid
-flowchart LR
-  Q[用户问题] --> E[AI_EMBEDDING]
-  E --> S[应用 SQL：tenant + 标签 + 权限过滤\nVECTOR Top-K]
-  S --> P[调用应用拼装问题和资料]
-  P --> G[AI_ANALYZE / MaaS Chat]
-  S --> Ref[来源 ID 与片段]
-  G --> Answer[答案]
-  Ref --> Answer
-```
-
-P0 当前原型以 `AI_ANALYZE(task_text, input_value, options_json)` 接收 RAG 上下文；目标接口
-收敛后，调用方将“问题 + 已过滤资料”构造成单个 `prompt`。模型不能自行访问数据库或选择文档；
-但 P0 也不会验证来源是否确由数据库查询产生，来源标签仅是调用方提供的元数据。
-
-### 5.3 SQL 结果与经营数据分析
-
-将已经聚合的 SQL 结果作为证据交给模型，模型只解释数据，不访问表、不执行 SQL：
+客服用户询问“只读副本如何分担读取压力”。应用先以普通 SQL 限定当前租户、产品线和支持资料，再
+将 Top-K 片段作为证据发送给模型；模型不能直接访问表。该范式参考 PolarDB 官方
+`EMBEDDING`、生成列、向量检索和上下文聚合示例，并把业务授权过滤置于向量召回之前。
+完整的可执行表定义见 [`examples/rag_product_manual.sql`](examples/rag_product_manual.sql)。
 
 ```sql
+SET @question = '如何通过只读副本分担主数据库的读取压力？';
+SET @qvec = AI_EMBEDDING(@question, 'huawei/bge-m3', 1024);
+CREATE TEMPORARY TABLE rag_selected_sources AS
+  SELECT source_id, chunk_id, content FROM product_manual_chunk
+  WHERE tenant_id = 42 AND access_label = 'support' AND product_line = 'gateway'
+  ORDER BY VEC_DISTANCE_COSINE(embedding, @qvec) LIMIT 4;
+-- 与答案一起返回给 UI 的可信来源，来自数据库而非模型文本。
+SELECT source_id, chunk_id FROM rag_selected_sources ORDER BY source_id, chunk_id;
+SELECT JSON_ARRAYAGG(JSON_OBJECT('source_id', source_id, 'chunk_id', chunk_id,
+                                 'content', content)) INTO @evidence
+FROM rag_selected_sources;
 SELECT AI_ANALYZE(
-  '根据证据说明订单量和营收变化、可能原因和下一步建议。',
-  JSON_OBJECT('month', '2026-08', 'order_count', 1200,
-              'previous_month_order_count', 980, 'revenue', 356000),
-  JSON_OBJECT('model_name', 'huawei/glm-5.2',
-              'max_output_tokens', 256, 'timeout_ms', 60000));
+  'huawei/glm-5.2',
+  CONCAT('仅根据下列已授权资料回答问题；资料不足时明确说明。\n问题：', @question,
+         '\n资料(JSON)：', JSON_PRETTY(@evidence)),
+  JSON_OBJECT('max_output_tokens', 400, 'timeout_ms', 60000)) AS answer;
+DROP TEMPORARY TABLE rag_selected_sources;
 ```
 
-### 5.4 DBA 只读诊断
+### 5.2 订单经营分析
 
-输入 SQL digest、执行计划、扫描行数和耗时，要求模型返回原因、证据、风险和建议。Runtime
-拒绝包含 DDL/DML/修复 SQL 的诊断结果；模型仅辅助定位，执行者仍是 DBA。
+运营人员先在 SQL 中按月、渠道和地区聚合并脱敏，不将订单明细逐行发送给模型。该形态与
+Databricks 官方客户评论分析示例一致：模型消费一个有界的业务事实包，返回面向人的解释，而不
+取代数仓或 SQL。
 
-### 5.5 真实 MaaS 多模型对比
+```sql
+SET @facts = JSON_OBJECT('month', '2026-08', 'orders', 1200, 'prior_orders', 980,
+                         'revenue', 356000, 'refund_rate', 0.018, 'top_channel', 'mobile');
+SELECT AI_ANALYZE(
+  'huawei/glm-5.2',
+  CONCAT('请用中文给运营负责人总结订单和营收变化，区分事实、推测和下一步核查项；不得编造原因。',
+         '\n统计事实：', JSON_PRETTY(@facts)),
+  JSON_OBJECT('max_output_tokens', 350, 'timeout_ms', 60000)) AS business_summary;
+```
+
+### 5.3 DBA 只读辅助诊断
+
+DBA 先收集 slow SQL digest、执行计划和指标。模型输出只是候选分析，不能执行、提交或自动应用
+修复语句；审核和执行始终由 DBA 完成。Aurora 的 Bedrock 集成与 Databricks 的通用生成入口同样
+将数据准备和实际控制操作留在数据库/应用侧。
+
+```sql
+SET @diagnostic = JSON_OBJECT('sql_digest', 'SELECT * FROM orders WHERE tenant_id = ?',
+                              'explain', 'range scan', 'elapsed_ms', 4210,
+                              'rows_examined', 900000, 'lock_wait_ms', 0);
+SELECT AI_ANALYZE(
+  'huawei/glm-5.2',
+  CONCAT('根据证据返回“原因、证据、风险、建议”四部分。不要执行数据库操作，也不要把建议当作自动修复。',
+         '\n证据：', JSON_PRETTY(@diagnostic)),
+  JSON_OBJECT('max_output_tokens', 500, 'timeout_ms', 60000)) AS readonly_diagnosis;
+```
+
+**友商来源：** [PolarDB Embedding 示例](https://help.aliyun.com/en/polardb/polardb-for-mysql/use-the-embedding-function)、
+[Databricks AI Functions 示例](https://docs.databricks.com/gcp/en/large-language-models/ai-functions-example)、
+[Aurora PostgreSQL VectorDB 指南](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraPostgreSQL.VectorDB.html)。
+
+### 5.4 真实 MaaS 多模型对比
 
 `scripts/db4ai_maas_generation_model_comparison.sql` 对 `glm-5.2`、`kimi-k2.6`、
 `deepseek-v4-pro`、`deepseek-v4-flash`、`openpangu-2.0-pro` 和 `openpangu-2.0-flash`
@@ -288,19 +233,7 @@ SELECT AI_ANALYZE(
 
 ### 6.1 模块边界
 
-```mermaid
-flowchart LR
-  F[SQL function] --> RT[AI Runtime]
-  RT --> MR[Model Registry]
-  RT --> CR[Credential Resolver]
-  RT --> AS[Audit Sink]
-  RT --> PA[Provider Adapter]
-  PA --> HT[HTTP Transport]
-  RT --> VC[Vector Codec / Result Renderer]
-  CP[dbms_ai Control Plane] --> MR
-  AUTH[Dynamic privileges] --> F
-  AUTH --> CP
-```
+![mysqld server module boundaries](assets/taurusdb-maas-server-modules.svg)
 
 | 子模块 | 主要文件 | 责任 | 不负责 |
 |---|---|---|---|
@@ -315,29 +248,16 @@ flowchart LR
 
 ### 6.2 SQL 接口设计
 
-#### 当前已实现接口
+#### 已实现接口
 
 ```sql
 AI_EMBEDDING(text, model_name [, dimension])
-AI_ANALYZE(task_text, input_value, options_json)
+AI_ANALYZE(model_name, prompt [, options_json])
 AI_MODEL_INFO([model_name])
 ```
 
 `AI_EMBEDDING` 必须显式指定模型；`NULL` 文本返回 `NULL`。`bge-m3` 的非 1024 维请求在
 出站前失败。
-
-当前 `AI_ANALYZE` 的三个参数均必填；第三个 JSON 内 `model_name` 必填。它支持
-`model_name`、`mode`、`output_format`、`return_sources`、`max_output_tokens` 和 `timeout_ms`。
-其中 `output_format='json'` 返回的是 TaurusDB 元数据封装 JSON，`content` 仍是未经 JSON Schema
-验证的模型文本，并不等价于模型的结构化 JSON 输出；`return_sources` 回显调用者输入的来源元数据。
-这是已实现原型，为现有 MTR 服务；它不应被误认为最终外部 SQL 契约。
-
-#### 接口冻结前的目标契约
-
-```sql
-AI_EMBEDDING(text, model_name [, dimension])
-AI_ANALYZE(model_name, prompt [, options_json])
-```
 
 `model_name` 和 `prompt` 必填。客户只写自然语言请求；数据库内部将固定 system policy 与
 客户 prompt 构造成 Provider 所需的 `system` / `user` messages。`options_json` 首版只允许：
@@ -355,7 +275,9 @@ AI_ANALYZE(model_name, prompt [, options_json])
 
 `AI_ANALYZE` 始终返回 `utf8mb4` 文本。未来的 JSON 输出先以合法 JSON 文本表达，不随 option
 改变 SQL 返回类型；需要 JSON Schema、类型验证、引用或置信度时，新增
-`AI_EXTRACT(model_name, content, json_schema [, options_json])` 等专用接口。
+`AI_EXTRACT(model_name, content, json_schema [, options_json])` 等专用接口。旧
+`task_text/input_value/options_json` 形态及 `mode`、`output_format`、`return_sources`、第三参数中的
+`model_name` 均在本地拒绝，避免两个三参数契约悄然混用。
 
 ### 6.3 模型管理
 
@@ -412,16 +334,7 @@ P0 是实例级授权。按 `user@host -> model/capability`、预算、配额和
 
 ### 6.5 API Key 与凭据管理
 
-```mermaid
-flowchart LR
-  Admin[AI_ADMIN] --> Package[dbms_ai]
-  Package --> Config[model_config\ncredential_mode + reference]
-  Config --> Resolver[Credential Resolver]
-  Resolver -->|Release| Keyring[keyring / CSMS Secret]
-  Resolver -->|Debug only| Plain[PLAINTEXT_DEV]
-  Resolver --> Header[本次调用内存中的 Authorization: Bearer]
-  Header --> Cleanse[调用后清理内存]
-```
+![Credential resolution flow](assets/taurusdb-maas-credential-flow.svg)
 
 - Release/生产只允许 `SECRET_REF`；注册/更新时验证引用可读且非空，运行时每次调用读取。
 - Debug 开发可使用 `PLAINTEXT_DEV` 缩短联调路径；其值在本次调用的进程内存中构造 Bearer
@@ -438,19 +351,7 @@ flowchart LR
 普通 `AI_INVOKE` 用户不能关闭，且不支持 `SET SESSION`。只有管理员可关闭；关闭表示允许无审计
 外呼，必须纳入变更记录与告警，而不是常规降级手段。
 
-```mermaid
-stateDiagram-v2
-  [*] --> LocalValidation
-  LocalValidation --> StartedPersisted: AI_CALL_STARTED fsync
-  LocalValidation --> Rejected: 参数/权限/Profile/审计起始失败
-  StartedPersisted --> MaaSRequest
-  MaaSRequest --> Succeeded: 结果校验成功
-  MaaSRequest --> Failed: 超时/HTTP/协议/结果校验失败
-  Succeeded --> TerminalPersisted: AI_CALL_SUCCEEDED
-  Failed --> TerminalPersisted: AI_CALL_FAILED
-  Succeeded --> Unknown: terminal append failure
-  Failed --> Unknown: terminal append failure
-```
+![Two phase audit flow](assets/taurusdb-maas-audit-flow.svg)
 
 起始事件安全落盘失败时，调用 fail closed、不得出站。终态事件写入失败时，云端请求可能已发生；
 保留 `STARTED`，日志平台按缺失终态处置为 `UNKNOWN`。每行仅包含时间、`call_id`、实例、账号、
@@ -470,7 +371,7 @@ Authorization、完整 prompt、完整响应或向量。当前没有 `usage_pres
 | Credential | Secret 不可读、Debug 明文用于 Release | 否 |
 | Transport | 非 HTTPS、非服务端固定 Endpoint、连接/总超时、TLS/响应超限 | 请求前或请求中失败 |
 | 输入成本 | 无输入字节/Token 上限（当前缺口） | 当前可能出站；上线前须补充上限与本地拒绝测试 |
-| Adapter/Renderer | HTTP 非 2xx、JSON 错误、无最终内容、维度错误、不安全 DBA 输出 | 请求可能已发生 |
+| Adapter/Renderer | HTTP 非 2xx、JSON 错误、无最终内容、维度错误 | 请求可能已发生 |
 | Audit terminal | 终态不可写 | 请求已可能发生，按 UNKNOWN 处置 |
 
 ### 6.8 mysqld 与 MaaS 的协议
@@ -559,9 +460,9 @@ cd build-debug/mysql-test
 |---|---|
 | `ai_maas_contract` | NULL、显式 Profile、禁用 Profile、函数 arity、本地失败无出站。 |
 | `ai_maas_embedding` | fixture 1024 维、VECTOR 转换、余弦/欧氏距离、向量索引、维度不匹配和清理。 |
-| `ai_maas_analysis` | options 范围、RAG/诊断输入契约、私有参数拒绝、无最终内容、禁止修复 SQL。 |
+| `ai_maas_analysis` | 新签名的 2/3 参数路径、options 范围、旧字段与 Provider 私有参数拒绝、无最终内容。 |
 | `ai_maas_governance` | 审计全局开关、无 Session 开关、终态审计写入失败与脱敏。起始写入失败由 `ai_file_audit` GUnit 覆盖。 |
-| `ai_maas_rag` | 应用 SQL 的 tenant/业务过滤范式、应用表的 embedding-space 契约、STORED 生成列、调用方来源元数据。 |
+| `ai_maas_rag` | 应用 SQL 的 tenant/业务过滤范式、应用表的 embedding-space 契约、STORED 生成列、以 prompt 传入的已筛选资料。 |
 | `ai_maas_model_admin` | `AI_ADMIN`、`dbms_ai`、直接 DML/DDL 拒绝、版本更新/停用。 |
 | `ai_maas_model_admin_rpl` | 受控控制面变更的 row-based replication applier。 |
 
@@ -589,8 +490,7 @@ cd build-debug/mysql-test
 - 输入文本、RAG 上下文的字节/Token 上限和本地拒绝回归；当前实现没有这项成本保护。
 - 控制表 `SELECT` 授权、Debug 明文 Key 备份/binlog 暴露与升级后 Key 轮换的安全回归。
 - `SQLCOM_ADMIN_PROC` 对全部既有 native procedure 的事务、binlog、row event 和复制回归。
-- 目标接口 `AI_ANALYZE(model_name, prompt [, options_json])` 完成实现后的 MTR、兼容迁移和
-  真实 MaaS 回归。
+- 新接口 `AI_ANALYZE(model_name, prompt [, options_json])` 的真实 MaaS 回归（默认 MTR 不出网）。
 - 百炼、火山方舟、Bedrock 等 Provider 在 Adapter 实现后各自的协议、维度和真实 smoke。
 - 性能和容量测试在生产目标网络、模型规格和配额明确后单独定义验收指标。
 
@@ -619,8 +519,8 @@ cd build-debug/mysql-test
    应补齐服务端限制。
 9. **内核兼容：** `SQLCOM_ADMIN_PROC` 共享 flags 的影响范围尚未闭合；未完成回归前不得视为低风险
    控制面改动。
-10. **接口演进：** 当前 `AI_ANALYZE` 原型和目标接口不同。外部 GA 前必须完成目标接口实现或
-   经 Committer 明确决定冻结旧接口，不能让文档、测试和客户示例处于两种契约之间。
+10. **接口演进：** `AI_ANALYZE(model_name, prompt [, options_json])` 已冻结。后续结构化输出、
+   专用抽取或分类应新增专用接口，不能重新引入 Provider 透传或业务 mode 字段。
 
 ## 10. Committer 审核清单
 

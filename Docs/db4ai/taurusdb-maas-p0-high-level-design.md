@@ -4,7 +4,7 @@
 
 目标版本：2026-09-30 P0 预览版本
 
-最近更新：2026-08-04（合入 `dbms_ai` 受控模型管理、两阶段文件审计、离线回归和真实 MaaS 验证说明）
+最近更新：2026-08-05（`AI_ANALYZE(model_name, prompt [, options_json])` 契约、两阶段文件审计与离线回归）
 
 关联主计划：
 
@@ -12,7 +12,8 @@
 - `Docs/db4ai_tasks/taurusdb-maas-engineering-and-validation.md`
 - `CLAUDE.md`
 
-文档职责：本文件是接口、运行时治理和扩展架构的唯一设计依据；不再维护独立的“关键决策”补充文档。
+文档职责：本文件说明总体演进架构；当前客户契约与实施结论以
+[`taurusdb-maas-p0-committer-design.md`](taurusdb-maas-p0-committer-design.md) 为准。
 
 ## 1. 设计结论
 
@@ -324,82 +325,25 @@ AI_EMBEDDING(input_text, model_name, dimension)
 - 若当前 TaurusDB 不支持此转换，P0 不得宣称 `AI_EMBEDDING()` 已具备直接 RAG
   能力，必须先由向量子系统提供确定的转换接口。
 
-#### `AI_ANALYZE(task, input [, options])`
+#### `AI_ANALYZE(model_name, prompt [, options_json])`
 
-用途：统一自然语言任务入口，覆盖 SQL 结果分析、RAG 问答和 DBA 只读诊断。
-
-建议签名：
-
-```sql
-AI_ANALYZE(task_text, input_value, options_json)
-```
-
-`options_json` P0 支持字段：
-
-```json
-{
-  "mode": "analyze | rag | diagnose | summarize | classify | extract",
-  "model_name": "huawei/glm-5.2",
-  "output_format": "text | json",
-  "return_sources": true,
-  "max_output_tokens": 2048,
-  "timeout_ms": 30000
-}
-```
-
-语义：
-
-- 默认返回 `utf8mb4` 的 `content` 文本。
-- `model_name` 是 `INFORMATION_SCHEMA.TAURUSDB_AI_MODELS` 中可见且获授权的逻辑模型名，
-  例如 `huawei/glm-5.2`；必须显式提供，不存在默认模型。它解析到固定的配置
-  `Id/config_version`、实际 provider model ID 和 revision，并写入审计。客户不传
-  `model_profile`、provider model ID、Endpoint、API Key 或原始请求 body。
-- `output_format='json'` 时返回 TaurusDB 规范 JSON 文本，至少可包含 `content`、
-  `sources`、`request_id`、已解析模型信息和 `usage`；不直接返回 provider 原始响应、
-  `reasoning_content` 或 provider 私有字段。
-- `mode='rag'` 必须使用 `output_format='json'` 和 `return_sources=true`；任一缺失、false
-  或 text 值均在权限、审计、凭据读取和 MaaS 出站前失败。RAG 来源由 TaurusDB 的 SQL
-  召回结果填充，不能依赖模型自行生成或声称来源。
-- `mode='rag'` 时，`input_value` 必须包含 `question` 和 `sources` 数组；每个 source 必须有
-  `source_id`、`chunk_id` 和 `content`。
-- `mode='diagnose'` 时，输入必须是证据集合，不允许模型自行假设缺失事实。
-- `max_output_tokens` 和 `timeout_ms` 省略时保持 Adapter 既有默认值；显式值的固定 P0
-  范围分别为 `1..32768` 和 `1..60000`，不增加客户可见的模型参数字段。`temperature`、
-  思考开关、厂商原生 JSON 参数不在 P0 客户 SQL 契约中，由 Adapter 控制。
-- HTTP 2xx 但缺少非空最终 `content`、或因输出长度耗尽而未形成最终答案时，调用失败并返回
-  `AI_ANALYZE_INCOMPLETE_OUTPUT`；不得把 reasoning 当作客户结果。
-- `AI_ANALYZE()` 不自动执行 SQL、不自动执行修复操作。
-- `input_value` 是文本或 TaurusDB canonical JSON；服务层负责转换为 provider 所需
-  的 `messages`、`contents` 或其他请求结构。
-
-**后续优化：调用方任务与受控 system prompt 分离。** 保持
-`AI_ANALYZE(task_text, input_value [, options_json])` 三参数形态，但将 `task_text`
-定义为调用方的任务指令，而不是调用方可控的 provider `system` message；例如“用中文总结
-订单变化，并说明原因和风险”。`input_value` 是待处理的业务数据。模型 Profile 或服务端维护
-不可由普通调用方覆盖的 system prompt，用于固定安全边界、输出规范和产品角色。Runtime 将
-受控 system prompt 与调用方任务、业务数据组合为 provider 请求。这样既保留通用分析能力，
-又避免客户自行覆盖诊断边界或把第一个参数误解为角色设定。当前 AliSQL 原型将
-`task_text` 映射为 provider `system` message；该行为是后续需要收敛的接口语义差异。
-
-**接口冻结前的演进结论（未实现）。** 当前代码的三段式
-`AI_ANALYZE(task_text, input_value [, options_json])` 仅作为 P0 原型兼容接口，不能直接冻结为
-长期客户契约。结合 Databricks 与 Snowflake 调研，目标客户接口收敛为：
+用途：统一文本生成入口，覆盖已授权资料问答、SQL 结果解释和 DBA 只读辅助诊断。结合
+Databricks 与 Snowflake 的“稳定主参数 + 受控对象参数”模式，P0 客户契约为：
 
 ```sql
 AI_ANALYZE(model_name, prompt [, options_json])
 ```
 
-其中 `model_name` 和 `prompt` 必填；客户只提供自然语言问题及其已授权上下文，TaurusDB Runtime
-在内部追加不可由调用方覆盖的 system policy。目标接口首版的 `options_json` 仅支持
-`max_output_tokens` 和 `timeout_ms`；未来可在兼容基础上增加经过 Profile allowlist 校验的
-`temperature` 或 `response_format`。未知字段必须失败。`rag`、`dba`、`diagnose`、`summarize`
-等业务模式不再进入 options：它们通过 prompt、数据库侧数据准备或后续具有专用返回契约的函数
-表达。
+其中 `model_name` 和 `prompt` 必填；客户提供自然语言请求以及已授权、已脱敏的上下文，Runtime
+内部追加不可由调用方覆盖的 system policy。`options_json` 首版仅支持 `max_output_tokens`
+（`1..32768`）和本地 `timeout_ms`（`1..60000`）；未知字段本地失败。`rag`、`dba`、
+`diagnose`、`summarize` 等业务模式不进入 options，而通过 prompt、数据库侧数据准备或后续专用
+接口表达。
 
-该函数始终返回 `utf8mb4` 文本；未来即使要求 JSON 输出，也先以有效 JSON 文本返回，由 SQL
-JSON 函数消费，不能根据 options 改变函数的 SQL 返回类型。需要可验证 JSON Schema、类型、
-引用或置信度时，应新增专用结构化接口，而不是继续扩张 `AI_ANALYZE`。在该接口完成实现、MTR
-和真实 MaaS 回归前，文档中的“当前实现”仍以本节前述旧签名和现有测试为准。
+该函数始终返回 `utf8mb4` 文本；Provider 的 `reasoning_content`、原始 JSON、usage 和请求 ID
+不属于 SQL 返回值。未来即使需要 JSON，也先以有效 JSON 文本返回；需要 Schema 验证、来源或
+置信度时新增专用结构化接口。旧 `task/input/options` 形态，以及 `mode`、`output_format`、
+`return_sources` 和 options 内的 `model_name` 均不兼容。
 
 ### 4.2 内部 AI Runtime 接口
 
@@ -409,10 +353,9 @@ JSON 函数消费，不能根据 options 改变函数的 SQL 返回类型。需�
 
 ### 4.3 模型信息与可观测性
 
-P0 必须提供 `INFORMATION_SCHEMA.TAURUSDB_AI_MODELS` 或语义等价的
-`AI_MODEL_INFO([model_name])`。客户可查询模型名、provider、能力、实际 provider
-模型名、模型版本、默认/允许维度、状态、是否内置和配置版本；不得读取 API Key、
-`credential_ref` 的敏感细节或完整私有 Endpoint。
+P0 提供 `AI_MODEL_INFO([model_name])` 作为受控元数据入口。当前返回逻辑模型名、provider、
+能力、配置 ID/版本、revision 及适用的维度等已配置元数据；它不是模型健康或实时可用性查询。
+不得读取 API Key、`credential_ref` 的敏感细节或完整私有 Endpoint。
 
 内部保留由配置行派生的模型 Profile/Embedding Space 用于审计和向量兼容性，但它不是
 普通客户 SQL 的必填参数。云厂商未提供固定 revision 时，必须标记 `UNRESOLVED`，不得
@@ -445,7 +388,7 @@ AI_runtime
   - HTTP transport
 
 Model_registry / Model_resolver
-  - resolve default model / model_name -> model configuration
+  - resolve explicit model_name -> model configuration
   - validate capability
   - expose controlled endpoint and credential ref to internal callers
 
@@ -543,12 +486,10 @@ CREATE TABLE mysql.taurusdb_ai_model_config (
 - 用户不填写 `protocol_family` 或 `adapter_id`。内核依据已支持的
   `provider + capability + 模型/Endpoint 类型` 选择 Adapter；无法匹配时拒绝配置或调用，
   不猜测协议、不透传任意 JSON。
-- `generation_defaults` 与 `generation_limits` 只用于 `TEXT_GENERATION`。它们使用
-  TaurusDB canonical 字段而非厂商字段，例如 `thinking_mode`、`output_format`、
-  `max_input_tokens`、`max_output_tokens`。例如可配置默认关闭思考、默认输出 token 上限
-  和 JSON 输出准入；Adapter 分别映射为华为 `thinking.type`、百炼
-  `enable_thinking` 或其他模型的等价请求。普通 SQL 用户不直接填写、查询或透传这些
-  厂商参数。
+- `generation_defaults` 与 `generation_limits` 是后续模型治理设计，不属于当前 P0 SQL
+  契约。P0 只公开 `max_output_tokens` 与本地 `timeout_ms`；未来若引入 `thinking_mode`、
+  `response_format` 或 `max_input_tokens`，必须由服务端 allowlist、版本化 Profile 和独立
+  验收决定，普通 SQL 用户不能透传厂商参数。
 - `status` 是配置生命周期状态（如 `ACTIVE`、`DISABLED`、`RETIRED`），不是实时可调用性。
   账号/Key 准入、模型下线、区域限制、超时和响应完整性写入调用审计，并在受控模型健康
   查询面呈现最近验证结果；不得因一次目录查询成功就把配置标记为可推理。
@@ -584,7 +525,7 @@ HUAWEI_MAAS + TEXT_EMBEDDING + huawei/bge-m3
 
 HUAWEI_MAAS + TEXT_GENERATION + huawei/glm-5.2
   -> Huawei MaaS V2 Chat Adapter
-  -> canonical task/input/output contract
+  -> canonical prompt/input/output contract
   -> generation_defaults/limits -> provider request fields
   -> choice.message.content + usage + finish_reason
 ```
@@ -829,8 +770,8 @@ P0 允许该流程用小规模同步脚本演示。大规模导入必须标注�
      ORDER BY vector_distance(embedding, query_vector)
      LIMIT k
 4. SQL 聚合召回 chunk 和 source 引用。
-5. AI_ANALYZE(mode='rag') 组装 prompt 并调用 MaaS Chat。
-6. 返回 answer + sources。
+5. 调用方把问题和已筛选资料组装为 `prompt`，调用 AI_ANALYZE。
+6. 返回 answer；来源 ID 由同一 SQL 检索结果返回给调用方。
 7. 记录 audit/metering。
 ```
 
@@ -838,19 +779,12 @@ P0 允许该流程用小规模同步脚本演示。大规模导入必须标注�
 
 ```sql
 SELECT AI_ANALYZE(
-  '回答问题：' || @question,
-  JSON_OBJECT(
-    'question', @question,
-    'context', JSON_ARRAYAGG(
-      JSON_OBJECT(
-        'tenant_id', tenant_id,
-        'source_id', source_id,
-        'chunk_id', chunk_id,
-        'content', content
-      )
-    )
-  ),
-  JSON_OBJECT('mode', 'rag', 'return_sources', true, 'output_format', 'json')
+  @generation_model_name,
+  CONCAT('仅根据资料回答；资料不足时明确说明。问题：', @question,
+         '\n资料(JSON)：', JSON_PRETTY(JSON_ARRAYAGG(
+           JSON_OBJECT('tenant_id', tenant_id, 'source_id', source_id,
+                       'chunk_id', chunk_id, 'content', content)))),
+  JSON_OBJECT('max_output_tokens', 400, 'timeout_ms', 60000)
 )
 FROM (
   SELECT tenant_id, source_id, chunk_id, content
@@ -872,7 +806,7 @@ FROM (
 ```text
 1. 用户写普通 SQL 完成过滤、聚合、脱敏。
 2. SQL 结果转 JSON。
-3. AI_ANALYZE(mode='analyze') 调用 MaaS Chat。
+3. 调用方将任务和有界 JSON 事实拼为 prompt，AI_ANALYZE 调用 MaaS Chat。
 4. 返回摘要、异常解释、分类或抽取结果。
 5. 记录 audit/metering。
 ```
@@ -887,7 +821,7 @@ FROM (
 
 ```text
 1. 收集 SQL text、EXPLAIN JSON、rows examined、latency、wait/lock/IO 指标。
-2. AI_ANALYZE(mode='diagnose', output_format='json') 调用 MaaS Chat。
+2. AI_ANALYZE(model_name, prompt) 调用 MaaS Chat。
 3. 返回原因、证据、建议和风险。
 4. 不自动执行修复 SQL。
 ```
@@ -896,19 +830,17 @@ FROM (
 
 ```sql
 SELECT AI_ANALYZE(
-  '诊断这个慢 SQL，只能基于给定证据输出原因和建议',
-  JSON_OBJECT(
-    'sql_text', @sql_text,
-    'explain', @explain_json,
-    'rows_examined', @rows_examined,
-    'latency_ms', @latency_ms,
-    'waits', @waits_json
-  ),
-  JSON_OBJECT('mode', 'diagnose', 'output_format', 'json')
+  @generation_model_name,
+  CONCAT('只根据证据给出原因、证据、风险和建议。不要执行数据库操作或自动修复。\n证据：',
+         JSON_PRETTY(JSON_OBJECT('sql_text', @sql_text, 'explain', @explain_json,
+                                 'rows_examined', @rows_examined,
+                                 'latency_ms', @latency_ms, 'waits', @waits_json))),
+  JSON_OBJECT('max_output_tokens', 500, 'timeout_ms', 60000)
 );
 ```
 
-输出必须包含 evidence 字段，说明每条建议来自哪项证据。
+建议在 prompt 中要求“原因、证据、风险、建议”四部分，但这是模型输出格式建议，不是 Runtime
+能够验证或保证的结构化契约。
 
 ## 8. 审计与 Token 计量
 
@@ -1033,8 +965,9 @@ P0 安全要求：
 - 生产禁用或限制普通用户 endpoint override。
 - API Key 不进入业务 SQL。
 - `AI_ANALYZE()` 文档必须说明哪些输入会发送到 MaaS。
-- `model_alias` 必须解析为 `ACTIVE` 的、受 DBA 管理的 Profile；P0 的 `AI_INVOKE` 是实例级
-  调用权限，不能让普通用户借由 alias 指定任意 Endpoint、凭据或厂商私有参数。
+- `model_name` 必须显式解析为 `ACTIVE` 的、受 DBA 管理的 Profile；P0 没有默认模型或 SQL
+  alias。`AI_INVOKE` 是实例级调用权限，不能让普通用户借由模型名指定任意 Endpoint、凭据或
+  厂商私有参数。
 - RAG 样例必须包含 tenant/security/scalar filter。
 - DBA 诊断只读，不自动执行修复。
 - 默认 MTR 不访问外网。
@@ -1232,11 +1165,9 @@ P0 HLD 通过后，建议拆分以下 Low Level Design 或实现任务：
 
 ### 15.3 TaurusDB 只读节点调用与审计写入
 
-**当前实现。** 每次已解析 Profile 的调用在出站前通过独立系统事务创建审计记录，并在
-调用结束后更新状态；审计不可写时调用 fail closed。该行为避免已发生云侧调用却没有
-最小审计事实，但要求执行节点具备审计写入能力。
+**历史背景。** 早期原型将审计写入系统表，无法适配只读节点；该路径不属于当前 P0 Runtime。
 
-**目标方案。** TaurusDB 不再要求只读节点写系统表。`ai_invoke_audit=ON` 时，执行节点在
+**当前方案。** `ai_invoke_audit=ON` 时，执行节点在
 MaaS 出站前向本地受控 AI 审计日志文件追加并安全落盘 `AI_CALL_STARTED`；返回后向同一
 文件追加终态。主节点和只读节点使用相同的日志协议，因此不依赖控制面 RPC、主节点转发、
 用户事务复制或延迟复制。

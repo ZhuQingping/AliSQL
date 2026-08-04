@@ -14,13 +14,12 @@ CALL dbms_ai.delete_model('huawei/mtr-contract-disabled', 'TEXT_EMBEDDING');
 GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
 --error ER_WRONG_ARGUMENTS
 SELECT AI_EMBEDDING('text');
---error ER_WRONG_ARGUMENTS
-SELECT AI_ANALYZE('task', JSON_OBJECT('x', 1));
+--error ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT
+SELECT AI_ANALYZE('mtr/fixture-chat');
 SELECT VECTOR_DIM(AI_EMBEDDING('explicit profile', 'mtr/fixture-embedding', 1024))
   AS explicit_dimension;
-SELECT AI_ANALYZE('Summarize only.', JSON_OBJECT('rows', 1),
-                  JSON_OBJECT('model_name', 'mtr/fixture-chat',
-                              'mode', 'analyze')) AS explicit_analysis;
+SELECT AI_ANALYZE('mtr/fixture-chat',
+                  'Summarize only the supplied evidence.') AS explicit_analysis;
 SELECT JSON_UNQUOTE(JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.model_name'))
   AS explicit_model;
 

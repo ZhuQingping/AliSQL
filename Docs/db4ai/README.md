@@ -17,8 +17,8 @@ RAG 问答、SQL 结果分析和 DBA 只读诊断；数据库负责权限、模�
 
 - `AI_EMBEDDING(text, model_name [, dimension])`：调用华为 MaaS `bge-m3` 文本向量模型，
   返回 1024 维 `VECTOR`；可写入向量列、HNSW 索引和 `STORED` 生成列。
-- `AI_ANALYZE(task_text, input_value [, options_json])`：调用华为 MaaS V2 Chat 文本生成模型，
-  支持 `analyze`、`rag`、`diagnose`、`summarize`、`classify`、`extract` 等受控模式。
+- `AI_ANALYZE(model_name, prompt [, options_json])`：调用华为 MaaS V2 Chat 文本生成模型；
+  `prompt` 承载自然语言任务和已授权上下文，选项仅支持输出上限与本地超时。
 - `dbms_ai` 原生模型管理包：`register_model`、`update_model`、`delete_model`、`show_models`。
 - `AI_INVOKE` 调用权限、`AI_ADMIN` 模型管理权限，以及出站前 `STARTED`、结束后终态的两阶段
   脱敏 JSON Lines 文件审计。
@@ -76,11 +76,11 @@ GRANT AI_INVOKE ON *.* TO 'app'@'%';
 
 SELECT AI_EMBEDDING('数据库支持 RAG 检索', 'huawei/bge-m3', 1024);
 SELECT AI_ANALYZE(
-  '根据证据返回原因、证据、风险和建议；不要执行自动修复 SQL。',
-  JSON_OBJECT('sql_digest', 'SELECT * FROM orders WHERE tenant_id = ?',
-              'elapsed_ms', 4210, 'rows_examined', 900000),
-  JSON_OBJECT('model_name', 'huawei/glm-5.2', 'mode', 'diagnose',
-              'timeout_ms', 60000));
+  'huawei/glm-5.2',
+  CONCAT('根据证据返回原因、证据、风险和建议；不要执行自动修复 SQL。\n证据：',
+         JSON_PRETTY(JSON_OBJECT('sql_digest', 'SELECT * FROM orders WHERE tenant_id = ?',
+                                 'elapsed_ms', 4210, 'rows_examined', 900000))),
+  JSON_OBJECT('timeout_ms', 60000));
 ```
 
 相关全局变量：
@@ -107,7 +107,7 @@ cd build-debug/mysql-test
 |---|---|
 | `ai_maas_contract` | SQL 参数、NULL、显式模型选择、拒绝 Provider 私有参数与本地失败无出站。 |
 | `ai_maas_embedding` | 1024 维、模型/维度校验、VECTOR 结果与离线 fixture。 |
-| `ai_maas_analysis` | Analyze 选项、模式、最终内容、reasoning-only/截断错误。 |
+| `ai_maas_analysis` | Analyze 的 2/3 参数路径、option 白名单、旧字段拒绝、最终内容与 reasoning-only/截断错误。 |
 | `ai_maas_governance` | `AI_INVOKE`、审计开关、审计脱敏与出站前失败。 |
 | `ai_maas_rag` | 向量写入、RAG 过滤、来源契约、`STORED + AI_EMBEDDING()`。 |
 | `ai_maas_model_admin` | `dbms_ai` 管理、`AI_ADMIN` 与控制表直接 DML/DDL 拒绝。 |

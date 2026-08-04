@@ -23,11 +23,11 @@ AI node，并按 AI node 计费；向量索引另需要 IMCI 只读节点。具�
 | 能力 | AliSQL P0：本分支已验证 | PolarDB for MySQL：公开资料观察 | 不作出的结论 |
 |---|---|---|---|
 | SQL 向量 | `VECTOR(N)`、HNSW、余弦检索由 `rds.vidx_func`；`rds.ai_maas_rag` 验证实际 `AI_EMBEDDING` 写入 VECTOR INDEX。 | 官方文档描述 `VECTOR(N)`、IMCI/HNSW 和 `DISTANCE()`，有单独的 IMCI 部署前提。 | 不比较召回、延迟、并发、索引构建或事务性能。 |
-| 文本 embedding | `AI_EMBEDDING(text[, model[, dimension]])` 固定受 Profile/tenant/`AI_INVOKE` 约束；bge-m3 1024 维本地校验，Debug MTR 无 egress。 | 官方文档描述 `EMBEDDING(text, model_name, dimension)`，目前标为 beta，并列出 Model Studio 模型与支持维度。 | 不宣称 API、维度、模型、认证或错误语义兼容。 |
-| 生成/分析 | `AI_ANALYZE(task, input_json, options_json)` 仅接受稳定 options；Huawei V2 Chat 的 final content、长度截断和 reasoning-only 均受校验。 | 官方 PolarDB for AI 文档给出 `/*polar4ai*/ PREDICT(MODEL ..., SELECT ...)` 的聊天、摘要、情感分析和 NL2SQL 示例。 | 不把 `AI_ANALYZE` 视为 `PREDICT` 的别名，也不推断任一模型输出质量。 |
+| 文本 embedding | `AI_EMBEDDING(text, model_name [, dimension])` 固定受 Profile/实例级 `AI_INVOKE` 约束；bge-m3 1024 维本地校验，Debug MTR 无 egress。 | 官方文档描述 `EMBEDDING(text, model_name, dimension)`，目前标为 beta，并列出 Model Studio 模型与支持维度。 | 不宣称 API、维度、模型、认证或错误语义兼容。 |
+| 生成/分析 | `AI_ANALYZE(model_name, prompt [, options_json])` 仅接受稳定 options；Huawei V2 Chat 的 final content、长度截断和 reasoning-only 均受校验。 | 官方 PolarDB for AI 文档给出 `/*polar4ai*/ PREDICT(MODEL ..., SELECT ...)` 的聊天、摘要、情感分析和 NL2SQL 示例。 | 不把 `AI_ANALYZE` 视为 `PREDICT` 的别名，也不推断任一模型输出质量。 |
 | RAG | `rds.ai_maas_rag` 验证 tenant/业务/space/version SQL 过滤、schema contract 拒绝、数据库来源回传；示例见 `examples/rag_product_manual.sql`。 | 官方资料描述向量化、检索和 RAG/文档检索流程，含 `PREDICT` 批量异步向量化示例。 | 不声称两者的索引格式、批处理、权限隔离或来源可追溯行为相同。 |
 | 凭据与 egress | Profile 仅允许 Huawei HTTPS JSON；生产 `SECRET_REF`，Debug `PLAINTEXT_DEV` 被 Release 拒绝；无凭据 fail-closed。 | 公开文档描述 AI node、内置模型或 Model Studio 路径，但本分支未对其凭据/网络控制做审计。 | 不比较密钥托管、VPC、出网控制或合规效果。 |
-| 审计与租户 | 持久 `STARTED`→完成审计、脱敏 `AI_AUDIT_INFO`、`AI_AUDIT_VIEWER` tenant 隔离和 `AI_ADMIN` 跨 tenant 查询由 MTR 覆盖。 | 本次未找到并验证与此同范围的 PolarDB 审计/tenant SQL 合约。 | 不声称 PolarDB 缺少审计；仅标记为未验证。 |
+| 审计与权限 | 持久 `STARTED`→完成的脱敏本地审计文件、实例级 `AI_INVOKE` 与 `AI_ADMIN` 由 MTR 覆盖；P0 不提供普通 SQL 审计文件查询。 | 本次未找到并验证与此同范围的 PolarDB 审计/权限 SQL 合约。 | 不声称 PolarDB 缺少审计；仅标记为未验证。 |
 | 运维与成本 | 真实 MaaS 仅通过显式授权的短 smoke 执行；默认 GUnit/MTR 离线。 | 官方文档说明 PolarDB for AI 需要 AI node 且会按节点计费；RAG 文档也描述异步批量向量化。 | 不比较云费用、节点成本、吞吐或服务等级。 |
 
 PolarDB 的功能观察分别来自官方的 [text embedding](https://help.aliyun.com/en/polardb/polardb-for-mysql/use-the-embedding-function)、[document retrieval](https://help.aliyun.com/en/polardb/polardb-for-mysql/case-2-building-a-document-retrieval-system) 和

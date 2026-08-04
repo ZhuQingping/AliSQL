@@ -76,9 +76,9 @@ probe_output="$("${DB4AI_MYSQL}" "${mysql_args[@]}" "${DB4AI_DATABASE}" <<SQL
 SET @embedding = AI_EMBEDDING('db4ai smoke probe', '${embedding_model}', ${expected_dimension});
 SELECT VECTOR_DIM(@embedding) AS embedding_dimension;
 SET @analysis = AI_ANALYZE(
-  'Respond with a short acknowledgement.', 'db4ai smoke probe',
-  JSON_OBJECT('model_name', '${generation_model}', 'mode', 'summarize',
-              'max_output_tokens', 32, 'timeout_ms', 15000));
+  '${generation_model}', 'Respond with a short acknowledgement. Evidence: db4ai smoke probe.',
+  JSON_OBJECT(
+              'max_output_tokens', 32, 'timeout_ms', 60000));
 SELECT CHAR_LENGTH(@analysis) AS analyze_length;
 SELECT IF(VECTOR_DIM(@embedding) = ${expected_dimension}
               AND CHAR_LENGTH(@analysis) > 0,

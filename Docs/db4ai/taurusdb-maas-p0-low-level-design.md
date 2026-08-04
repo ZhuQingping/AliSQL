@@ -58,38 +58,28 @@ CALL dbms_ai.show_models();
 但不是 `dbms_ai` 的客户参数或展示字段。`show_models()` 仅返回模型名、能力、实际模型名、
 固定维度和内部版本号；不返回状态、Endpoint、API Key、Secret 引用或完整 HTTP 配置。
 
-P0 不设置默认模型。`AI_EMBEDDING()` 必须显式传入 `model_name`；`AI_ANALYZE()` 的第三个
-参数必须含有 `model_name`。
+P0 不设置默认模型。`AI_EMBEDDING()` 和 `AI_ANALYZE()` 都必须显式传入 `model_name`。
 
 ## 3. `AI_ANALYZE` 受控契约
 
-函数签名保持不变：
+函数签名为：
 
 ```sql
-AI_ANALYZE(task_text, input_value, options_json)
+AI_ANALYZE(model_name, prompt [, options_json])
 ```
 
-其中 `task_text` 是调用方的任务说明，不再直接映射为可覆盖的 Provider `system` message。
-Runtime 按 `mode` 选择内置且不可被普通用户覆盖的 system prompt，将任务和业务输入作为
-user message 发送。P0 支持 `analyze`、`summarize`、`rag`、`diagnose`、`classify`、`extract`；
-它们共用文本生成 Adapter，但 `rag` 和 `diagnose` 使用更严格的输入和输出校验。
+`model_name` 是已启用的逻辑生成模型；`prompt` 是调用方自然语言请求及已授权上下文。Runtime
+使用不可由调用方覆盖的通用 system policy，将 `prompt` 放入 Huawei V2 Chat 的 user message。
+函数只返回非空最终文本，不返回原始 Provider JSON、reasoning 或审计元数据。
 
-- 非 RAG 调用默认 `output_format='text'`，返回模型最终内容。
-- `output_format='json'` 返回 TaurusDB 生成的 JSON，包含 `content`、`model_name`、
-  `config_version` 和 `usage`。不返回原始 Provider JSON 或 reasoning。
-- `mode='rag'` 必须同时指定 `output_format='json'` 和 `return_sources=true`；否则在权限、
-  审计、凭据读取和 MaaS 出站前失败。`input_value` 必须是 JSON object，并包含
-  `question` 及 `sources` 数组。每个 source 至少有 `source_id`、`chunk_id` 和 `content`。
-  Runtime 将 `sources` 的 `source_id`、`chunk_id` 原样写入返回 JSON；模型只能生成
-  `content`，不能制造来源。
-- `mode='diagnose'` 的输入必须是 JSON object 形式的证据集合。受控 system prompt 强制
-  “原因、证据、风险、建议”的只读诊断边界，禁止自动执行或生成修复 SQL。
-- `return_sources=true` 仅允许 `mode='rag'` 和 `output_format='json'`。
-- `max_output_tokens` 和 `timeout_ms` 省略时保持 Adapter 既有默认值；显式设置时必须分别在
-  `1..32768` 和 `1..60000` 之间。P0 使用固定上限，不增加客户可见的模型参数字段。
+`options_json` 仅支持 `max_output_tokens`（`1..32768`）和本地 `timeout_ms`（`1..60000`）。
+`timeout_ms` 不发送给 MaaS；它控制 libcurl 总等待时间。`mode`、`output_format`、
+`return_sources`、options 内 `model_name` 和 Provider 私有参数均在权限、审计、凭据读取和
+MaaS 出站前失败。
 
-RAG 调用方仍必须在数据库 SQL 中完成业务租户、访问标签和标量过滤后，才将可访问片段传给
-`AI_ANALYZE()`；该函数不尝试绕过或替代数据库的数据访问控制。
+RAG 调用方必须先在 SQL 中完成租户、访问标签和标量过滤，再把问题和可访问片段拼成 prompt；
+答案旁的来源 ID 应取自检索 SQL，而不是模型输出。DBA 诊断同理：将证据与“不要自动执行”的
+约束写入 prompt，模型文本不具有执行权限。
 
 ## 4. 调用审计与可观测性
 

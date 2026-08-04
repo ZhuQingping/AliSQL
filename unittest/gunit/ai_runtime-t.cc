@@ -6,95 +6,67 @@
 
 namespace alisql::ai {
 
-TEST(AiRuntimeTest, RejectsProviderPrivateOptions) {
+TEST(AiRuntimeTest, ParsesOnlyPublicAnalyzeOptions) {
   Ai_runtime runtime(nullptr, nullptr);
   Ai_analyze_options options;
-  EXPECT_EQ(Ai_error::k_invalid_options,
-            runtime.ParseAnalyzeOptions("{\"temperature\":0}", &options));
-}
 
-TEST(AiRuntimeTest, ParsesRagJsonSourceOptions) {
-  Ai_runtime runtime(nullptr, nullptr);
-  Ai_analyze_options options;
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            runtime.ParseAnalyzeOptions("", &options));
+  EXPECT_EQ(Ai_error::k_ok, runtime.ParseAnalyzeOptions("{}", &options));
+  EXPECT_EQ(0U, options.max_output_tokens);
+  EXPECT_EQ(0U, options.timeout_ms);
   EXPECT_EQ(Ai_error::k_ok,
             runtime.ParseAnalyzeOptions(
-                "{\"model_name\":\"huawei/glm-5.2\",\"mode\":\"rag\","
-                "\"output_format\":\"json\",\"return_sources\":true,"
-                "\"max_output_tokens\":128,\"timeout_ms\":5000}",
+                "{\"max_output_tokens\":256,\"timeout_ms\":60000}",
                 &options));
-  EXPECT_EQ("huawei/glm-5.2", options.model_name);
-  EXPECT_EQ("rag", options.mode);
-  EXPECT_TRUE(options.return_sources);
-  EXPECT_EQ(128U, options.max_output_tokens);
+  EXPECT_EQ(256U, options.max_output_tokens);
+  EXPECT_EQ(60000U, options.timeout_ms);
 }
 
-TEST(AiRuntimeTest, RejectsRagWithoutCanonicalJsonSourcesContract) {
+TEST(AiRuntimeTest, RejectsLegacyAndProviderPrivateAnalyzeOptions) {
   Ai_runtime runtime(nullptr, nullptr);
   Ai_analyze_options options;
 
-  EXPECT_EQ(Ai_error::k_invalid_options,
-            runtime.ParseAnalyzeOptions(
-                "{\"model_name\":\"huawei/glm-5.2\",\"mode\":\"rag\"}",
-                &options));
-  EXPECT_EQ(Ai_error::k_invalid_options,
-            runtime.ParseAnalyzeOptions(
-                "{\"model_name\":\"huawei/glm-5.2\",\"mode\":\"rag\","
-                "\"output_format\":\"json\",\"return_sources\":false}",
-                &options));
-  EXPECT_EQ(Ai_error::k_invalid_options,
-            runtime.ParseAnalyzeOptions(
-                "{\"model_name\":\"huawei/glm-5.2\",\"mode\":\"rag\","
-                "\"output_format\":\"text\",\"return_sources\":true}",
-                &options));
+  for (const char *json : {
+           "{\"model_name\":\"huawei/glm-5.2\"}",
+           "{\"mode\":\"rag\"}",
+           "{\"output_format\":\"json\"}",
+           "{\"return_sources\":true}",
+           "{\"temperature\":0}",
+           "{\"timeout_ms\":1000,\"timeout_ms\":2000}",
+       }) {
+    EXPECT_EQ(Ai_error::k_invalid_options,
+              runtime.ParseAnalyzeOptions(json, &options));
+  }
 }
 
 TEST(AiRuntimeTest, EnforcesAnalyzeParameterUpperBounds) {
   Ai_runtime runtime(nullptr, nullptr);
   Ai_analyze_options options;
 
-  EXPECT_EQ(Ai_error::k_ok,
-            runtime.ParseAnalyzeOptions(
-                "{\"model_name\":\"huawei/glm-5.2\","
-                "\"max_output_tokens\":25600,\"timeout_ms\":60000}",
-                &options));
   EXPECT_EQ(Ai_error::k_invalid_options,
-            runtime.ParseAnalyzeOptions(
-                "{\"model_name\":\"huawei/glm-5.2\","
-                "\"max_output_tokens\":0}", &options));
+            runtime.ParseAnalyzeOptions("{\"max_output_tokens\":0}",
+                                        &options));
   EXPECT_EQ(Ai_error::k_invalid_options,
-            runtime.ParseAnalyzeOptions(
-                "{\"model_name\":\"huawei/glm-5.2\","
-                "\"max_output_tokens\":32769}", &options));
+            runtime.ParseAnalyzeOptions("{\"max_output_tokens\":32769}",
+                                        &options));
   EXPECT_EQ(Ai_error::k_invalid_options,
-            runtime.ParseAnalyzeOptions(
-                "{\"model_name\":\"huawei/glm-5.2\",\"timeout_ms\":0}",
-                &options));
+            runtime.ParseAnalyzeOptions("{\"timeout_ms\":0}", &options));
   EXPECT_EQ(Ai_error::k_invalid_options,
-            runtime.ParseAnalyzeOptions(
-                "{\"model_name\":\"huawei/glm-5.2\","
-                "\"timeout_ms\":60001}", &options));
+            runtime.ParseAnalyzeOptions("{\"timeout_ms\":60001}",
+                                        &options));
 }
 
-TEST(AiRuntimeTest, RuntimeValidationRejectsConstructedUnsafeOptions) {
-  Ai_analyze_options rag_options;
-  rag_options.model_name = "unconfigured/rag";
-  rag_options.mode = "rag";
-  EXPECT_EQ(Ai_error::k_invalid_options,
-            ValidateAnalyzeOptions(rag_options));
+TEST(AiRuntimeTest, RuntimeValidationAcceptsDefaultOptions) {
+  Ai_analyze_options options;
+  EXPECT_EQ(Ai_error::k_ok, ValidateAnalyzeOptions(options));
 
-  Ai_analyze_options limit_options;
-  limit_options.model_name = "unconfigured/limits";
-  limit_options.max_output_tokens = k_ai_analyze_max_output_tokens + 1;
-  EXPECT_EQ(Ai_error::k_invalid_options,
-            ValidateAnalyzeOptions(limit_options));
+  options.max_output_tokens = k_ai_analyze_max_output_tokens + 1;
+  EXPECT_EQ(Ai_error::k_invalid_options, ValidateAnalyzeOptions(options));
 
-  limit_options.max_output_tokens = 0;
-  limit_options.timeout_ms = k_ai_analyze_max_timeout_ms + 1;
-  EXPECT_EQ(Ai_error::k_invalid_options,
-            ValidateAnalyzeOptions(limit_options));
-
-  limit_options.timeout_ms = 0;
-  EXPECT_EQ(Ai_error::k_ok, ValidateAnalyzeOptions(limit_options));
+  options.max_output_tokens = 0;
+  options.timeout_ms = k_ai_analyze_max_timeout_ms + 1;
+  EXPECT_EQ(Ai_error::k_invalid_options, ValidateAnalyzeOptions(options));
 }
 
 TEST(AiRuntimeTest, RecordsReasoningTokensButNeverReasoningText) {

@@ -22,21 +22,19 @@ Profile 的通用写入时检查，因此该约束是每个语料 schema 的交�
 
 ## 分析与 DBA 诊断
 
-`AI_ANALYZE(task, input_json, options_json)` 的 input 可以是 JSON。调用前先在 SQL 或
-应用层完成聚合、行数限制和 PII 删除。`mode='analyze'` 用于受控业务摘要；
-`mode='diagnose'` 只返回证据、风险和建议，不执行 SQL、不修改数据、不修改配置，也不
-触发自动修复。`mode='rag'` 只消费已检索的上下文。
+`AI_ANALYZE(model_name, prompt [, options_json])` 的 `prompt` 可包含 JSON 文本。调用前先在
+SQL 或应用层完成聚合、行数限制和 PII 删除；将任务指令和证据一起拼入 prompt。模型不能执行
+SQL、修改数据或配置，也不触发自动修复。
 
-公开 options 仅为 `model_name`、`mode`、`output_format`、`return_sources`、
-`max_output_tokens` 和 `timeout_ms`。`temperature`、`tools`、`thinking` 等厂商参数会被
-拒绝。Huawei V2 Chat 仅接受有 final content 的完整响应；reasoning-only、缺 final content
-或 `finish_reason=length` 都会失败。
+公开 options 仅为 `max_output_tokens` 和 `timeout_ms`。`mode`、`output_format`、
+`return_sources`、`temperature`、`tools`、`thinking` 等字段会被拒绝。Huawei V2 Chat 仅接受有
+final content 的完整响应；reasoning-only、缺 final content 或 `finish_reason=length` 都会失败。
 
 ## 离线验证边界
 
 `rds.ai_maas_rag` 在 Debug 服务器中用专属不可路由的 fixture Profile，通过实际
 `AI_EMBEDDING` 写入 VECTOR INDEX、执行 tenant/space 过滤并调用 RAG `AI_ANALYZE`。
-`rds.ai_maas_analysis` 覆盖 JSON input、analyze/diagnose mode 和私有 options 拒绝。
+`rds.ai_maas_analysis` 覆盖新签名、prompt、options 范围和旧/私有 options 拒绝。
 fixture 只在 Debug 构建编译，位于凭据读取和 HTTP dispatch 之前：不会读取 secret，
 不会产生网络 egress，也不代表真实云端验收。真实 MaaS 检查仍须按运维文档明确授权后
 运行 `scripts/db4ai_maas_smoke.sh`。

@@ -14,17 +14,16 @@ CALL dbms_ai.delete_model('huawei/mtr-contract-disabled', 'TEXT_EMBEDDING');
 GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
 SELECT AI_EMBEDDING('text');
 ERROR HY000: Incorrect arguments to ai_embedding
-SELECT AI_ANALYZE('task', JSON_OBJECT('x', 1));
-ERROR HY000: Incorrect arguments to ai_analyze
+SELECT AI_ANALYZE('mtr/fixture-chat');
+ERROR 42000: Incorrect parameter count in the call to native function 'AI_ANALYZE'
 SELECT VECTOR_DIM(AI_EMBEDDING('explicit profile', 'mtr/fixture-embedding', 1024))
 AS explicit_dimension;
 explicit_dimension
 1024
-SELECT AI_ANALYZE('Summarize only.', JSON_OBJECT('rows', 1),
-JSON_OBJECT('model_name', 'mtr/fixture-chat',
-'mode', 'analyze')) AS explicit_analysis;
+SELECT AI_ANALYZE('mtr/fixture-chat',
+'Summarize only the supplied evidence.') AS explicit_analysis;
 explicit_analysis
-offline analysis
+offline AI_ANALYZE response
 SELECT JSON_UNQUOTE(JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.model_name'))
 AS explicit_model;
 explicit_model

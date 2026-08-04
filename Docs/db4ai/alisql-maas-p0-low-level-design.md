@@ -17,50 +17,45 @@ AWS Bedrock and Volcano Ark, but does not invoke those providers in P0.
 The only AI capability functions are:
 
 ```sql
-AI_EMBEDDING(text [, model_name [, dimension]])
-AI_ANALYZE(task_text, input_value [, options_json])
+AI_EMBEDDING(text, model_name [, dimension])
+AI_ANALYZE(model_name, prompt [, options_json])
 ```
 
-`model_name` is a tenant-visible logical name. It is never a provider model
+`model_name` is an instance-level logical name. It is never a provider model
 identifier, endpoint, adapter name or credential. `AI_EMBEDDING(NULL, ...)`
 returns `NULL`. Huawei `huawei/bge-m3` is a fixed 1024-dimension Profile in
 P0: specifying any other dimension fails locally before an HTTP request.
 
-`AI_ANALYZE` returns a utf8mb4 final-content string by default. Its second
-argument accepts a string or JSON input value; its JSON option accepts only
-these stable keys:
+`AI_ANALYZE` returns a utf8mb4 final-content string. `model_name` and `prompt`
+are required. The prompt carries the natural-language task and authorized
+context; its JSON option accepts only these stable keys:
 
 ```json
 {
-  "model_name": "huawei/glm-5.2",
-  "mode": "analyze",
-  "output_format": "text",
-  "return_sources": false,
   "max_output_tokens": 2048,
   "timeout_ms": 30000
 }
 ```
 
-The valid modes are `analyze`, `rag`, `diagnose`, `summarize`, `classify` and
-`extract`. `return_sources=true` requires `output_format='json'`. The parser
-rejects provider fields such as `temperature`, `thinking`, `tools`, request
-messages, endpoint URLs and all credential fields. A successful HTTP response
+The parser rejects old fields such as `mode`, `output_format`, `return_sources`
+and option `model_name`, plus provider fields such as `temperature`, `thinking`,
+`tools`, request messages, endpoint URLs and all credential fields. A successful HTTP response
 without non-empty final content, with only reasoning, or truncated with
 `finish_reason=length` is `AI_ANALYZE_INCOMPLETE_OUTPUT`; reasoning is never a
 customer result.
 
 `AI_MODEL_INFO([model_name])` is a read-only metadata function. It returns
-sanitized JSON containing logical model name, provider, capability, resolved
-provider model, revision state, dimensions, embedding space, lifecycle state,
-config version and the latest health classification. It never returns endpoint
-details, credential references or secrets.
+sanitized configured metadata such as logical name, provider, capability,
+configuration identity/version, revision and embedding dimension when applicable.
+It is not a health endpoint and never returns endpoint details, credential
+references or secrets.
 
 ## Runtime architecture
 
 ```text
 Item_func_ai_embedding / Item_func_ai_analyze
   -> Ai_runtime
-      -> Model_registry and tenant resolver
+      -> Model_registry and instance Profile resolver
       -> Credential_resolver
       -> Provider_adapter selected by provider + capability + model/revision
          + endpoint type
@@ -70,8 +65,8 @@ Item_func_ai_embedding / Item_func_ai_analyze
       -> Independent audit and metering sink
 ```
 
-`Ai_canonical_request` contains the requested capability, task, input,
-whitelisted generation options, resolved model configuration, tenant and audit
+`Ai_canonical_request` contains the requested capability, prompt/input,
+whitelisted generation options, resolved model configuration and audit
 context. `Ai_canonical_response` contains only final content, embeddings,
 completion state, finish reason, usage, database request ID and provider request
 ID. Provider-specific JSON exists only within an Adapter.
@@ -81,7 +76,7 @@ P0 registers two adapters:
 | Adapter | Profile match | Request | Required response |
 |---|---|---|---|
 | `Huawei_maas_embedding_adapter` | `HUAWEI_MAAS`, `TEXT_EMBEDDING`, MaaS embedding endpoint | model, input, encoding format | `data[].embedding`, response model and usage |
-| `Huawei_maas_v2_chat_adapter` | `HUAWEI_MAAS`, `TEXT_GENERATION`, V2 chat endpoint | canonical task/input and controlled generation defaults | non-empty final message content, finish reason, usage |
+| `Huawei_maas_v2_chat_adapter` | `HUAWEI_MAAS`, `TEXT_GENERATION`, V2 chat endpoint | canonical prompt/input and controlled generation defaults | non-empty final message content, finish reason, usage |
 
 The Adapter registry key intentionally includes capability, provider model and
 endpoint type. Adding a Bailian OpenAI-compatible, Bedrock Converse/Invoke or
@@ -152,9 +147,10 @@ new vectors and a new HNSW index; chat aliases may change independently.
 The RAG tutorial uses an application schema with `tenant_id`, `source_id`,
 `chunk_id`, business scalar filters, provenance and the fields above. Retrieval
 always applies the tenant/security/scalar predicates in ordinary SQL before
-assembling chunks. `AI_ANALYZE(mode='rag')` receives those already-authorized
-chunks and returns database-supplied `source_id`/`chunk_id` values only. It
-never executes SQL, alters DBA configuration or invents sources.
+assembling chunks. `AI_ANALYZE(model_name, prompt)` receives those already-authorized
+chunks and returns only model text. The application returns the `source_id`/`chunk_id`
+selected by SQL alongside that text; model-generated references are not trusted.
+It never executes SQL or alters DBA configuration.
 
 ## Permissions, audit and errors
 
@@ -163,8 +159,8 @@ P0 registers three dynamic privileges:
 | Privilege | Grants |
 |---|---|
 | `AI_INVOKE` | Execute `AI_EMBEDDING` and `AI_ANALYZE` for authorized Profiles |
-| `AI_ADMIN` | Cross-tenant sanitized audit read; Profile mutation is currently a controlled system-table operation, not a public SQL management surface |
-| `AI_AUDIT_VIEWER` | Read sanitized model-health, audit and usage surfaces |
+| `AI_ADMIN` | Invoke the `dbms_ai` model-management package; it does not grant audit-file SQL access |
+| `AI_AUDIT_VIEWER` | Reserved compatibility privilege; P0 has no ordinary SQL audit-file reader |
 
 An independent audit transaction writes `STARTED` before credential lookup and egress; inability to
 record it fails the invocation closed. It is updated to `SUCCEEDED`, `FAILED`
@@ -181,13 +177,13 @@ embedding dimension/space mismatch. Error text is deterministic and redacted.
 | Path | Responsibility |
 |---|---|
 | `sql/ai/ai_types.h`, `sql/ai/ai_types.cc` | canonical request/response, enums and redacted error model |
-| `sql/ai/ai_model_registry.h`, `sql/ai/ai_model_registry.cc` | tenant/profile resolution and immutable config binding |
+| `sql/ai/ai_model_registry.h`, `sql/ai/ai_model_registry.cc` | instance-level Profile resolution and immutable config binding |
 | `sql/ai/ai_runtime.h`, `sql/ai/ai_runtime.cc` | invocation orchestration and policy enforcement |
 | `sql/ai/ai_provider_adapter.h` | provider-neutral adapter interface and registry |
 | `sql/ai/ai_huawei_maas_adapter.cc` | MaaS V2 chat and embedding conversion |
 | `sql/ai/ai_http_transport.cc` | libcurl transport, limits and redaction |
 | `sql/ai/ai_vector_codec.cc` | embedding float-array validation and VECTOR encoding |
-| `sql/ai/ai_audit.cc` | independent audit/metering writes |
+| `sql/ai/ai_file_audit.*`, `sql/ai/ai_audit_service.cc` | independent two-phase file audit writes |
 | `sql/ai/item_ai_func.h`, `sql/ai/item_ai_func.cc` | the three native SQL Item implementations |
 | `sql/item_create.cc` | native function registration |
 | `sql/CMakeLists.txt` | server compilation and libcurl linkage |

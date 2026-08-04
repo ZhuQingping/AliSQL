@@ -1,6 +1,6 @@
 # AliSQL DB4AI MaaS P0 验证状态
 
-更新日期：2026-08-03。本文是当前 `ai_maas` 分支的证据清单，不以设计文档、
+更新日期：2026-08-05。本文是当前 `ai_maas` 分支的证据清单，不以设计文档、
 mock 或成功编译替代真实云端验收。
 
 ## 已验证
@@ -16,8 +16,8 @@ mock 或成功编译替代真实云端验收。
 | VECTOR 编码 | `runtime_output_directory/ai_vector_codec-t` | native float VECTOR 编码、维度和非有限数拒绝覆盖 |
 | SQL/MTR 契约 | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_contract ai_maas_embedding ai_maas_analysis ai_maas_governance ai_maas_rag ai_maas_model_admin ai_maas_model_admin_rpl` | 7 个 RDS 用例和 shutdown report 通过；覆盖 SQL arity、NULL 无 egress、`AI_INVOKE`、显式模型选择、维度失败和脱敏元数据 |
 | 控制面权限 | `rds.ai_maas_model_admin` | 普通客户端即使拥有 `AI_ADMIN` 和表 DML/DDL 权限也不能直接修改控制表；仅 `dbms_ai` 可发布、更新和停用 Profile，复制 applier 覆盖见 `ai_maas_model_admin_rpl` |
-| 受控 RAG | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_rag` | Debug 离线 fixture 经实际 `AI_EMBEDDING` 写入 VECTOR INDEX；tenant/业务/embedding-space 过滤、schema contract 拒绝与来源回传覆盖 |
-| 分析与只读诊断 | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_analysis` | JSON input、analyze/diagnose mode 和私有 provider options 拒绝覆盖；fixture 不读取 secret、不发起 HTTP |
+| 受控 RAG | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_rag` | Debug 离线 fixture 经实际 `AI_EMBEDDING` 写入 VECTOR INDEX；tenant/业务/embedding-space 过滤、schema contract 拒绝，以及把 SQL 筛选资料拼入新 prompt 的范式覆盖 |
+| 分析与只读诊断 | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_analysis` | `AI_ANALYZE(model_name, prompt [, options_json])`、NULL 短路、旧字段/私有 provider options 拒绝覆盖；fixture 不读取 secret、不发起 HTTP |
 | Release 凭据门禁 | `rds.ai_maas_model_admin_release`（隔离 component keyring 的 Release MTR） | 先发布可读的 fake `SECRET_REF`，移除后 `update_model()` 失败且原 active 版本保持不变；未知引用的 `register_model()` 失败且不发布新行 |
 
 默认 Debug 测试均使用 mock transport 或精确的 `mtr/fixture-*` 离线 Profile；它们通过

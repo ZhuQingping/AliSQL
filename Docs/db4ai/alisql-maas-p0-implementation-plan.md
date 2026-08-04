@@ -1,5 +1,9 @@
 # AliSQL DB4AI MaaS P0 Implementation Plan
 
+> **历史计划说明（2026-08-05）：** 本文件记录早期原型实施过程。客户接口已迁移为
+> `AI_ANALYZE(model_name, prompt [, options_json])`；本文出现的旧 `task/input/mode` 示例不代表
+> 当前实现或验收契约。请以 `taurusdb-maas-p0-committer-design.md` 为准。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver AliSQL built-in `AI_EMBEDDING` and `AI_ANALYZE` functions backed by a secure, mock-tested Huawei MaaS runtime, with governed vector/HNSW RAG and auditable analysis and DBA-diagnosis examples.
@@ -11,7 +15,7 @@
 ## Global Constraints
 
 - Customer SQL never accepts an API key, endpoint, provider request JSON, provider model ID or adapter name.
-- P0 customer functions are exactly `AI_EMBEDDING(text [, model_name [, dimension]])` and `AI_ANALYZE(task_text, input_value [, options_json])`.
+- P0 customer functions are exactly `AI_EMBEDDING(text [, model_name [, dimension]])` and `AI_ANALYZE(model_name, prompt [, options_json])`.
 - Default tests are deterministic and offline; live Huawei MaaS verification is explicit opt-in only.
 - `huawei/bge-m3` is fixed at 1024 dimensions and any other requested dimension fails before HTTP dispatch.
 - `AI_ANALYZE` returns final content only; HTTP 2xx without final content, reasoning-only output and `finish_reason=length` are errors.

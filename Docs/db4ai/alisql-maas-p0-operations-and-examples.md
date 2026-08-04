@@ -121,13 +121,11 @@ from this result and preserves its database-generated sources:
 
 ```sql
 SELECT AI_ANALYZE(
-  'Answer using only the supplied chunks. State uncertainty when they are insufficient.',
-  JSON_OBJECT('question', @question,
-              'chunks', JSON_ARRAY(JSON_OBJECT('source_id','manual-001',
-                                                'chunk_id',1,
-                                                'content','...'))),
-  JSON_OBJECT('mode','rag','output_format','json','return_sources',true,
-              'model_name','huawei/glm-5.2','max_output_tokens',400,
+  'huawei/glm-5.2',
+  CONCAT('Answer using only the supplied chunks. State uncertainty when they are insufficient.',
+         '\nQuestion: ', @question, '\nChunks(JSON): ', JSON_PRETTY(JSON_ARRAY(
+           JSON_OBJECT('source_id','manual-001', 'chunk_id',1, 'content','...')))),
+  JSON_OBJECT('max_output_tokens',400,
               'timeout_ms',15000)) AS answer;
 ```
 
@@ -142,21 +140,24 @@ bounded result to the model.
 
 ```sql
 SELECT AI_ANALYZE(
-  'Summarize trends, anomalies and caveats for the following aggregated data.',
-  JSON_OBJECT('period','2026-07', 'rows', JSON_ARRAY(/* approved aggregates */)),
-  JSON_OBJECT('mode','analyze','output_format','json','max_output_tokens',500))
+  'huawei/glm-5.2',
+  CONCAT('Summarize trends, anomalies and caveats for the following aggregated data.',
+         '\nEvidence(JSON): ', JSON_PRETTY(JSON_OBJECT('period','2026-07',
+         'rows', JSON_ARRAY(/* approved aggregates */)))),
+  JSON_OBJECT('max_output_tokens',500))
   AS report;
 
 SELECT AI_ANALYZE(
-  'Return reason, evidence, recommendation and risk. Do not propose executable repairs.',
-  JSON_OBJECT('sql_digest','SELECT ...', 'explain','...', 'elapsed_ms',4210,
-              'rows_examined',900000, 'lock_wait_ms',0, 'io','...'),
-  JSON_OBJECT('mode','diagnose','output_format','json','max_output_tokens',500))
+  'huawei/glm-5.2',
+  CONCAT('Return reason, evidence, recommendation and risk. Do not propose executable repairs.',
+         '\nEvidence(JSON): ', JSON_PRETTY(JSON_OBJECT('sql_digest','SELECT ...',
+         'explain','...', 'elapsed_ms',4210, 'rows_examined',900000,
+         'lock_wait_ms',0, 'io','...'))),
+  JSON_OBJECT('max_output_tokens',500))
   AS readonly_diagnosis;
 ```
 
-`options_json` rejects any field outside `model_name`, `mode`,
-`output_format`, `return_sources`, `max_output_tokens` and `timeout_ms`.
+`options_json` rejects any field outside `max_output_tokens` and `timeout_ms`.
 Provider-private controls such as `temperature`, `thinking` and `tools` are
 not customer SQL surface. The Huawei adapter returns only final `content`; a
 reasoning-only response, absent final content, or `finish_reason=length` is a

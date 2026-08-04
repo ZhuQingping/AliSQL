@@ -96,9 +96,9 @@ BEGIN
     SET v_started = NOW(6);
     SET @db4ai_generation_model_sql = CONCAT(
       'SET @db4ai_result = AI_ANALYZE(',
-      QUOTE(v_task), ', CAST(', QUOTE(v_input_json), ' AS JSON), ',
-      'JSON_OBJECT(''model_name'', ', QUOTE(v_model_name),
-      ', ''mode'', ''analyze'', ''max_output_tokens'', 512',
+      QUOTE(v_model_name), ', ',
+      QUOTE(CONCAT(v_task, '\n\n证据(JSON)：\n', v_input_json)), ', ',
+      'JSON_OBJECT(''max_output_tokens'', 512',
       ', ''timeout_ms'', 60000))');
     PREPARE db4ai_generation_model_statement
       FROM @db4ai_generation_model_sql;

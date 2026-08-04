@@ -50,13 +50,14 @@ SELECT source_id, chunk_id, content,
  LIMIT 8;
 
 -- Construct chunks from the selected rows in application code, retaining the
--- database-generated source_id/chunk_id alongside the generated answer.
+-- database-generated source_id/chunk_id alongside the generated answer. The
+-- answer is plain text; show database-returned source IDs as citations rather
+-- than trusting a model-generated citation.
 SELECT AI_ANALYZE(
-  'Answer using only the supplied chunks. State uncertainty when insufficient.',
-  JSON_OBJECT('question', @question,
-              'chunks', JSON_ARRAY(JSON_OBJECT('source_id', 'manual-001',
-                                                'chunk_id', 1,
-                                                'content', '...'))),
-  JSON_OBJECT('model_name', 'huawei/glm-5.2', 'mode', 'rag',
-              'output_format', 'json', 'return_sources', true,
+  'huawei/glm-5.2',
+  CONCAT('Answer using only the supplied chunks. State uncertainty when insufficient.',
+         '\nQuestion: ', @question,
+         '\nChunks(JSON): ', JSON_PRETTY(JSON_ARRAY(
+           JSON_OBJECT('source_id', 'manual-001', 'chunk_id', 1, 'content', '...')))),
+  JSON_OBJECT(
               'max_output_tokens', 400, 'timeout_ms', 15000)) AS answer;

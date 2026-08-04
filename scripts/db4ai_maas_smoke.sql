@@ -46,12 +46,13 @@ SELECT VECTOR_DIM(@db4ai_embedding) AS embedding_dimension,
 
 SELECT 'Analyze' AS test_step;
 SET @db4ai_analysis = AI_ANALYZE(
-  '请使用中文简短确认已经收到测试数据。',
-  JSON_OBJECT('probe', 'AliSQL real MaaS smoke', 'rows', 1),
-  JSON_OBJECT('model_name', @db4ai_generation_model,
-              'mode', 'summarize',
+  @db4ai_generation_model,
+  CONCAT('请使用中文简短确认已经收到测试数据。只依据下面证据回答。',
+         '\n证据：', JSON_PRETTY(JSON_OBJECT('probe', 'AliSQL real MaaS smoke',
+                                               'rows', 1))),
+  JSON_OBJECT(
               'max_output_tokens', 32,
-              'timeout_ms', 15000));
+              'timeout_ms', 60000));
 SELECT CHAR_LENGTH(@db4ai_analysis) AS analyze_length,
        @db4ai_analysis AS analysis_result;
 

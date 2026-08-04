@@ -1,160 +1,79 @@
---echo # Omitting the options model is rejected before fixture setup, audit, credential lookup, or HTTP.
---error ER_WRONG_ARGUMENTS
-SELECT AI_ANALYZE('task', JSON_OBJECT('rows', 1));
---error ER_WRONG_ARGUMENTS
-SELECT AI_ANALYZE('task', JSON_OBJECT('rows', 1), JSON_OBJECT('mode', 'analyze'));
+--echo # AI_ANALYZE requires model_name and prompt, with optional public options.
+--error ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT
+SELECT AI_ANALYZE('mtr/fixture-chat');
 
---echo # Invalid RAG options fail before privileges, audit, credentials, or HTTP.
---error ER_WRONG_ARGUMENTS
-SELECT AI_ANALYZE(
-  'Answer only from supplied source chunks.',
-  JSON_OBJECT('question', 'How do I handle an offline gateway?',
-              'sources', JSON_ARRAY(JSON_OBJECT('source_id', 'manual-42',
-                                                'chunk_id', 1,
-                                                'content', 'Tenant procedure.'))),
-  JSON_OBJECT('model_name', 'unconfigured/rag', 'mode', 'rag'));
---error ER_WRONG_ARGUMENTS
-SELECT AI_ANALYZE(
-  'Answer only from supplied source chunks.',
-  JSON_OBJECT('question', 'How do I handle an offline gateway?',
-              'sources', JSON_ARRAY(JSON_OBJECT('source_id', 'manual-42',
-                                                'chunk_id', 1,
-                                                'content', 'Tenant procedure.'))),
-  JSON_OBJECT('model_name', 'unconfigured/rag', 'mode', 'rag',
-              'output_format', 'json', 'return_sources', false));
---error ER_WRONG_ARGUMENTS
-SELECT AI_ANALYZE(
-  'Answer only from supplied source chunks.',
-  JSON_OBJECT('question', 'How do I handle an offline gateway?',
-              'sources', JSON_ARRAY(JSON_OBJECT('source_id', 'manual-42',
-                                                'chunk_id', 1,
-                                                'content', 'Tenant procedure.'))),
-  JSON_OBJECT('model_name', 'unconfigured/rag', 'mode', 'rag',
-              'output_format', 'text', 'return_sources', true));
-
---echo # Explicit zero and values over fixed P0 bounds fail before an invocation.
---error ER_WRONG_ARGUMENTS
-SELECT AI_ANALYZE('task', JSON_OBJECT('rows', 1),
-                  JSON_OBJECT('model_name', 'unconfigured/limits',
-                              'max_output_tokens', 0));
---error ER_WRONG_ARGUMENTS
-SELECT AI_ANALYZE('task', JSON_OBJECT('rows', 1),
-                  JSON_OBJECT('model_name', 'unconfigured/limits',
-                              'max_output_tokens', 32769));
---error ER_WRONG_ARGUMENTS
-SELECT AI_ANALYZE('task', JSON_OBJECT('rows', 1),
-                  JSON_OBJECT('model_name', 'unconfigured/limits',
-                              'timeout_ms', 0));
---error ER_WRONG_ARGUMENTS
-SELECT AI_ANALYZE('task', JSON_OBJECT('rows', 1),
-                  JSON_OBJECT('model_name', 'unconfigured/limits',
-                              'timeout_ms', 60001));
+--echo # NULL values short-circuit before privilege, profile, audit, or egress.
+SELECT AI_ANALYZE(NULL, 'prompt') AS null_model;
+SELECT AI_ANALYZE('mtr/fixture-chat', NULL) AS null_prompt;
 
 GRANT AI_INVOKE, AI_ADMIN ON *.* TO 'root'@'localhost';
 CALL dbms_ai.register_model('mtr/fixture-chat', 'TEXT_GENERATION',
                             'fixture-chat', 'SECRET_REF', 'mtr/not-read');
 
---echo # Bounded aggregate JSON reaches the stable analyze mode.
-SELECT AI_ANALYZE(
-  'Summarize only the supplied aggregates.',
-  JSON_OBJECT('period', '2026-07',
-              'rows', JSON_ARRAY(JSON_OBJECT('region', 'cn-north',
-                                              'orders', 12))),
-  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'analyze',
-              'output_format', 'json', 'max_output_tokens', 25600,
-              'timeout_ms', 60000))
-  AS analysis_result;
+--echo # The two-argument form uses default provider request limits.
+SELECT AI_ANALYZE('mtr/fixture-chat',
+                  'Summarize the supplied evidence in one sentence.')
+  AS two_argument_result;
 
---echo # Diagnosis returns evidence only and is not an automatic repair path.
-SELECT AI_ANALYZE(
-  'Return evidence and risk only. Do not execute or propose a repair.',
-  JSON_OBJECT('sql_digest', 'SELECT * FROM orders WHERE tenant_id = ?',
-              'explain', 'range scan', 'elapsed_ms', 4210,
-              'rows_examined', 900000, 'lock_wait_ms', 0,
-              'io', JSON_OBJECT('read_pages', 44)),
-  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
-              'output_format', 'json', 'max_output_tokens', 128))
-  AS diagnosis_result;
+--echo # The options form exposes only output and local transport limits.
+SELECT AI_ANALYZE('mtr/fixture-chat',
+                  'Summarize the supplied evidence in one sentence.',
+                  JSON_OBJECT('max_output_tokens', 256,
+                              'timeout_ms', 60000)) AS options_result;
 
---echo # An adversarial provider repair statement is rejected locally.
---error ER_NOT_SUPPORTED_YET
-SELECT AI_ANALYZE(
-  'Diagnose the supplied evidence only.',
-  JSON_OBJECT('fixture', 'mtr_fixture_repair_sql', 'elapsed_ms', 4210),
-  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
-              'output_format', 'json'));
+--echo # An empty object uses defaults; a SQL NULL options value short-circuits.
+SELECT AI_ANALYZE('mtr/fixture-chat', 'Use defaults.', '{}') AS empty_options_result;
+SELECT AI_ANALYZE('mtr/fixture-chat', 'prompt', NULL) AS null_options;
 
---echo # Comments and whitespace cannot hide repair SQL.
---error ER_NOT_SUPPORTED_YET
-SELECT AI_ANALYZE(
-  'Diagnose the supplied evidence only.',
-  JSON_OBJECT('fixture', 'mtr_fixture_commented_whitespace_alter'),
-  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
-              'output_format', 'json'));
-
---echo # Code fences cannot hide repair SQL.
---error ER_NOT_SUPPORTED_YET
-SELECT AI_ANALYZE(
-  'Diagnose the supplied evidence only.',
-  JSON_OBJECT('fixture', 'mtr_fixture_code_fence_alter'),
-  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
-              'output_format', 'json'));
-
---echo # JSON Unicode escapes cannot hide repair SQL.
---error ER_NOT_SUPPORTED_YET
-SELECT AI_ANALYZE(
-  'Diagnose the supplied evidence only.',
-  JSON_OBJECT('fixture', 'mtr_fixture_escaped_json_alter'),
-  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
-              'output_format', 'json'));
-
---echo # Index DDL and REPLACE DML cannot escape diagnosis output.
---error ER_NOT_SUPPORTED_YET
-SELECT AI_ANALYZE(
-  'Diagnose the supplied evidence only.',
-  JSON_OBJECT('fixture', 'mtr_fixture_create_index'),
-  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
-              'output_format', 'json'));
---error ER_NOT_SUPPORTED_YET
-SELECT AI_ANALYZE(
-  'Diagnose the supplied evidence only.',
-  JSON_OBJECT('fixture', 'mtr_fixture_replace_into'),
-  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
-              'output_format', 'json'));
-
---echo # MySQL executable version comments cannot hide DDL or DML.
---error ER_NOT_SUPPORTED_YET
-SELECT AI_ANALYZE(
-  'Diagnose the supplied evidence only.',
-  JSON_OBJECT('fixture', 'mtr_fixture_version_comment_alter'),
-  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
-              'output_format', 'json'));
---error ER_NOT_SUPPORTED_YET
-SELECT AI_ANALYZE(
-  'Diagnose the supplied evidence only.',
-  JSON_OBJECT('fixture', 'mtr_fixture_version_comment_replace'),
-  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
-              'output_format', 'json'));
-
---echo # Diagnose requires a JSON object evidence bundle.
+--echo # Empty model and prompt are rejected before an invocation.
 --error ER_WRONG_ARGUMENTS
-SELECT AI_ANALYZE(
-  'Diagnose only supplied evidence.',
-  JSON_ARRAY(JSON_OBJECT('elapsed_ms', 4210)),
-  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
-              'output_format', 'json'));
-
---echo # Source provenance is a RAG JSON-only output feature.
+SELECT AI_ANALYZE('', 'prompt');
 --error ER_WRONG_ARGUMENTS
-SELECT AI_ANALYZE(
-  'Analyze supplied aggregates.', JSON_OBJECT('rows', 1),
-  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'analyze',
-              'output_format', 'json', 'return_sources', true));
+SELECT AI_ANALYZE('mtr/fixture-chat', '');
 
---echo # Provider-private options remain outside the SQL contract.
+--echo # Options are an object with two bounded public keys only.
 --error ER_WRONG_ARGUMENTS
-SELECT AI_ANALYZE('task', JSON_OBJECT('rows', JSON_ARRAY()),
+SELECT AI_ANALYZE('mtr/fixture-chat', JSON_OBJECT('rows', 1));
+--error ER_WRONG_ARGUMENTS
+SELECT AI_ANALYZE('mtr/fixture-chat', 'prompt', JSON_ARRAY(1));
+--error ER_WRONG_ARGUMENTS
+SELECT AI_ANALYZE('mtr/fixture-chat', 'prompt', '');
+--error ER_WRONG_ARGUMENTS
+SELECT AI_ANALYZE('mtr/fixture-chat', 'prompt',
+                  '{"timeout_ms":1000,"timeout_ms":2000}');
+--error ER_WRONG_ARGUMENTS
+SELECT AI_ANALYZE('mtr/fixture-chat', 'prompt',
+                  JSON_OBJECT('max_output_tokens', 0));
+--error ER_WRONG_ARGUMENTS
+SELECT AI_ANALYZE('mtr/fixture-chat', 'prompt',
+                  JSON_OBJECT('max_output_tokens', 32769));
+--error ER_WRONG_ARGUMENTS
+SELECT AI_ANALYZE('mtr/fixture-chat', 'prompt', JSON_OBJECT('timeout_ms', 0));
+--error ER_WRONG_ARGUMENTS
+SELECT AI_ANALYZE('mtr/fixture-chat', 'prompt',
+                  JSON_OBJECT('timeout_ms', 60001));
+--error ER_WRONG_ARGUMENTS
+SELECT AI_ANALYZE('mtr/fixture-chat', 'prompt',
+                  JSON_OBJECT('temperature', 0));
+
+--echo # Old model/mode/result-shaping fields are not silently retained.
+--error ER_WRONG_ARGUMENTS
+SELECT AI_ANALYZE('mtr/fixture-chat', 'prompt',
+                  JSON_OBJECT('model_name', 'mtr/fixture-chat'));
+--error ER_WRONG_ARGUMENTS
+SELECT AI_ANALYZE('mtr/fixture-chat', 'prompt', JSON_OBJECT('mode', 'rag'));
+--error ER_WRONG_ARGUMENTS
+SELECT AI_ANALYZE('mtr/fixture-chat', 'prompt',
+                  JSON_OBJECT('output_format', 'json'));
+--error ER_WRONG_ARGUMENTS
+SELECT AI_ANALYZE('mtr/fixture-chat', 'prompt',
+                  JSON_OBJECT('return_sources', true));
+
+--echo # The former task/input/options invocation is not accepted as a legacy form.
+--error ER_WRONG_ARGUMENTS
+SELECT AI_ANALYZE('Summarize only supplied aggregates.',
+                  JSON_OBJECT('rows', 1),
                   JSON_OBJECT('model_name', 'mtr/fixture-chat',
-                              'temperature', 0));
+                              'mode', 'analyze'));
 
 CALL dbms_ai.delete_model('mtr/fixture-chat', 'TEXT_GENERATION');

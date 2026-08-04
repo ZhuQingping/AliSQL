@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1500" viewBox="0 0 1000 1500" role="img" aria-labelledby="title desc">
+  <title id="title">TaurusDB MySQL 对接华为云 MaaS 分层架构</title>
+  <desc id="desc">竖版架构图，展示客户端、TaurusDB 服务端数据面、控制面、受控出站和华为云 MaaS 的边界。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#F8FBFF"/><stop offset="1" stop-color="#F4F7FB"/></linearGradient>
+    <linearGradient id="core" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#2563EB"/><stop offset="1" stop-color="#164BB8"/></linearGradient>
+    <linearGradient id="maas" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#14B8A6"/><stop offset="1" stop-color="#0F766E"/></linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#1E3A5F" flood-opacity=".12"/></filter>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/></marker>
+    <marker id="arrowTeal" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#0F766E"/></marker>
+    <style>
+      .h{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;fill:#102A43}.t{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;fill:#486581}.s{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;fill:#627D98}.w{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;fill:#fff}.box{fill:#fff;stroke:#D9E2EC;stroke-width:1.5}.num{font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-weight:700;fill:#fff}
+    </style>
+  </defs>
+  <rect width="1000" height="1500" fill="url(#bg)"/>
+  <text x="70" y="78" class="h" font-size="32" font-weight="700">TaurusDB MySQL × Huawei Cloud MaaS</text>
+  <text x="70" y="112" class="t" font-size="17">P0 竖版分层架构 · 控制面与数据面清晰分离</text>
+  <rect x="70" y="140" width="860" height="1" fill="#CBD5E1"/>
+
+  <rect x="70" y="178" width="860" height="132" rx="20" class="box" filter="url(#shadow)"/>
+  <circle cx="112" cy="222" r="20" fill="#E0E7FF"/><text x="112" y="228" text-anchor="middle" class="h" font-size="17" font-weight="700">01</text>
+  <text x="154" y="222" class="h" font-size="22" font-weight="700">应用 / CES / DBA 客户端</text>
+  <text x="154" y="252" class="t" font-size="16">MySQL 协议 · SQL 只传模型名、prompt 和受控 options</text>
+  <text x="154" y="278" class="s" font-size="14">AI_EMBEDDING(text, model, dimension) · AI_ANALYZE(model, prompt [, options])</text>
+
+  <path d="M500 310 L500 365" stroke="#2563EB" stroke-width="4" marker-end="url(#arrowBlue)"/>
+  <text x="522" y="345" class="t" font-size="14">MySQL SQL</text>
+
+  <rect x="45" y="375" width="910" height="720" rx="28" fill="#EDF5FF" stroke="#93C5FD" stroke-width="2"/>
+  <rect x="72" y="398" width="292" height="38" rx="19" fill="#DBEAFE"/><text x="218" y="424" text-anchor="middle" class="h" font-size="15" font-weight="700">TaurusDB Tenant VPC · mysqld</text>
+  <text x="902" y="423" text-anchor="end" class="s" font-size="13">实线：服务器代码数据流</text>
+
+  <rect x="78" y="464" width="844" height="108" rx="18" fill="url(#core)" filter="url(#shadow)"/>
+  <text x="116" y="510" class="w" font-size="21" font-weight="700">SQL AI Functions</text>
+  <text x="116" y="542" class="w" font-size="16" opacity=".92">参数 / NULL / AI_INVOKE 校验 · 返回 VECTOR 或 utf8mb4 文本</text>
+  <text x="860" y="523" text-anchor="end" class="w" font-size="15">② local reject before egress</text>
+
+  <path d="M500 572 L500 618" stroke="#2563EB" stroke-width="4" marker-end="url(#arrowBlue)"/>
+  <rect x="78" y="630" width="844" height="128" rx="18" class="box" filter="url(#shadow)"/>
+  <text x="112" y="674" class="h" font-size="21" font-weight="700">AI Runtime</text>
+  <text x="112" y="704" class="t" font-size="16">解析 Model Profile · 固定通用 system policy · 编排请求与返回</text>
+  <text x="112" y="730" class="s" font-size="14">不执行 SQL、不调用工具；模型输出为不可信文本，不能自动执行</text>
+
+  <path d="M500 758 L500 792" stroke="#2563EB" stroke-width="4" marker-end="url(#arrowBlue)"/>
+  <rect x="78" y="806" width="400" height="166" rx="18" class="box" filter="url(#shadow)"/>
+  <text x="108" y="849" class="h" font-size="19" font-weight="700">Model Registry &amp; Credential</text>
+  <text x="108" y="880" class="t" font-size="15">TEXT_GENERATION Profile</text>
+  <text x="108" y="906" class="t" font-size="15">server-owned Endpoint</text>
+  <text x="108" y="932" class="s" font-size="14">SECRET_REF / Debug PLAINTEXT_DEV</text>
+  <rect x="522" y="806" width="400" height="166" rx="18" fill="#F0FDFA" stroke="#99F6E4" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="552" y="849" class="h" font-size="19" font-weight="700">AI File Audit</text>
+  <text x="552" y="880" class="t" font-size="15">STARTED durable write</text>
+  <text x="552" y="906" class="t" font-size="15">SUCCEEDED / FAILED terminal write</text>
+  <text x="552" y="932" class="s" font-size="14">开关 ON 时 STARTED 失败即禁止出站</text>
+
+  <path d="M278 972 L278 1005 L500 1005 L500 1032" stroke="#2563EB" stroke-width="4" fill="none" marker-end="url(#arrowBlue)"/>
+  <path d="M722 972 L722 1005" stroke="#14B8A6" stroke-width="3" stroke-dasharray="8 7" fill="none"/>
+  <text x="744" y="1009" class="s" font-size="13">③ audit records</text>
+  <rect x="78" y="1042" width="844" height="54" rx="14" fill="#1E40AF"/>
+  <text x="500" y="1076" text-anchor="middle" class="w" font-size="17" font-weight="700">Huawei MaaS Adapter  →  libcurl HTTPS Transport</text>
+
+  <path d="M500 1095 L500 1152" stroke="#0F766E" stroke-width="4" marker-end="url(#arrowTeal)"/>
+  <rect x="190" y="1167" width="620" height="112" rx="20" fill="#ECFDF5" stroke="#5EEAD4" stroke-width="2" filter="url(#shadow)"/>
+  <text x="500" y="1211" text-anchor="middle" class="h" font-size="20" font-weight="700">Controlled Egress · 部署依赖</text>
+  <text x="500" y="1241" text-anchor="middle" class="t" font-size="15">Policy Route · NAT Gateway · Fixed EIP · DNS · TLS · Security Group</text>
+  <path d="M500 1279 L500 1334" stroke="#0F766E" stroke-width="4" stroke-dasharray="10 8" marker-end="url(#arrowTeal)"/>
+
+  <rect x="190" y="1346" width="620" height="106" rx="22" fill="url(#maas)" filter="url(#shadow)"/>
+  <text x="500" y="1390" text-anchor="middle" class="w" font-size="23" font-weight="700">Huawei Cloud MaaS</text>
+  <text x="500" y="1421" text-anchor="middle" class="w" font-size="16">/v1/embeddings · /v2/chat/completions · HTTPS request / response</text>
+
+  <rect x="70" y="1210" width="0" height="0" fill="none"/>
+  <rect x="70" y="1468" width="860" height="1" fill="#CBD5E1"/>
+  <circle cx="82" cy="1490" r="6" fill="#2563EB"/><text x="98" y="1495" class="s" font-size="13">数据面：SQL 调用、审计、凭据、适配与 HTTPS</text>
+  <circle cx="470" cy="1490" r="6" fill="#7C3AED"/><text x="486" y="1495" class="s" font-size="13">控制面：AI_ADMIN + dbms_ai 发布模型 Profile</text>
+</svg>

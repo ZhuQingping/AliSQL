@@ -102,7 +102,7 @@ SELECT id, doc, VEC_DISTANCE(vec, @knowledge_query) AS distance
 DROP TABLE knowledge_base;
 SET SESSION binlog_row_image = @rag_original_binlog_row_image;
 
---echo # RAG output is paired with database-generated source metadata.
+--echo # RAG prompt is assembled from database-filtered source metadata.
 SET @rag_input = NULL;
 SELECT JSON_OBJECT(
          'question', 'How do I handle an offline gateway?',
@@ -122,31 +122,13 @@ SELECT JSON_OBJECT(
      ORDER BY source_id, chunk_id
      LIMIT 8
   ) AS permitted_rag_sources;
-SELECT JSON_EXTRACT(AI_ANALYZE(
-  'Answer from supplied database chunks only.',
-  @rag_input,
-  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'rag',
-              'output_format', 'json', 'return_sources', true)),
-  '$.sources') AS rag_sources;
-
---echo # RAG must receive source chunks from the SQL retrieval path.
---error ER_WRONG_ARGUMENTS
 SELECT AI_ANALYZE(
-  'Answer from supplied database chunks only.',
-  JSON_OBJECT('question', 'How do I handle an offline gateway?'),
-  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'rag',
-              'output_format', 'json', 'return_sources', true));
+  'mtr/fixture-chat',
+  CONCAT('Answer only from the following application-selected evidence. ',
+         'Question and sources JSON:\n', @rag_input),
+  JSON_OBJECT('max_output_tokens', 256, 'timeout_ms', 60000)) AS rag_answer;
 
---echo # Source provenance cannot be requested from a text RAG response.
---error ER_WRONG_ARGUMENTS
-SELECT AI_ANALYZE(
-  'Answer from supplied database chunks only.',
-  JSON_OBJECT('question', 'How do I handle an offline gateway?',
-              'sources', JSON_ARRAY(JSON_OBJECT('source_id', 'manual-42',
-                                                'chunk_id', 1,
-                                                'content', 'Tenant 42 gateway procedure.'))),
-  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'rag',
-              'output_format', 'text', 'return_sources', true));
+--echo # The application keeps source metadata with the generated answer.
 SELECT JSON_ARRAYAGG(JSON_OBJECT('source_id', source_id, 'chunk_id', chunk_id))
        AS sources
   FROM rag_manual_chunk

@@ -19,13 +19,13 @@ namespace alisql::ai {
 namespace {
 bool ResolveAnalyzeArguments(THD *thd, Item_func *item) {
   (void)thd;
-  if (item->arg_count != 3) {
+  if (item->arg_count < 2 || item->arg_count > 3) {
     my_error(ER_WRONG_ARGUMENTS, MYF(0), item->func_name());
     return true;
   }
   for (uint i = 0; i < 2; ++i) {
     if (item->get_arg(i)->result_type() != STRING_RESULT ||
-        (i == 0 && item->get_arg(i)->data_type() == MYSQL_TYPE_JSON)) {
+        item->get_arg(i)->data_type() == MYSQL_TYPE_JSON) {
       my_error(ER_WRONG_ARGUMENTS, MYF(0), item->func_name());
       return true;
     }
@@ -166,38 +166,44 @@ bool Item_func_ai_analyze::resolve_type(THD *thd) {
 
 String *Item_func_ai_analyze::val_str(String *str) {
   null_value = false;
-  String *task = args[0]->val_str(str);
-  if (task == nullptr) {
+  String model_buffer;
+  String *model = args[0]->val_str(&model_buffer);
+  if (model == nullptr) {
     null_value = true;
     return nullptr;
   }
-  String input_buffer;
-  String *input = args[1]->val_str(&input_buffer);
-  if (input == nullptr) {
+  String *prompt = args[1]->val_str(str);
+  if (prompt == nullptr) {
     null_value = true;
     return nullptr;
   }
-  Ai_analyze_options options;
-  String options_buffer;
-  String *options_json = args[2]->val_str(&options_buffer);
-  if (options_json == nullptr) {
-    null_value = true;
-    return nullptr;
-  }
-  Ai_runtime parser(nullptr, nullptr);
-  const Ai_error option_error = parser.ParseAnalyzeOptions(
-      std::string(options_json->ptr(), options_json->length()), &options);
-  if (option_error != Ai_error::k_ok || options.model_name.empty()) {
+  if (model->length() == 0 || prompt->length() == 0) {
     my_error(ER_WRONG_ARGUMENTS, MYF(0), func_name());
     return error_str();
+  }
+  Ai_analyze_options options;
+  if (arg_count == 3) {
+    String options_buffer;
+    String *options_json = args[2]->val_str(&options_buffer);
+    if (options_json == nullptr) {
+      null_value = true;
+      return nullptr;
+    }
+    Ai_runtime parser(nullptr, nullptr);
+    const Ai_error option_error = parser.ParseAnalyzeOptions(
+        std::string(options_json->ptr(), options_json->length()), &options);
+    if (option_error != Ai_error::k_ok) {
+      my_error(ER_WRONG_ARGUMENTS, MYF(0), func_name());
+      return error_str();
+    }
   }
   if (CheckAiInvokePrivilege(current_thd)) return error_str();
 
   Ai_runtime runtime(nullptr, Get_ai_invoke_audit_sink());
   std::string final_content;
   const Ai_error error = runtime.Analyze(
-      current_thd, std::string(task->ptr(), task->length()),
-      std::string(input->ptr(), input->length()), options, &final_content);
+      current_thd, std::string(model->ptr(), model->length()),
+      std::string(prompt->ptr(), prompt->length()), options, &final_content);
   if (error == Ai_error::k_invalid_options) {
     my_error(ER_WRONG_ARGUMENTS, MYF(0), func_name());
     return error_str();
