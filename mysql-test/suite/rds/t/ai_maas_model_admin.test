@@ -25,6 +25,20 @@ CALL dbms_ai.show_models();
 GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
 CALL dbms_ai.register_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION',
                             'glm-5.2', 'SECRET_REF', 'mtr/not-read');
+--echo # Duplicate names and unsupported embedding profiles are rejected locally.
+--error ER_WRONG_ARGUMENTS
+CALL dbms_ai.register_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION',
+                            'glm-5.2', 'SECRET_REF', 'mtr/not-read');
+--error ER_WRONG_ARGUMENTS
+CALL dbms_ai.register_model('huawei/mtr-invalid-embedding', 'TEXT_EMBEDDING',
+                            'not-bge-m3', 'SECRET_REF', 'mtr/not-read');
+--echo # PLAINTEXT_DEV is accepted by this Debug-only package test but never invoked.
+CALL dbms_ai.register_model('huawei/mtr-plaintext-dev', 'TEXT_GENERATION',
+                            'glm-5.2', 'PLAINTEXT_DEV', 'dev-only-not-invoked');
+SELECT credential_mode
+  FROM mysql.taurusdb_ai_model_config
+ WHERE model_name = 'huawei/mtr-plaintext-dev' AND status = 'ACTIVE';
+CALL dbms_ai.delete_model('huawei/mtr-plaintext-dev', 'TEXT_GENERATION');
 --echo # The public model list exposes exactly safe lifecycle metadata.
 CALL dbms_ai.show_models();
 CALL dbms_ai.update_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION',
@@ -32,6 +46,13 @@ CALL dbms_ai.update_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION'
 --echo # Updating exposes only the replacement active configuration.
 CALL dbms_ai.show_models();
 --echo # Resolution observes only the successor and cannot invoke a provider.
+SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/mtr-model-admin-generation'), '$.config_version');
+--echo # A successor write failure rolls back and leaves version 2 active.
+SET SESSION debug = '+d,inject_error_ha_write_row';
+--error ER_UNKNOWN_ERROR
+CALL dbms_ai.update_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION',
+                          'should-not-persist', 'SECRET_REF', 'mtr/not-read');
+SET SESSION debug = '-d,inject_error_ha_write_row';
 SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/mtr-model-admin-generation'), '$.config_version');
 CALL dbms_ai.delete_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION');
 --echo # Deleting retires every version from the public model list.

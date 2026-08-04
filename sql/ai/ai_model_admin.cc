@@ -55,9 +55,13 @@ const char *Endpoint(Ai_capability capability) {
 bool ValidRequest(const Ai_model_admin_request &request) {
   if (request.model_name.empty() || request.provider_model_name.empty() ||
       request.credential_value.empty()) return false;
-  // Package administration never persists plaintext credentials.  Debug MTR
-  // fixtures are seeded directly and do not pass through this package.
-  if (request.credential_mode != "SECRET_REF") return false;
+  if (request.credential_mode != "SECRET_REF" &&
+      request.credential_mode != "PLAINTEXT_DEV") return false;
+#ifdef NDEBUG
+  // Development plaintext credentials are intentionally absent from release
+  // builds. This is enforced at the package boundary, before table access.
+  if (request.credential_mode == "PLAINTEXT_DEV") return false;
+#endif
   return request.capability == Ai_capability::k_text_generation ||
          (request.capability == Ai_capability::k_text_embedding &&
           request.provider_model_name == "bge-m3");
@@ -77,8 +81,14 @@ void WriteRecord(TABLE *table, const Ai_model_admin_request &request, uint64_t v
   StoreText(table->field[5], Endpoint(request.capability));
   StoreText(table->field[6], "BEARER_API_KEY");
   Store(table->field[7], request.credential_mode);
-  Store(table->field[8], std::string(request.credential_value.view()));
-  table->field[9]->set_null();
+  if (request.credential_mode == "SECRET_REF") {
+    Store(table->field[8], std::string(request.credential_value.view()));
+    table->field[9]->set_null();
+  } else {
+    table->field[8]->set_null();
+    table->field[9]->set_notnull();
+    Store(table->field[9], std::string(request.credential_value.view()));
+  }
   if (request.capability == Ai_capability::k_text_embedding)
     table->field[10]->store(1024, false);
   else
@@ -117,8 +127,9 @@ bool Register(THD *thd, const Ai_model_admin_request &request) {
   Ai_system_table_access access; Open_tables_backup backup; TABLE *table = nullptr;
   if (Open(&access, thd, &table, &backup)) return true;
   bool error = table->file->ha_rnd_init(true) != 0;
+  const bool scan_initialized = !error;
   while (!error) { int rc = table->file->ha_rnd_next(table->record[0]); if (rc == HA_ERR_END_OF_FILE) break; if (rc) { error = true; break; } if (Match(table, request)) { my_error(ER_WRONG_ARGUMENTS, MYF(0), "duplicate dbms_ai model"); error = true; break; } }
-  if (!error) table->file->ha_rnd_end();
+  if (scan_initialized) table->file->ha_rnd_end();
   if (!error) { WriteRecord(table, request, 1); error = table->file->update_auto_increment() != 0 || table->file->ha_write_row(table->record[0]) != 0; }
   ResetAutoIncrement(table);
   return CloseWrite(&access, thd, table, &backup, error);
@@ -128,8 +139,9 @@ bool Update(THD *thd, const Ai_model_admin_request &request) {
   Ai_system_table_access access; Open_tables_backup backup; TABLE *table = nullptr;
   if (Open(&access, thd, &table, &backup)) return true;
   bool error = table->file->ha_rnd_init(true) != 0; uint64_t version = 0; bool found = false;
+  const bool scan_initialized = !error;
   while (!error) { int rc = table->file->ha_rnd_next(table->record[0]); if (rc == HA_ERR_END_OF_FILE) break; if (rc) { error = true; break; } if (Match(table, request) && Value(table->field[17]) == "ACTIVE") { found = true; version = static_cast<uint64_t>(table->field[18]->val_int()); std::memcpy(table->record[1], table->record[0], table->s->reclength); break; } }
-  if (!error) table->file->ha_rnd_end();
+  if (scan_initialized) table->file->ha_rnd_end();
   if (!error && !found) { my_error(ER_WRONG_ARGUMENTS, MYF(0), "unknown dbms_ai model"); error = true; }
   if (!error) { std::memcpy(table->record[0], table->record[1], table->s->reclength); StoreText(table->field[17], "DISABLED"); error = table->file->ha_update_row(table->record[1], table->record[0]) != 0; }
   if (!error) { WriteRecord(table, request, version + 1); error = table->file->update_auto_increment() != 0 || table->file->ha_write_row(table->record[0]) != 0; }
@@ -140,8 +152,9 @@ bool Delete(THD *thd, const Ai_model_admin_request &request) {
   Ai_system_table_access access; Open_tables_backup backup; TABLE *table = nullptr;
   if (Open(&access, thd, &table, &backup)) return true;
   bool error = table->file->ha_rnd_init(true) != 0;
+  const bool scan_initialized = !error;
   while (!error) { int rc = table->file->ha_rnd_next(table->record[0]); if (rc == HA_ERR_END_OF_FILE) break; if (rc) { error = true; break; } if (!Match(table, request)) continue; std::memcpy(table->record[1], table->record[0], table->s->reclength); std::memcpy(table->record[0], table->record[1], table->s->reclength); StoreText(table->field[17], "RETIRED"); if (table->file->ha_update_row(table->record[1], table->record[0])) { error = true; break; } }
-  if (!error) table->file->ha_rnd_end();
+  if (scan_initialized) table->file->ha_rnd_end();
   return CloseWrite(&access, thd, table, &backup, error);
 }
 struct Safe_row { std::string name, capability, provider_model; bool has_dimension; uint64_t dimension, version; };
