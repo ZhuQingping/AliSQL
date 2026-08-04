@@ -6,7 +6,7 @@ NULL
 GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
 DELETE FROM mysql.taurusdb_ai_model_config
 WHERE model_name IN ('mtr/fixture-embedding', 'mtr/fixture-chat',
-'mtr/contract-disabled', 'mtr/plaintext-probe');
+'mtr/contract-disabled', 'mtr/no-credential');
 INSERT INTO mysql.taurusdb_ai_model_config
 (model_name, provider, capability, provider_model_name, endpoint_url,
 credential_mode, credential_ref, default_dimension, is_default, status)
@@ -41,16 +41,16 @@ mtr/fixture-embedding
 # A disabled Profile is rejected locally before credentials or network access.
 SELECT AI_EMBEDDING('disabled', 'mtr/contract-disabled', 1024);
 ERROR 42000: This version of MySQL doesn't yet support 'DB4AI model configuration was not found'
-# Debug plaintext lookup uses the resolved Id and config_version before protocol rejection.
+# A Huawei profile without a credential fails locally before transport.
 INSERT INTO mysql.taurusdb_ai_model_config
 (model_name, provider, capability, provider_model_name, endpoint_url,
-credential_mode, api_key_plaintext, default_dimension, status)
+credential_mode, credential_ref, default_dimension, status)
 VALUES
-('mtr/plaintext-probe', 'huawei', 'TEXT_EMBEDDING', 'bge-m3',
-'https://api.modelarts-maas.com/v1/not-embeddings',
-'PLAINTEXT_DEV', UNHEX('00'), 1024, 'ACTIVE');
-SELECT AI_EMBEDDING('plaintext-probe', 'mtr/plaintext-probe', 1024);
-ERROR 42000: This version of MySQL doesn't yet support 'DB4AI provider request failed'
+('mtr/no-credential', 'huawei', 'TEXT_EMBEDDING', 'bge-m3',
+'https://db4ai-mtr-fixture.invalid/not-used',
+'SECRET_REF', NULL, 1024, 'ACTIVE');
+SELECT AI_EMBEDDING('no-credential', 'mtr/no-credential', 1024);
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI credential is unavailable'
 # Registered functions enforce their public arity.
 SELECT AI_EMBEDDING();
 ERROR 42000: Incorrect parameter count in the call to native function 'AI_EMBEDDING'
@@ -60,4 +60,4 @@ SELECT AI_MODEL_INFO('a', 'b');
 ERROR 42000: Incorrect parameter count in the call to native function 'AI_MODEL_INFO'
 DELETE FROM mysql.taurusdb_ai_model_config
 WHERE model_name IN ('mtr/fixture-embedding', 'mtr/fixture-chat',
-'mtr/contract-disabled', 'mtr/plaintext-probe');
+'mtr/contract-disabled', 'mtr/no-credential');

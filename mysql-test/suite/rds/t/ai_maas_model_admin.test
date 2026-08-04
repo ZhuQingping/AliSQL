@@ -3,8 +3,10 @@
 DROP USER IF EXISTS 'ai_model_admin_dml'@'localhost';
 --enable_warnings
 CREATE USER 'ai_model_admin_dml'@'localhost';
+CREATE USER 'ai_model_admin_super'@'localhost';
 GRANT SELECT, INSERT, UPDATE, DELETE ON mysql.taurusdb_ai_model_config
   TO 'ai_model_admin_dml'@'localhost';
+GRANT SUPER ON *.* TO 'ai_model_admin_super'@'localhost';
 
 --connect (model_admin_dml,localhost,ai_model_admin_dml,,test)
 --echo # Table DML alone cannot administer models through the package.
@@ -12,6 +14,12 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON mysql.taurusdb_ai_model_config
 CALL dbms_ai.register_model('mtr/model-admin-forbidden-embedding', 'TEXT_EMBEDDING',
                             'fixture-embedding', 'SECRET_REF', 'mtr/not-read');
 --disconnect model_admin_dml
+--connection default
+
+--connect (model_admin_super,localhost,ai_model_admin_super,,test)
+--error ER_SPECIFIC_ACCESS_DENIED_ERROR
+CALL dbms_ai.show_models();
+--disconnect model_admin_super
 --connection default
 
 GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
@@ -23,10 +31,15 @@ CALL dbms_ai.update_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION'
                           'kimi-k2.6', 'SECRET_REF', 'mtr/not-read');
 --echo # Updating exposes only the replacement active configuration.
 CALL dbms_ai.show_models();
+--echo # Resolution observes only the successor and cannot invoke a provider.
+SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/mtr-model-admin-generation'), '$.config_version');
 CALL dbms_ai.delete_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION');
 --echo # Deleting retires every version from the public model list.
 CALL dbms_ai.show_models();
+--error ER_NOT_SUPPORTED_YET
+SELECT AI_MODEL_INFO('huawei/mtr-model-admin-generation');
 
 REVOKE SELECT, INSERT, UPDATE, DELETE ON mysql.taurusdb_ai_model_config
   FROM 'ai_model_admin_dml'@'localhost';
 DROP USER 'ai_model_admin_dml'@'localhost';
+DROP USER 'ai_model_admin_super'@'localhost';

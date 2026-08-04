@@ -1,0 +1,30 @@
+include/master-slave.inc
+Warnings:
+Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+[connection master]
+[connection master]
+GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
+CALL dbms_ai.register_model('huawei/mtr-model-admin-rpl', 'TEXT_GENERATION',
+'glm-5.2', 'SECRET_REF', 'mtr/not-read');
+include/rpl_sync.inc
+[connection slave]
+SELECT model_name, provider_model_name, config_version
+FROM mysql.taurusdb_ai_model_config
+WHERE model_name = 'huawei/mtr-model-admin-rpl' AND status = 'ACTIVE';
+model_name	provider_model_name	config_version
+huawei/mtr-model-admin-rpl	glm-5.2	1
+[connection master]
+CALL dbms_ai.delete_model('huawei/mtr-model-admin-rpl', 'TEXT_GENERATION');
+include/rpl_sync.inc
+[connection slave]
+SELECT COUNT(*) AS active_profiles
+FROM mysql.taurusdb_ai_model_config
+WHERE model_name = 'huawei/mtr-model-admin-rpl' AND status = 'ACTIVE';
+active_profiles
+0
+[connection master]
+DELETE FROM mysql.taurusdb_ai_model_config
+WHERE model_name = 'huawei/mtr-model-admin-rpl';
+include/rpl_sync.inc
+include/rpl_end.inc

@@ -55,10 +55,9 @@ const char *Endpoint(Ai_capability capability) {
 bool ValidRequest(const Ai_model_admin_request &request) {
   if (request.model_name.empty() || request.provider_model_name.empty() ||
       request.credential_value.empty()) return false;
-  if (request.credential_mode != "SECRET_REF" && request.credential_mode != "PLAINTEXT_DEV") return false;
-#ifdef NDEBUG
-  if (request.credential_mode == "PLAINTEXT_DEV") return false;
-#endif
+  // Package administration never persists plaintext credentials.  Debug MTR
+  // fixtures are seeded directly and do not pass through this package.
+  if (request.credential_mode != "SECRET_REF") return false;
   return request.capability == Ai_capability::k_text_generation ||
          (request.capability == Ai_capability::k_text_embedding &&
           request.provider_model_name == "bge-m3");
@@ -78,13 +77,8 @@ void WriteRecord(TABLE *table, const Ai_model_admin_request &request, uint64_t v
   StoreText(table->field[5], Endpoint(request.capability));
   StoreText(table->field[6], "BEARER_API_KEY");
   Store(table->field[7], request.credential_mode);
-  if (request.credential_mode == "SECRET_REF") {
-    Store(table->field[8], std::string(request.credential_value.view()));
-    table->field[9]->set_null();
-  } else {
-    table->field[8]->set_null();
-    Store(table->field[9], std::string(request.credential_value.view()));
-  }
+  Store(table->field[8], std::string(request.credential_value.view()));
+  table->field[9]->set_null();
   if (request.capability == Ai_capability::k_text_embedding)
     table->field[10]->store(1024, false);
   else
@@ -157,8 +151,9 @@ bool ReadRows(THD *thd, std::vector<Safe_row> *rows) {
   bool error = table->file->ha_rnd_init(true) != 0;
   while (!error) { int rc = table->file->ha_rnd_next(table->record[0]); if (rc == HA_ERR_END_OF_FILE) break; if (rc) { error = true; break; } if (Value(table->field[17]) != "ACTIVE") continue; rows->push_back({Value(table->field[1]), Value(table->field[3]), Value(table->field[4]), !table->field[10]->is_null(), table->field[10]->is_null() ? 0 : static_cast<uint64_t>(table->field[10]->val_int()), static_cast<uint64_t>(table->field[18]->val_int())}); }
   if (!error) table->file->ha_rnd_end();
-  access.close_table(thd, table, &backup, error, false);
-  return error;
+  const bool close_error = access.close_table(thd, table, &backup, error, false);
+  if ((error || close_error) && !thd->is_error()) my_error(ER_UNKNOWN_ERROR, MYF(0));
+  return error || close_error;
 }
 bool ReadRequest(mem_root_deque<Item *> *list, Ai_model_admin_request *request, bool delete_only) {
   if (list == nullptr || list->size() != (delete_only ? 2U : 5U)) return false;
@@ -177,7 +172,7 @@ class Sql_cmd_ai_model_admin final : public im::Sql_cmd_admin_proc {
   Sql_cmd_ai_model_admin(THD *thd, mem_root_deque<Item *> *list, const Ai_model_admin_proc *proc) : Sql_cmd_admin_proc(thd, list, proc), operation_(proc->operation()) {}
   bool check_access(THD *thd) override { auto *sctx = thd->security_context(); if (sctx == nullptr || !sctx->has_global_grant(STRING_WITH_LEN("AI_ADMIN")).first) { my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), "AI_ADMIN"); return true; } return false; }
   bool pc_execute(THD *thd) override { if (operation_ == Ai_model_admin_proc::Operation::k_show) return false; Ai_model_admin_request request; if (!ReadRequest(m_list, &request, operation_ == Ai_model_admin_proc::Operation::k_delete)) { my_error(ER_WRONG_ARGUMENTS, MYF(0), "dbms_ai model request"); return true; } return operation_ == Ai_model_admin_proc::Operation::k_register ? Register(thd, request) : operation_ == Ai_model_admin_proc::Operation::k_update ? Update(thd, request) : Delete(thd, request); }
-  void send_result(THD *thd, bool error) override { if (error) return; if (operation_ != Ai_model_admin_proc::Operation::k_show) { my_ok(thd); return; } if (m_proc->send_result_metadata(thd)) return; std::vector<Safe_row> rows; if (ReadRows(thd, &rows)) return; for (const auto &row : rows) { Protocol *p = thd->get_protocol(); p->start_row(); p->store_string(row.name.c_str(), row.name.size(), system_charset_info); p->store_string(row.capability.c_str(), row.capability.size(), system_charset_info); p->store_string(row.provider_model.c_str(), row.provider_model.size(), system_charset_info); if (row.has_dimension) p->store_longlong(row.dimension, true); else p->store_null(); p->store_longlong(row.version, true); if (p->end_row()) return; } my_eof(thd); }
+  void send_result(THD *thd, bool error) override { if (error) return; if (operation_ != Ai_model_admin_proc::Operation::k_show) { my_ok(thd); return; } std::vector<Safe_row> rows; if (ReadRows(thd, &rows)) return; if (m_proc->send_result_metadata(thd)) return; for (const auto &row : rows) { Protocol *p = thd->get_protocol(); p->start_row(); p->store_string(row.name.c_str(), row.name.size(), system_charset_info); p->store_string(row.capability.c_str(), row.capability.size(), system_charset_info); p->store_string(row.provider_model.c_str(), row.provider_model.size(), system_charset_info); if (row.has_dimension) p->store_longlong(row.dimension, true); else p->store_null(); p->store_longlong(row.version, true); if (p->end_row()) return; } my_eof(thd); }
  private: Ai_model_admin_proc::Operation operation_;
 };
 }  // namespace

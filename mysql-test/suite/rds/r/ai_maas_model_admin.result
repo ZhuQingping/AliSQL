@@ -1,11 +1,17 @@
 # dbms_ai accepts only the governed model-management package.
 DROP USER IF EXISTS 'ai_model_admin_dml'@'localhost';
 CREATE USER 'ai_model_admin_dml'@'localhost';
+CREATE USER 'ai_model_admin_super'@'localhost';
 GRANT SELECT, INSERT, UPDATE, DELETE ON mysql.taurusdb_ai_model_config
 TO 'ai_model_admin_dml'@'localhost';
+GRANT SUPER ON *.* TO 'ai_model_admin_super'@'localhost';
+Warnings:
+Warning	1287	The SUPER privilege identifier is deprecated
 # Table DML alone cannot administer models through the package.
 CALL dbms_ai.register_model('mtr/model-admin-forbidden-embedding', 'TEXT_EMBEDDING',
 'fixture-embedding', 'SECRET_REF', 'mtr/not-read');
+ERROR 42000: Access denied; you need (at least one of) the AI_ADMIN privilege(s) for this operation
+CALL dbms_ai.show_models();
 ERROR 42000: Access denied; you need (at least one of) the AI_ADMIN privilege(s) for this operation
 GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
 CALL dbms_ai.register_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION',
@@ -20,10 +26,17 @@ CALL dbms_ai.update_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION'
 CALL dbms_ai.show_models();
 MODEL_NAME	CAPABILITY	PROVIDER_MODEL_NAME	DIMENSION	CONFIG_VERSION
 huawei/mtr-model-admin-generation	TEXT_GENERATION	kimi-k2.6	NULL	2
+# Resolution observes only the successor and cannot invoke a provider.
+SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/mtr-model-admin-generation'), '$.config_version');
+JSON_EXTRACT(AI_MODEL_INFO('huawei/mtr-model-admin-generation'), '$.config_version')
+2
 CALL dbms_ai.delete_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION');
 # Deleting retires every version from the public model list.
 CALL dbms_ai.show_models();
 MODEL_NAME	CAPABILITY	PROVIDER_MODEL_NAME	DIMENSION	CONFIG_VERSION
+SELECT AI_MODEL_INFO('huawei/mtr-model-admin-generation');
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI model configuration was not found'
 REVOKE SELECT, INSERT, UPDATE, DELETE ON mysql.taurusdb_ai_model_config
 FROM 'ai_model_admin_dml'@'localhost';
 DROP USER 'ai_model_admin_dml'@'localhost';
+DROP USER 'ai_model_admin_super'@'localhost';

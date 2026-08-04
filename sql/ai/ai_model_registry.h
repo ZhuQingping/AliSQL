@@ -77,8 +77,8 @@ class Ai_model_registry {
                              uint32_t requested_dimension) const;
 
  private:
-  Ai_error ResolveProfiles(uint64_t tenant_id, std::string_view model_name,
-                           Ai_capability capability,
+  Ai_error ResolveProfiles(uint64_t tenant_id, bool populate_legacy_fields,
+                           std::string_view model_name, Ai_capability capability,
                            const std::vector<Ai_model_profile> &profiles,
                            Ai_resolved_model *out) const;
   Ai_error LoadProfiles(THD *thd, std::vector<Ai_model_profile> *profiles) const;

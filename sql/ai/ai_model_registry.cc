@@ -178,7 +178,7 @@ Ai_error Ai_model_registry::Resolve(THD *thd, std::string_view model_name,
   std::vector<Ai_model_profile> profiles;
   const Ai_error load_error = LoadProfiles(thd, &profiles);
   if (load_error != Ai_error::k_ok) return load_error;
-  return ResolveProfiles(0, model_name, capability, profiles, out);
+  return ResolveProfiles(0, false, model_name, capability, profiles, out);
 }
 
 Ai_error Ai_model_registry::LoadProfiles(
@@ -269,11 +269,12 @@ Ai_error Ai_model_registry::ResolveForTest(uint64_t tenant_id,
                                            std::string_view model_name,
                                            Ai_capability capability,
                                            Ai_resolved_model *out) const {
-  return ResolveProfiles(tenant_id, model_name, capability, test_profiles_, out);
+  return ResolveProfiles(tenant_id, true, model_name, capability, test_profiles_, out);
 }
 
 Ai_error Ai_model_registry::ResolveProfiles(
-    uint64_t tenant_id, std::string_view model_name, Ai_capability capability,
+    uint64_t tenant_id, bool populate_legacy_fields, std::string_view model_name,
+    Ai_capability capability,
     const std::vector<Ai_model_profile> &profiles, Ai_resolved_model *out) const {
   if (out == nullptr) return Ai_error::k_provider_error;
 
@@ -305,7 +306,7 @@ Ai_error Ai_model_registry::ResolveProfiles(
   const Ai_model_profile *profile =
       model_name.empty() ? default_profile : named_profile;
   if (profile == nullptr) return Ai_error::k_model_not_found;
-  out->tenant_id = tenant_id;
+  if (populate_legacy_fields) out->tenant_id = tenant_id;
   out->config_id = profile->config_id;
   out->config_version = profile->config_version;
   out->dimension = profile->dimension;
@@ -316,8 +317,10 @@ Ai_error Ai_model_registry::ResolveProfiles(
   out->model_revision = profile->model_revision;
   out->endpoint_type = profile->endpoint_type;
   out->endpoint = profile->endpoint;
-  out->embedding_space_id = profile->embedding_space_id;
-  out->distance_metric = profile->distance_metric;
+  if (populate_legacy_fields) {
+    out->embedding_space_id = profile->embedding_space_id;
+    out->distance_metric = profile->distance_metric;
+  }
   out->credential_kind = profile->credential_kind;
   out->credential_ref = profile->credential_ref;
   return Ai_error::k_ok;
