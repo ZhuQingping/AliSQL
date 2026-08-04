@@ -19,7 +19,7 @@ namespace alisql::ai {
 namespace {
 bool ResolveAnalyzeArguments(THD *thd, Item_func *item) {
   (void)thd;
-  if (item->arg_count < 2 || item->arg_count > 3) {
+  if (item->arg_count != 3) {
     my_error(ER_WRONG_ARGUMENTS, MYF(0), item->func_name());
     return true;
   }
@@ -99,7 +99,7 @@ void RaiseAiRuntimeError(Ai_error error) {
 
 bool Item_func_ai_embedding::resolve_type(THD *thd) {
   (void)thd;
-  if (arg_count < 1 || arg_count > 3 ||
+  if (arg_count < 2 || arg_count > 3 ||
       args[0]->result_type() != STRING_RESULT ||
       args[0]->data_type() == MYSQL_TYPE_JSON ||
       (arg_count >= 2 && (args[1]->result_type() != STRING_RESULT ||
@@ -178,24 +178,21 @@ String *Item_func_ai_analyze::val_str(String *str) {
     null_value = true;
     return nullptr;
   }
-  if (CheckAiInvokePrivilege(current_thd)) return error_str();
-
   Ai_analyze_options options;
-  if (arg_count == 3) {
-    String options_buffer;
-    String *options_json = args[2]->val_str(&options_buffer);
-    if (options_json == nullptr) {
-      null_value = true;
-      return nullptr;
-    }
-    Ai_runtime parser(nullptr, nullptr);
-    const Ai_error option_error = parser.ParseAnalyzeOptions(
-        std::string(options_json->ptr(), options_json->length()), &options);
-    if (option_error != Ai_error::k_ok) {
-      my_error(ER_WRONG_ARGUMENTS, MYF(0), func_name());
-      return error_str();
-    }
+  String options_buffer;
+  String *options_json = args[2]->val_str(&options_buffer);
+  if (options_json == nullptr) {
+    null_value = true;
+    return nullptr;
   }
+  Ai_runtime parser(nullptr, nullptr);
+  const Ai_error option_error = parser.ParseAnalyzeOptions(
+      std::string(options_json->ptr(), options_json->length()), &options);
+  if (option_error != Ai_error::k_ok || options.model_name.empty()) {
+    my_error(ER_WRONG_ARGUMENTS, MYF(0), func_name());
+    return error_str();
+  }
+  if (CheckAiInvokePrivilege(current_thd)) return error_str();
 
   Ai_runtime runtime(nullptr, Get_ai_invoke_audit_sink());
   std::string final_content;

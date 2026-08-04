@@ -1,3 +1,7 @@
+--echo # Omitting the model is rejected before fixture setup, audit, credential lookup, or HTTP.
+--error ER_WRONG_ARGUMENTS
+SELECT AI_EMBEDDING('missing model');
+
 --echo # AI_EMBEDDING offline fixture: setup is isolated and never reads a credential or performs HTTP.
 GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
 --disable_query_log

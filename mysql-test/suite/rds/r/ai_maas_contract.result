@@ -22,9 +22,9 @@ VALUES
 'SECRET_REF', 'mtr/not-read', 1024, FALSE, 'DISABLED');
 GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
 SELECT AI_EMBEDDING('text');
-ERROR 42000: This version of MySQL doesn't yet support 'DB4AI model configuration was not found'
+ERROR HY000: Incorrect arguments to ai_embedding
 SELECT AI_ANALYZE('task', JSON_OBJECT('x', 1));
-ERROR 42000: This version of MySQL doesn't yet support 'DB4AI model configuration was not found'
+ERROR HY000: Incorrect arguments to ai_analyze
 SELECT VECTOR_DIM(AI_EMBEDDING('explicit profile', 'mtr/fixture-embedding', 1024))
 AS explicit_dimension;
 explicit_dimension
