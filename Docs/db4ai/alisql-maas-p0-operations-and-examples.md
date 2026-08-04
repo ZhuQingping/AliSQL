@@ -6,23 +6,19 @@ AliSQL 分支已经具备的内置函数、VECTOR 索引和离线验证；生产
 
 ## 1. 上线前配置和权限
 
-模型配置属于 `mysql` 系统库。业务用户只使用逻辑模型名，不能在 SQL 参数中传
-endpoint、API Key、provider JSON、厂商模型 ID 或 Adapter 名称。
+模型配置由 `dbms_ai` 原生管理包维护，`mysql.taurusdb_ai_model_config` 是内部控制表。
+业务用户只使用逻辑模型名，不能在 SQL 参数中传 endpoint、API Key、provider JSON、厂商
+模型 ID 或 Adapter 名称。
 
 ```sql
--- AI_ADMIN 管理员使用正常 DML 发布 Profile；credential_ref 是 keyring 名称，不是明文 key。
--- 正常 DML 会写入 binlog 并复制到备机。
-INSERT INTO mysql.taurusdb_ai_model_config
-  (model_name, provider, capability, provider_model_name, endpoint_url,
-   credential_mode, credential_ref, default_dimension, is_default, status,
-   config_version)
-VALUES
-  ('huawei/bge-m3', 'huawei', 'TEXT_EMBEDDING', 'bge-m3',
-   'https://api.modelarts-maas.com/v1/embeddings',
-   'SECRET_REF', 'prod/huawei-maas/token', 1024, true, 'ACTIVE', 1),
-  ('huawei/glm-5.2', 'huawei', 'TEXT_GENERATION', 'glm-5.2',
-   'https://api.modelarts-maas.com/v2/chat/completions',
-   'SECRET_REF', 'prod/huawei-maas/token', NULL, true, 'ACTIVE', 1);
+-- AI_ADMIN 管理员通过受控管理包发布 Profile；SECRET_REF 值是 keyring 名称，不是明文 key。
+-- 管理包会创建新 config_version，并将变更写入 binlog、复制到备机。
+CALL dbms_ai.register_model(
+  'huawei/bge-m3', 'TEXT_EMBEDDING', 'bge-m3',
+  'SECRET_REF', 'prod/huawei-maas/token');
+CALL dbms_ai.register_model(
+  'huawei/glm-5.2', 'TEXT_GENERATION', 'glm-5.2',
+  'SECRET_REF', 'prod/huawei-maas/token');
 
 GRANT AI_INVOKE ON *.* TO 'rag_app'@'%';
 ```
@@ -34,8 +30,9 @@ fixtures. `PLAINTEXT_DEV` is not a production configuration path.
 
 ### Debug-only 明文凭据
 
-本地 Debug 构建可由具备 `AI_ADMIN` 和表 DML 权限的管理员使用
-`credential_mode='PLAINTEXT_DEV'` 和 `api_key_plaintext` 做短期联调。该路径仍不向
+本地 Debug 构建可由具备 `AI_ADMIN` 的管理员通过 `dbms_ai.register_model()` 或
+`dbms_ai.update_model()` 使用 `credential_mode='PLAINTEXT_DEV'` 和受控凭据值做短期联调。
+该路径仍不向
 `AI_EMBEDDING`、`AI_ANALYZE`、`AI_MODEL_INFO` 添加任何密钥参数或输出：runtime 只按
 已解析 Profile 的 config id/version 在 dispatch 前读取该字段，值仅存在于短生命周期的
 内存 `Secure_string`。Release 构建拒绝 `PLAINTEXT_DEV`，生产必须使用 `SECRET_REF`。
@@ -44,7 +41,7 @@ fixtures. `PLAINTEXT_DEV` is not a production configuration path.
 history 或 Git。Debug 配置必须使用 Huawei 的 embedding
 `/v1/embeddings` 与 V2 Chat `/v2/chat/completions` 路径；当前生成逻辑模型为
 `huawei/glm-5.2`。完成联调后立即用
-`UPDATE mysql.taurusdb_ai_model_config SET status='DISABLED' ...` 停用临时 Profile。
+`CALL dbms_ai.delete_model('huawei/glm-5.2', 'TEXT_GENERATION')` 停用临时 Profile。
 
 Profile 是实例级配置。拥有 `AI_INVOKE` 的有效 MySQL 账号可调用全部 `ACTIVE`
 Profile；业务数据的 tenant 过滤仍由业务 SQL 负责，不能通过 AI 函数参数绕过。

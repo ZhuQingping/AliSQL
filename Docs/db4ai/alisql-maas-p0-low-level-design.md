@@ -104,15 +104,15 @@ taurusdb_ai_model_config
   model_revision, is_default, status, config_version, created_at, updated_at
 ```
 
-Model resolution is instance-scoped: it selects the highest-version explicit
-active Profile, or the highest-version active default Profile for the requested
-capability. A duplicate selected `config_version` fails closed. The result is a
-fixed `(Id, config_version)` for the call. `AI_INVOKE` is the only P0
-invocation permission; it is checked before Profile resolution and network
-egress. `AI_ADMIN` is required in addition to normal table DML privileges for
-`INSERT`/`UPDATE`/`DELETE` on this control table. Publishing inserts a new
-`config_version` rather than overwriting a previously published Profile; the
-normal DML path is binlogged and replicated to read-only nodes.
+Model resolution is instance-scoped and requires an explicit logical model
+name; P0 has no default Profile. It selects the highest active version of that
+model and capability, and a duplicate selected `config_version` fails closed.
+The result is a fixed `(Id, config_version)` for the call. `AI_INVOKE` is the
+only P0 invocation permission; it is checked before Profile resolution and
+network egress. `AI_ADMIN` protects the `dbms_ai` management procedures, not a
+direct table-write path. Publishing creates a new `config_version` through
+`System_table_access`; direct control-table DML/DDL is rejected, while the
+managed change is binlogged and replicated to read-only nodes.
 `status='ACTIVE'` means configuration lifecycle only; it is distinct from model
 visibility, account entitlement, successful inference and complete response.
 

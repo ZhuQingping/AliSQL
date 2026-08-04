@@ -4,7 +4,7 @@
 
 目标版本：2026-09-30 P0 预览版本
 
-最近更新：2026-08-02（确定只读节点两阶段文件审计、动态全局审计开关和 P0 简化权限模型）
+最近更新：2026-08-04（合入 `dbms_ai` 受控模型管理、两阶段文件审计、离线回归和真实 MaaS 验证说明）
 
 关联主计划：
 
@@ -500,12 +500,13 @@ CREATE TABLE mysql.taurusdb_ai_model_config (
 - P0 不定义 `is_default` 或按 tenant/账号的默认模型选择。客户 SQL 的模型名直接解析到
   对应 capability 的 `ACTIVE` Profile；更新 Profile 时由 `dbms_ai.update_model()` 原子发布
   新版本。
-- `AI_ADMIN` 保护 `mysql.taurusdb_ai_model_config` 的 `INSERT`、`UPDATE`、`DELETE` 及
-  结构性写操作（如 `ALTER`、`DROP`）。
-  管理员通过正常 SQL DML 发布新 `config_version` 或停用 Profile，因此配置变更进入 binlog
-  并复制到备机；仅有表 DML 权限而没有 `AI_ADMIN` 的账号会被拒绝。动态权限的授予和回收仍
-  遵循 MySQL 的 `GRANT`/`REVOKE` 与 `WITH GRANT OPTION` 管理规则，不能因为拥有
-  `AI_ADMIN` 而隐式扩大其他账号的权限。
+- `AI_ADMIN` 是 `dbms_ai` 模型管理包的前置权限。管理员只能通过
+  `dbms_ai.register_model()`、`update_model()`、`delete_model()` 和 `show_models()` 管理
+  Profile；`mysql.taurusdb_ai_model_config` 是内部控制表。即使账号同时持有 `AI_ADMIN` 与
+  表的 DML/DDL 权限，直接 `INSERT`、`UPDATE`、`DELETE`、`ALTER` 或 `DROP` 仍必须拒绝。
+  管理包经受控系统表访问路径发布新 `config_version`、写入 binlog 并复制到备机。动态权限的
+  授予和回收仍遵循 MySQL 的 `GRANT`/`REVOKE` 与 `WITH GRANT OPTION` 管理规则，不能因为
+  拥有 `AI_ADMIN` 而隐式扩大其他账号的权限。
 - `AI_AUDIT_VIEWER` 不作为 P0 的数据库内审计文件读取能力交付。删除系统表审计后，P0 不
   提供可由普通 SQL 直接读取审计文件的 `AI_AUDIT_INFO()`；审计查看由 TaurusDB 日志平台
   的访问控制负责。若后续提供受控审计查询服务，再定义该动态权限的查询语义。
@@ -1053,16 +1054,19 @@ P0 必须覆盖：
 ### 12.1 2026-08-04 实现验证状态
 
 - 当前分支的 Debug `mysqld` 和 `merge_small_tests-t` 已构建成功；`rds` suite 的
-  `ai_maas_embedding`、`ai_maas_analysis`、`ai_maas_contract`、
-  `ai_maas_governance`、`ai_maas_rag`、`ai_maas_model_admin` 均已离线通过，未访问真实
-  MaaS 或读取真实凭据。
+  `ai_maas_contract`、`ai_maas_embedding`、`ai_maas_analysis`、`ai_maas_governance`、
+  `ai_maas_rag`、`ai_maas_model_admin` 和 `ai_maas_model_admin_rpl` 均已离线通过，未访问
+  真实 MaaS 或读取真实凭据。
 - 两个 sourceable smoke 脚本只通过 `dbms_ai` 管理包说明模型注册路径，脚本本身不含系统表
   DML、API Key 或 Secret 值。开发 `PLAINTEXT_DEV` 与生产 `SECRET_REF` 都仅作为注释示例。
-- 本机 3344 验证实例仍是 2026-08-03 安装的旧 Debug 二进制，未注册 `dbms_ai` 过程；本轮
-  未覆盖或重启该实例。改用当前分支 Debug 二进制启动独立的临时 data/socket/log 实例，并通过
-  `dbms_ai` 注册开发模型后，已验证模型解析为 bge-m3/1024 和审计 `STARTED`/`FAILED` 事件。
-  真实 Embedding 出站收到 MaaS HTTP 401（脱敏为 `ACCESS_DENIED`），因此没有继续发起 Analyze
-  或 STORED/RAG 调用。更新为已授权的凭据后，必须重新执行两个 smoke 脚本并保存三项成功结果。
+- 当前分支 Debug 二进制已在隔离实例验证 `dbms_ai` 的模型注册、bge-m3/1024 解析以及审计
+  `STARTED`/终态事件。使用已授权的华为 MaaS 凭据，在 3344 验证环境完成了
+  `AI_EMBEDDING()` 的真实调用和 `huawei/glm-5.2` 的 `AI_ANALYZE()` 真实调用。该结果仅证明
+  当时的账号、网络、模型准入和配额可用，不构成其他 Region、账号、模型或性能 SLA 的结论。
+- `scripts/db4ai_maas_smoke.sql`、`scripts/db4ai_maas_real_embedding_rag_smoke.sql` 和
+  `scripts/db4ai_maas_generation_model_comparison.sql` 是显式 opt-in 的真实验证入口；默认 MTR
+  始终离线。后一个脚本对六个已配置文本生成模型执行 DBA 诊断和经营分析两个用例，逐项保留
+  成功结果或脱敏失败信息，供人工比较，不将单次输出作为模型质量或可用性承诺。
 
 ## 13. P0 交付物映射
 
@@ -1206,11 +1210,11 @@ P0 仅保留一张 AI 系统表：
 追溯写入第 8 章定义的 AI 审计日志文件，不使用 `mysql.taurusdb_ai_call_audit`，也不允许
 普通 SQL 修改或读取该日志文件。
 
-当前 AliSQL 原型中的 `mysql.alisql_ai_tenant_account`、
-`mysql.alisql_ai_tenant_binding` 和 `mysql.alisql_ai_call_audit` 是第一版实现遗留。TaurusDB
-实现新的 Model Resolver 和文件审计 Sink 后，先停止所有对这些表的读写、完成受控迁移与
-备份，再删除它们；不得在现有运行时仍依赖这些表时直接 `DROP TABLE`。模型配置可迁移为
-实例级 `ACTIVE` Profile；P0 调用始终显式传入模型名，不创建默认 Profile。
+`mysql.alisql_ai_tenant_account`、`mysql.alisql_ai_tenant_binding` 和
+`mysql.alisql_ai_call_audit` 是第一版原型遗留，不属于当前 P0 Runtime；当前源代码不再读写
+这些表。既有部署实例的物理表清理属于独立升级与运维迁移事项：确认备份和无运行时依赖后再
+删除，不能把物理删除与本次功能发布耦合。P0 模型配置为实例级 `ACTIVE` Profile，调用始终
+显式传入模型名，不创建默认 Profile。
 
 **后续边界。** 只有出现按账号/模型的最小权限、不同密钥或 Endpoint、配额/成本归属，
 或同一 `user@host` 代表多个独立客户等明确诉求时，才新增独立的 `user@host -> model`
