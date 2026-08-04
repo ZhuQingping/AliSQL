@@ -1161,7 +1161,11 @@ void init_sql_command_flags() {
   sql_command_flags[SQLCOM_SET_PASSWORD] |= CF_REQUIRE_ACL_CACHE;
 
   /* Native package proc flags */
-  sql_command_flags[SQLCOM_ADMIN_PROC] = CF_AUTO_COMMIT_TRANS;
+  // Native administrator procedures may use handler APIs to update protected
+  // system tables. Mark them as data-changing and row-event capable so the
+  // normal binlog transaction path records those changes on replicas.
+  sql_command_flags[SQLCOM_ADMIN_PROC] =
+      CF_CHANGES_DATA | CF_AUTO_COMMIT_TRANS | CF_CAN_GENERATE_ROW_EVENTS;
 }
 
 

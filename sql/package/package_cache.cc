@@ -28,6 +28,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "mysql/psi/mysql_memory.h"
 
 #include "sql/flashback_query/flashback_proc.h"
+#include "sql/ai/ai_model_admin.h"
 #include "sql/package/package.h"
 #include "sql/package/package_common.h"
 #include "sql/package/package_parse.h"
@@ -122,6 +123,15 @@ void package_context_init() {
 
   /* dbms_duckdb.query() */
   register_package<Proc, myduck::Duckdb_proc_query>(myduck::DUCKDB_PROC_SCHEMA);
+
+  register_package<Proc, alisql::ai::Ai_model_register_proc>(
+      alisql::ai::AI_MODEL_ADMIN_PROC_SCHEMA);
+  register_package<Proc, alisql::ai::Ai_model_update_proc>(
+      alisql::ai::AI_MODEL_ADMIN_PROC_SCHEMA);
+  register_package<Proc, alisql::ai::Ai_model_delete_proc>(
+      alisql::ai::AI_MODEL_ADMIN_PROC_SCHEMA);
+  register_package<Proc, alisql::ai::Ai_model_show_proc>(
+      alisql::ai::AI_MODEL_ADMIN_PROC_SCHEMA);
 
   /* Native flashback procedures under dbms_admin. */
   register_package<Proc, im::flashback::Flashback_proc_show>(

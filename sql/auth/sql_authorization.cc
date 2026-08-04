@@ -2331,6 +2331,55 @@ bool check_access(THD *thd, Access_bitmask want_access, const char *db,
       be checked also.
 */
 
+/**
+  The MaaS model table is an internal control plane, not an administrator
+  managed mysql table.  SQL clients must use dbms_ai even when they have
+  AI_ADMIN and ordinary table privileges.  The native package and runtime use
+  System_table_access and do not enter this SQL statement authorization path.
+
+  Bootstrap/upgrade threads create and migrate the table using server-owned
+  SQL.  Replica appliers replay a primary-authorized row event.  Those are the
+  only SQL-statement exceptions.
+*/
+static bool is_ai_model_control_write(Access_bitmask access,
+                                      const Table_ref *table_ref) {
+  return (access & (INSERT_ACL | UPDATE_ACL | DELETE_ACL | ALTER_ACL |
+                    DROP_ACL | INDEX_ACL)) != 0 &&
+         my_strcasecmp(system_charset_info, table_ref->get_db_name(),
+                       "mysql") == 0 &&
+         my_strcasecmp(system_charset_info, table_ref->get_table_name(),
+                       "taurusdb_ai_model_config") == 0;
+}
+
+static bool ai_model_control_write_is_server_owned(const THD *thd) {
+  return thd->slave_thread || thd->is_dd_system_thread() ||
+         thd->is_initialize_system_thread() ||
+         thd->is_server_upgrade_thread();
+}
+
+static bool deny_direct_ai_model_control_write(THD *thd,
+                                               Security_context *sctx,
+                                               Access_bitmask access,
+                                               const Table_ref *table_ref,
+                                               bool no_errors) {
+  if (!is_ai_model_control_write(access, table_ref) ||
+      ai_model_control_write_is_server_owned(thd) ||
+      thd->lex->sql_command == SQLCOM_GRANT ||
+      thd->lex->sql_command == SQLCOM_REVOKE)
+    return false;
+
+  if (!no_errors) {
+    char command[128];
+    get_privilege_desc(command, sizeof(command),
+                       access & (INSERT_ACL | UPDATE_ACL | DELETE_ACL |
+                                 ALTER_ACL | DROP_ACL | INDEX_ACL));
+    my_error(ER_TABLEACCESS_DENIED_ERROR, MYF(0), command,
+             sctx->priv_user().str, sctx->host_or_ip().str,
+             table_ref->get_table_name());
+  }
+  return true;
+}
+
 bool check_table_access(THD *thd, Access_bitmask requirements,
                         Table_ref *tables,
                         bool any_combination_of_privileges_will_do, uint number,
@@ -2375,24 +2424,8 @@ bool check_table_access(THD *thd, Access_bitmask requirements,
 
     thd->set_security_context(sctx);
 
-    /*
-      Profile lifecycle changes use ordinary SQL DML, so they are written to
-      the binary log and replicated. A table privilege alone must not grant
-      control of the instance AI configuration; structural writes are guarded
-      as well. Replication appliers skip this check: the primary authorized
-      the DML before it entered the binary log.
-    */
-    const bool is_ai_model_control_write =
-        (want_access & (INSERT_ACL | UPDATE_ACL | DELETE_ACL | ALTER_ACL |
-                        DROP_ACL | INDEX_ACL)) != 0 &&
-        my_strcasecmp(system_charset_info, table_ref->get_db_name(), "mysql") ==
-            0 &&
-        my_strcasecmp(system_charset_info, table_ref->get_table_name(),
-                      "taurusdb_ai_model_config") == 0;
-    if (is_ai_model_control_write && !thd->slave_thread &&
-        !sctx->has_global_grant(STRING_WITH_LEN("AI_ADMIN")).first) {
-      if (!no_errors)
-        my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), "AI_ADMIN");
+    if (deny_direct_ai_model_control_write(thd, sctx, want_access, table_ref,
+                                           no_errors)) {
       goto deny;
     }
 
@@ -3797,20 +3830,10 @@ bool check_grant(THD *thd, Access_bitmask want_access, Table_ref *tables,
                                             : thd->security_context();
     const char *db_name = t_ref->get_db_name();
 
-    /* See the matching early check in check_table_access().  System tables
-       can reach check_grant() directly, so enforce the control-plane gate
-       here as well. */
-    const bool is_ai_model_control_write =
-        (orig_want_access &
-         (INSERT_ACL | UPDATE_ACL | DELETE_ACL | ALTER_ACL | DROP_ACL |
-          INDEX_ACL)) != 0 &&
-        my_strcasecmp(system_charset_info, db_name, "mysql") == 0 &&
-        my_strcasecmp(system_charset_info, t_ref->get_table_name(),
-                      "taurusdb_ai_model_config") == 0;
-    if (is_ai_model_control_write && !thd->slave_thread &&
-        !sctx->has_global_grant(STRING_WITH_LEN("AI_ADMIN")).first) {
-      if (!no_errors)
-        my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), "AI_ADMIN");
+    /* System tables can reach check_grant() directly, so retain the same
+       direct-SQL control-plane gate here. */
+    if (deny_direct_ai_model_control_write(thd, sctx, orig_want_access, t_ref,
+                                           no_errors)) {
       goto err;
     }
 

@@ -19,7 +19,7 @@ namespace alisql::ai {
 namespace {
 bool ResolveAnalyzeArguments(THD *thd, Item_func *item) {
   (void)thd;
-  if (item->arg_count < 2 || item->arg_count > 3) {
+  if (item->arg_count != 3) {
     my_error(ER_WRONG_ARGUMENTS, MYF(0), item->func_name());
     return true;
   }
@@ -88,7 +88,10 @@ void RaiseAiRuntimeError(Ai_error error) {
       detail = "DB4AI model endpoint is incompatible with its capability";
       break;
     case Ai_error::k_audit_unavailable:
-      detail = "DB4AI audit service is unavailable";
+      detail = "DB4AI audit service is unavailable; invocation outcome is unknown";
+      break;
+    case Ai_error::k_unsafe_output:
+      detail = "DB4AI diagnosis output violated the read-only contract";
       break;
     default:
       break;
@@ -99,7 +102,7 @@ void RaiseAiRuntimeError(Ai_error error) {
 
 bool Item_func_ai_embedding::resolve_type(THD *thd) {
   (void)thd;
-  if (arg_count < 1 || arg_count > 3 ||
+  if (arg_count < 2 || arg_count > 3 ||
       args[0]->result_type() != STRING_RESULT ||
       args[0]->data_type() == MYSQL_TYPE_JSON ||
       (arg_count >= 2 && (args[1]->result_type() != STRING_RESULT ||
@@ -120,18 +123,14 @@ String *Item_func_ai_embedding::val_str(String *str) {
     null_value = true;
     return nullptr;
   }
-  if (CheckAiInvokePrivilege(current_thd)) return error_str();
-
-  std::string model_name;
-  if (arg_count >= 2) {
-    String model_buffer;
-    String *model = args[1]->val_str(&model_buffer);
-    if (model == nullptr) {
-      null_value = true;
-      return nullptr;
-    }
-    model_name.assign(model->ptr(), model->length());
+  String model_buffer;
+  String *model = args[1]->val_str(&model_buffer);
+  if (model == nullptr || model->length() == 0) {
+    my_error(ER_WRONG_ARGUMENTS, MYF(0), func_name());
+    return error_str();
   }
+  const std::string model_name(model->ptr(), model->length());
+  if (CheckAiInvokePrivilege(current_thd)) return error_str();
 
   uint32_t dimension = 0;
   if (arg_count == 3) {
@@ -178,30 +177,31 @@ String *Item_func_ai_analyze::val_str(String *str) {
     null_value = true;
     return nullptr;
   }
-  if (CheckAiInvokePrivilege(current_thd)) return error_str();
-
   Ai_analyze_options options;
-  if (arg_count == 3) {
-    String options_buffer;
-    String *options_json = args[2]->val_str(&options_buffer);
-    if (options_json == nullptr) {
-      null_value = true;
-      return nullptr;
-    }
-    Ai_runtime parser(nullptr, nullptr);
-    const Ai_error option_error = parser.ParseAnalyzeOptions(
-        std::string(options_json->ptr(), options_json->length()), &options);
-    if (option_error != Ai_error::k_ok) {
-      my_error(ER_WRONG_ARGUMENTS, MYF(0), func_name());
-      return error_str();
-    }
+  String options_buffer;
+  String *options_json = args[2]->val_str(&options_buffer);
+  if (options_json == nullptr) {
+    null_value = true;
+    return nullptr;
   }
+  Ai_runtime parser(nullptr, nullptr);
+  const Ai_error option_error = parser.ParseAnalyzeOptions(
+      std::string(options_json->ptr(), options_json->length()), &options);
+  if (option_error != Ai_error::k_ok || options.model_name.empty()) {
+    my_error(ER_WRONG_ARGUMENTS, MYF(0), func_name());
+    return error_str();
+  }
+  if (CheckAiInvokePrivilege(current_thd)) return error_str();
 
   Ai_runtime runtime(nullptr, Get_ai_invoke_audit_sink());
   std::string final_content;
   const Ai_error error = runtime.Analyze(
       current_thd, std::string(task->ptr(), task->length()),
       std::string(input->ptr(), input->length()), options, &final_content);
+  if (error == Ai_error::k_invalid_options) {
+    my_error(ER_WRONG_ARGUMENTS, MYF(0), func_name());
+    return error_str();
+  }
   if (error != Ai_error::k_ok) {
     RaiseAiRuntimeError(error);
     return error_str();
@@ -209,6 +209,7 @@ String *Item_func_ai_analyze::val_str(String *str) {
   if (buffer.mem_realloc(final_content.size())) return error_str();
   memcpy(buffer.ptr(), final_content.data(), final_content.size());
   buffer.length(final_content.size());
+  buffer.set_charset(&my_charset_utf8mb4_0900_ai_ci);
   return &buffer;
 }
 

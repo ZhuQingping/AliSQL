@@ -65,10 +65,9 @@ P0 不承诺：
 
 4. **模型运行时解耦**
    - 内核通过 model profile 识别 provider、protocol family、model alias、capability、endpoint、credential ref 和受控 options。
-   - 默认模型可以来自配置或模型目录雏形，但不能写死在业务逻辑分支中。
-   - `model_alias` 是可治理的逻辑选择器；`model_profile` 是可审计、不可变的具体模型配置。
-   - Chat alias 可以灰度切换；需要结果可复现的应用可以固定到具体 model profile。
-   - Embedding 模型必须绑定 corpus/index、embedding space 和 profile version，禁止随默认 alias 静默切换。
+   - P0 要求客户 SQL 显式选择模型，不提供默认模型或 alias 静默切换。
+   - 逻辑模型名解析到可审计、不可变的具体模型配置。
+   - Embedding 模型必须绑定 corpus/index、embedding space 和 profile version。
    - 客户 SQL 不传 provider model ID、endpoint、API Key 或原始 `messages` 请求体。
 
 5. **模型不应是黑盒**
@@ -251,7 +250,7 @@ Service，负责稳定 SQL 契约、模型配置解析、向量转换和治理�
 
 ### 4.1 客户面接口
 
-#### `AI_EMBEDDING(text [, model_name [, dimension]])`
+#### `AI_EMBEDDING(text, model_name [, dimension])`
 
 用途：生成 embedding，返回可直接写入 TaurusDB 向量列和参与距离计算的
 TaurusDB 向量值。
@@ -259,7 +258,6 @@ TaurusDB 向量值。
 函数签名：
 
 ```sql
-AI_EMBEDDING(input_text)
 AI_EMBEDDING(input_text, model_name)
 AI_EMBEDDING(input_text, model_name, dimension)
 ```
@@ -267,9 +265,8 @@ AI_EMBEDDING(input_text, model_name, dimension)
 语义：
 
 - `input_text IS NULL` 返回 `NULL`。
-- 默认使用实例默认模型，或经 `user@host` 授权的默认 alias。
-- `model_name` 使用 `provider/model`，例如 `huawei/bge-m3`；省略时解析为实例或
-  租户的默认模型。客户 SQL 不传 Endpoint、API Key、原始 provider JSON 或 Adapter 名称。
+- `model_name` 使用 `provider/model`，例如 `huawei/bge-m3`，必须显式提供。客户 SQL
+  不传 Endpoint、API Key、原始 provider JSON 或 Adapter 名称。
 - `dimension` 省略时使用模型默认维度；显式指定时是结果维度断言，必须属于该模型的
   允许维度。Adapter 仅在云服务实际支持时才发送相应字段。
 - 模型配置必须已启用且具有 `TEXT_EMBEDDING` capability；持久化 embedding 必须记录
@@ -296,7 +293,6 @@ AI_EMBEDDING(input_text, model_name, dimension)
 建议签名：
 
 ```sql
-AI_ANALYZE(task_text, input_value)
 AI_ANALYZE(task_text, input_value, options_json)
 ```
 
@@ -317,19 +313,21 @@ AI_ANALYZE(task_text, input_value, options_json)
 
 - 默认返回 `utf8mb4` 的 `content` 文本。
 - `model_name` 是 `INFORMATION_SCHEMA.TAURUSDB_AI_MODELS` 中可见且获授权的逻辑模型名，
-  例如 `huawei/glm-5.2`；省略时解析为实例/租户默认模型。它解析到固定的配置
+  例如 `huawei/glm-5.2`；必须显式提供，不存在默认模型。它解析到固定的配置
   `Id/config_version`、实际 provider model ID 和 revision，并写入审计。客户不传
   `model_profile`、provider model ID、Endpoint、API Key 或原始请求 body。
 - `output_format='json'` 时返回 TaurusDB 规范 JSON 文本，至少可包含 `content`、
   `sources`、`request_id`、已解析模型信息和 `usage`；不直接返回 provider 原始响应、
   `reasoning_content` 或 provider 私有字段。
-- `return_sources=true` 仅允许与 `output_format='json'` 组合。RAG 来源由 TaurusDB
-  的召回结果填充，不能依赖模型自行生成或声称来源。
-- `mode='rag'` 时，`input_value` 必须包含 question 和 context/chunks。
+- `mode='rag'` 必须使用 `output_format='json'` 和 `return_sources=true`；任一缺失、false
+  或 text 值均在权限、审计、凭据读取和 MaaS 出站前失败。RAG 来源由 TaurusDB 的 SQL
+  召回结果填充，不能依赖模型自行生成或声称来源。
+- `mode='rag'` 时，`input_value` 必须包含 `question` 和 `sources` 数组；每个 source 必须有
+  `source_id`、`chunk_id` 和 `content`。
 - `mode='diagnose'` 时，输入必须是证据集合，不允许模型自行假设缺失事实。
-- `max_output_tokens` 和 `timeout_ms` 只能收紧模型配置中的受控上限，不能扩大它；省略时
-  使用模型配置默认值。`temperature`、思考开关、厂商原生 JSON 参数不在 P0 客户 SQL
-  契约中，由模型配置与 Adapter 控制。
+- `max_output_tokens` 和 `timeout_ms` 省略时保持 Adapter 既有默认值；显式值的固定 P0
+  范围分别为 `1..32768` 和 `1..60000`，不增加客户可见的模型参数字段。`temperature`、
+  思考开关、厂商原生 JSON 参数不在 P0 客户 SQL 契约中，由 Adapter 控制。
 - HTTP 2xx 但缺少非空最终 `content`、或因输出长度耗尽而未形成最终答案时，调用失败并返回
   `AI_ANALYZE_INCOMPLETE_OUTPUT`；不得把 reasoning 当作客户结果。
 - `AI_ANALYZE()` 不自动执行 SQL、不自动执行修复操作。
@@ -449,7 +447,7 @@ CREATE TABLE mysql.taurusdb_ai_model_config (
   generation_defaults JSON NULL,
   generation_limits JSON NULL,
   is_builtin BOOLEAN NOT NULL DEFAULT TRUE,
-  is_default BOOLEAN NOT NULL DEFAULT FALSE,
+  is_default BOOLEAN NOT NULL DEFAULT FALSE, -- compatibility field; P0 always FALSE
   status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
   config_version BIGINT NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -499,10 +497,9 @@ CREATE TABLE mysql.taurusdb_ai_model_config (
 - `AI_INVOKE` 是 P0 唯一的调用权限：有效 MySQL 账号 `user@host` 持有该动态权限后，可
   调用全部 `ACTIVE` 的 P0 模型 Profile；P0 不提供按账号、模型或 capability 的二次
   allowlist。无 `AI_INVOKE` 时必须在 Profile/网络解析前拒绝。
-- `is_default=TRUE` 定义实例级默认模型。客户 SQL 显式传入 `model_name` 时直接解析该
-  Profile；省略模型名时在对应 capability 的 `ACTIVE` 默认 Profile 中选择最高
-  `config_version`。发布新默认版本后应取消旧版本的默认标记；同一版本出现多个默认 Profile
-  时调用拒绝，不再按 tenant 或账号选择模型。
+- P0 不定义 `is_default` 或按 tenant/账号的默认模型选择。客户 SQL 的模型名直接解析到
+  对应 capability 的 `ACTIVE` Profile；更新 Profile 时由 `dbms_ai.update_model()` 原子发布
+  新版本。
 - `AI_ADMIN` 保护 `mysql.taurusdb_ai_model_config` 的 `INSERT`、`UPDATE`、`DELETE` 及
   结构性写操作（如 `ALTER`、`DROP`）。
   管理员通过正常 SQL DML 发布新 `config_version` 或停用 Profile，因此配置变更进入 binlog
@@ -539,7 +536,7 @@ Bedrock Titan 和其他 Bedrock 模型的请求/响应差异由新增 Adapter �
 
 ### 5.4 模型配置版本与 Embedding 兼容性
 
-模型 ID、模型版本、请求协议、Endpoint 和默认模型 alias 是独立概念。一个生效的模型
+模型 ID、模型版本、请求协议和 Endpoint 是独立概念。一个生效的模型
 配置版本不可原地改变其 Embedding 关键参数；任何影响向量空间的变更都必须创建新的
 `Id/config_version`，并在目录中声明替代关系。
 
@@ -954,7 +951,7 @@ P0 错误分类：
 
 | 类别 | 示例 | 处理 |
 |---|---|---|
-| 配置错误 | 缺少 API Key、无默认模型、endpoint 不在 allowlist | fail closed，返回明确错误 |
+| 配置错误 | 缺少 API Key、显式模型不存在、endpoint 不在 allowlist | fail closed，返回明确错误 |
 | 准入或生命周期错误 | 服务未开通、模型下线、区域或协议不支持 | 区分于数据库权限和输入错误，记录脱敏 provider code |
 | 输入错误 | NULL、非法 JSON、参数个数/类型错误、超出输入大小 | 内置函数校验阶段返回明确错误 |
 | HTTP 错误 | 连接失败、timeout、non-2xx | 错误脱敏，记录 status/error code |
@@ -1014,7 +1011,7 @@ default chat max_tokens: 2048
 
 P0 必须覆盖：
 
-- `AI_EMBEDDING()` 的一、二、三参数路径和默认模型解析。
+- `AI_EMBEDDING()` 的二、三参数路径和显式模型解析。
 - `AI_ANALYZE()` 基础路径。
 - 无有效 API Key 或凭据引用时 fail closed。
 - `PLAINTEXT_DEV` 成功调用路径、缺少明文 Key 的 fail-closed 路径，以及生产实例拒绝
@@ -1053,6 +1050,20 @@ P0 必须覆盖：
   Runtime 持久配置来源。
 - 输出和日志不得包含真实 API Key。
 
+### 12.1 2026-08-04 实现验证状态
+
+- 当前分支的 Debug `mysqld` 和 `merge_small_tests-t` 已构建成功；`rds` suite 的
+  `ai_maas_embedding`、`ai_maas_analysis`、`ai_maas_contract`、
+  `ai_maas_governance`、`ai_maas_rag`、`ai_maas_model_admin` 均已离线通过，未访问真实
+  MaaS 或读取真实凭据。
+- 两个 sourceable smoke 脚本只通过 `dbms_ai` 管理包说明模型注册路径，脚本本身不含系统表
+  DML、API Key 或 Secret 值。开发 `PLAINTEXT_DEV` 与生产 `SECRET_REF` 都仅作为注释示例。
+- 本机 3344 验证实例仍是 2026-08-03 安装的旧 Debug 二进制，未注册 `dbms_ai` 过程；本轮
+  未覆盖或重启该实例。改用当前分支 Debug 二进制启动独立的临时 data/socket/log 实例，并通过
+  `dbms_ai` 注册开发模型后，已验证模型解析为 bge-m3/1024 和审计 `STARTED`/`FAILED` 事件。
+  真实 Embedding 出站收到 MaaS HTTP 401（脱敏为 `ACCESS_DENIED`），因此没有继续发起 Analyze
+  或 STORED/RAG 调用。更新为已授权的凭据后，必须重新执行两个 smoke 脚本并保存三项成功结果。
+
 ## 13. P0 交付物映射
 
 | P0 目标 | HLD 对应章节 | 验收方式 |
@@ -1078,7 +1089,7 @@ P0 HLD 通过后，建议拆分以下 Low Level Design 或实现任务：
    - HTTP transport、timeout、max response、non-2xx redaction、mock provider。
 
 3. Model resolver 低层设计
-   - 单表模型配置、默认模型/alias 解析、provider/capability/Endpoint 数据结构、
+   - 单表模型配置、显式模型解析、provider/capability/Endpoint 数据结构、
      credential reference、只读模型查询面和配置生命周期状态机。
 
 4. Protocol adapter 低层设计
@@ -1188,7 +1199,7 @@ P0 仅保留一张 AI 系统表：
 
 | 系统表 | 职责 | P0 结论 |
 |---|---|---|
-| `mysql.taurusdb_ai_model_config` | 模型/Profile、版本、Endpoint、维度、凭据引用和实例级默认模型 | 保留 |
+| `mysql.taurusdb_ai_model_config` | 模型/Profile、版本、Endpoint、维度和凭据引用 | 保留 |
 
 权限记录复用 MySQL 既有 `mysql.global_grants`，其中 `AI_INVOKE` 决定账号能否调用 AI，
 `AI_ADMIN` 用于受控 Profile 管理；它们不是新增 AI 系统表。调用生命周期、计量和故障
@@ -1199,7 +1210,7 @@ P0 仅保留一张 AI 系统表：
 `mysql.alisql_ai_tenant_binding` 和 `mysql.alisql_ai_call_audit` 是第一版实现遗留。TaurusDB
 实现新的 Model Resolver 和文件审计 Sink 后，先停止所有对这些表的读写、完成受控迁移与
 备份，再删除它们；不得在现有运行时仍依赖这些表时直接 `DROP TABLE`。模型配置可迁移为
-实例级 `ACTIVE` Profile；每种 capability 指定一个 `is_default=TRUE` 的默认 Profile。
+实例级 `ACTIVE` Profile；P0 调用始终显式传入模型名，不创建默认 Profile。
 
 **后续边界。** 只有出现按账号/模型的最小权限、不同密钥或 Endpoint、配额/成本归属，
 或同一 `user@host` 代表多个独立客户等明确诉求时，才新增独立的 `user@host -> model`

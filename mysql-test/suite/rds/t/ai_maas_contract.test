@@ -1,45 +1,38 @@
 --echo # AI functions preserve NULL input without model resolution or egress.
-SELECT AI_EMBEDDING(NULL);
+SELECT AI_EMBEDDING(NULL, 'mtr/fixture-embedding', 1024);
 
---echo # The instance control plane resolves an ACTIVE default Profile without tenant mappings.
+--echo # AI calls require an explicit active Profile and remain offline with fixture credentials.
 GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
-DELETE FROM mysql.taurusdb_ai_model_config
- WHERE model_name IN ('mtr/fixture-embedding', 'mtr/fixture-chat',
-                      'mtr/contract-disabled', 'mtr/plaintext-probe');
-INSERT INTO mysql.taurusdb_ai_model_config
-  (model_name, provider, capability, provider_model_name, endpoint_url,
-   credential_mode, credential_ref, default_dimension, is_default, status)
-VALUES
-  ('mtr/fixture-embedding', 'mtr', 'TEXT_EMBEDDING', 'fixture-embedding',
-   'https://db4ai-mtr-fixture.invalid/v1/embeddings',
-   'SECRET_REF', 'mtr/not-read', 1024, TRUE, 'ACTIVE'),
-  ('mtr/fixture-chat', 'mtr', 'TEXT_GENERATION', 'fixture-chat',
-   'https://db4ai-mtr-fixture.invalid/v2/chat/completions',
-   'SECRET_REF', 'mtr/not-read', NULL, TRUE, 'ACTIVE'),
-  ('mtr/contract-disabled', 'mtr', 'TEXT_EMBEDDING', 'contract-disabled',
-   'https://db4ai-mtr-fixture.invalid/v1/embeddings',
-   'SECRET_REF', 'mtr/not-read', 1024, FALSE, 'DISABLED');
+CALL dbms_ai.register_model('mtr/fixture-embedding', 'TEXT_EMBEDDING',
+                            'fixture-embedding', 'SECRET_REF', 'mtr/not-read');
+CALL dbms_ai.register_model('mtr/fixture-chat', 'TEXT_GENERATION',
+                            'fixture-chat', 'SECRET_REF', 'mtr/not-read');
+CALL dbms_ai.register_model('huawei/mtr-contract-disabled', 'TEXT_EMBEDDING',
+                            'bge-m3', 'SECRET_REF', 'mtr/not-read');
+CALL dbms_ai.delete_model('huawei/mtr-contract-disabled', 'TEXT_EMBEDDING');
 
 GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
-SELECT VECTOR_DIM(AI_EMBEDDING('default profile')) AS default_dimension;
-SELECT AI_ANALYZE('Summarize only.', JSON_OBJECT('rows', 1)) AS default_analysis;
-SELECT JSON_UNQUOTE(JSON_EXTRACT(AI_MODEL_INFO(), '$.model_name'))
-  AS default_model;
+--error ER_WRONG_ARGUMENTS
+SELECT AI_EMBEDDING('text');
+--error ER_WRONG_ARGUMENTS
+SELECT AI_ANALYZE('task', JSON_OBJECT('x', 1));
+SELECT VECTOR_DIM(AI_EMBEDDING('explicit profile', 'mtr/fixture-embedding', 1024))
+  AS explicit_dimension;
+SELECT AI_ANALYZE('Summarize only.', JSON_OBJECT('rows', 1),
+                  JSON_OBJECT('model_name', 'mtr/fixture-chat',
+                              'mode', 'analyze')) AS explicit_analysis;
+SELECT JSON_UNQUOTE(JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.model_name'))
+  AS explicit_model;
 
 --echo # A disabled Profile is rejected locally before credentials or network access.
 --error ER_NOT_SUPPORTED_YET
-SELECT AI_EMBEDDING('disabled', 'mtr/contract-disabled', 1024);
+SELECT AI_EMBEDDING('disabled', 'huawei/mtr-contract-disabled', 1024);
 
---echo # Debug plaintext lookup uses the resolved Id and config_version before protocol rejection.
-INSERT INTO mysql.taurusdb_ai_model_config
-  (model_name, provider, capability, provider_model_name, endpoint_url,
-   credential_mode, api_key_plaintext, default_dimension, status)
-VALUES
-  ('mtr/plaintext-probe', 'huawei', 'TEXT_EMBEDDING', 'bge-m3',
-   'https://api.modelarts-maas.com/v1/not-embeddings',
-   'PLAINTEXT_DEV', UNHEX('00'), 1024, 'ACTIVE');
+--echo # A Huawei profile without a credential fails locally before transport.
+CALL dbms_ai.register_model('huawei/mtr-no-credential', 'TEXT_EMBEDDING',
+                            'bge-m3', 'SECRET_REF', 'mtr/not-configured');
 --error ER_NOT_SUPPORTED_YET
-SELECT AI_EMBEDDING('plaintext-probe', 'mtr/plaintext-probe', 1024);
+SELECT AI_EMBEDDING('no-credential', 'huawei/mtr-no-credential', 1024);
 
 --echo # Registered functions enforce their public arity.
 --error ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT
@@ -49,7 +42,7 @@ SELECT AI_ANALYZE('task');
 --error ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT
 SELECT AI_MODEL_INFO('a', 'b');
 
-DELETE FROM mysql.taurusdb_ai_model_config
- WHERE model_name IN ('mtr/fixture-embedding', 'mtr/fixture-chat',
-                      'mtr/contract-disabled', 'mtr/plaintext-probe');
+CALL dbms_ai.delete_model('mtr/fixture-embedding', 'TEXT_EMBEDDING');
+CALL dbms_ai.delete_model('mtr/fixture-chat', 'TEXT_GENERATION');
+CALL dbms_ai.delete_model('huawei/mtr-no-credential', 'TEXT_EMBEDDING');
 --source include/have_binlog_format_mixed_or_row.inc

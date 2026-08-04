@@ -5,16 +5,10 @@ SET transaction_isolation = 'READ-COMMITTED';
 GRANT AI_INVOKE, AI_ADMIN ON *.* TO 'root'@'localhost';
 
 --echo # Debug-only fixture Profiles never contact a provider or read a secret.
-INSERT INTO mysql.taurusdb_ai_model_config
-  (model_name, provider, capability, provider_model_name, endpoint_url,
-   credential_mode, credential_ref, default_dimension, status)
-VALUES
-  ('mtr/fixture-embedding', 'mtr', 'TEXT_EMBEDDING', 'fixture-embedding',
-   'https://db4ai-mtr-fixture.invalid/v1/embeddings',
-   'SECRET_REF', 'mtr/not-read', 1024, 'ACTIVE'),
-  ('mtr/fixture-chat', 'mtr', 'TEXT_GENERATION', 'fixture-chat',
-   'https://db4ai-mtr-fixture.invalid/v2/chat/completions',
-   'SECRET_REF', 'mtr/not-read', NULL, 'ACTIVE');
+CALL dbms_ai.register_model('mtr/fixture-embedding', 'TEXT_EMBEDDING',
+                            'fixture-embedding', 'SECRET_REF', 'mtr/not-read');
+CALL dbms_ai.register_model('mtr/fixture-chat', 'TEXT_GENERATION',
+                            'fixture-chat', 'SECRET_REF', 'mtr/not-read');
 
 CREATE TABLE rag_manual_chunk (
   tenant_id BIGINT UNSIGNED NOT NULL,
@@ -109,18 +103,56 @@ DROP TABLE knowledge_base;
 SET SESSION binlog_row_image = @rag_original_binlog_row_image;
 
 --echo # RAG output is paired with database-generated source metadata.
+SET @rag_input = NULL;
+SELECT JSON_OBJECT(
+         'question', 'How do I handle an offline gateway?',
+         'sources', JSON_ARRAYAGG(JSON_OBJECT('source_id', source_id,
+                                               'chunk_id', chunk_id,
+                                               'content', content)))
+  INTO @rag_input
+  FROM (
+    SELECT source_id, chunk_id, content
+      FROM rag_manual_chunk
+     WHERE tenant_id = 42
+       AND product_line = 'gateway'
+       AND access_label = 'support'
+       AND embedding_model = 'mtr/fixture-embedding'
+       AND embedding_config_version = 1
+       AND embedding_space_id = 'mtr/fixture/1024/cosine'
+     ORDER BY source_id, chunk_id
+     LIMIT 8
+  ) AS permitted_rag_sources;
+SELECT JSON_EXTRACT(AI_ANALYZE(
+  'Answer from supplied database chunks only.',
+  @rag_input,
+  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'rag',
+              'output_format', 'json', 'return_sources', true)),
+  '$.sources') AS rag_sources;
+
+--echo # RAG must receive source chunks from the SQL retrieval path.
+--error ER_WRONG_ARGUMENTS
+SELECT AI_ANALYZE(
+  'Answer from supplied database chunks only.',
+  JSON_OBJECT('question', 'How do I handle an offline gateway?'),
+  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'rag',
+              'output_format', 'json', 'return_sources', true));
+
+--echo # Source provenance cannot be requested from a text RAG response.
+--error ER_WRONG_ARGUMENTS
 SELECT AI_ANALYZE(
   'Answer from supplied database chunks only.',
   JSON_OBJECT('question', 'How do I handle an offline gateway?',
               'sources', JSON_ARRAY(JSON_OBJECT('source_id', 'manual-42',
-                                                'chunk_id', 1))),
+                                                'chunk_id', 1,
+                                                'content', 'Tenant 42 gateway procedure.'))),
   JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'rag',
-              'output_format', 'json', 'return_sources', true)) AS rag_answer;
+              'output_format', 'text', 'return_sources', true));
 SELECT JSON_ARRAYAGG(JSON_OBJECT('source_id', source_id, 'chunk_id', chunk_id))
        AS sources
   FROM rag_manual_chunk
  WHERE tenant_id = 42 AND source_id = 'manual-42';
 
 DROP TABLE rag_manual_chunk;
-DELETE FROM mysql.taurusdb_ai_model_config WHERE model_name IN ('mtr/fixture-embedding', 'mtr/fixture-chat');
+CALL dbms_ai.delete_model('mtr/fixture-embedding', 'TEXT_EMBEDDING');
+CALL dbms_ai.delete_model('mtr/fixture-chat', 'TEXT_GENERATION');
 SET GLOBAL vidx_disabled = ON;

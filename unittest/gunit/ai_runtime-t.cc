@@ -13,19 +13,88 @@ TEST(AiRuntimeTest, RejectsProviderPrivateOptions) {
             runtime.ParseAnalyzeOptions("{\"temperature\":0}", &options));
 }
 
-TEST(AiRuntimeTest, ParsesOnlyStableAnalyzeOptions) {
+TEST(AiRuntimeTest, ParsesRagJsonSourceOptions) {
   Ai_runtime runtime(nullptr, nullptr);
   Ai_analyze_options options;
   EXPECT_EQ(Ai_error::k_ok,
             runtime.ParseAnalyzeOptions(
-                "{\"model_name\":\"huawei/glm-5.2\",\"mode\":\"summarize\","
+                "{\"model_name\":\"huawei/glm-5.2\",\"mode\":\"rag\","
                 "\"output_format\":\"json\",\"return_sources\":true,"
                 "\"max_output_tokens\":128,\"timeout_ms\":5000}",
                 &options));
   EXPECT_EQ("huawei/glm-5.2", options.model_name);
-  EXPECT_EQ("summarize", options.mode);
+  EXPECT_EQ("rag", options.mode);
   EXPECT_TRUE(options.return_sources);
   EXPECT_EQ(128U, options.max_output_tokens);
+}
+
+TEST(AiRuntimeTest, RejectsRagWithoutCanonicalJsonSourcesContract) {
+  Ai_runtime runtime(nullptr, nullptr);
+  Ai_analyze_options options;
+
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            runtime.ParseAnalyzeOptions(
+                "{\"model_name\":\"huawei/glm-5.2\",\"mode\":\"rag\"}",
+                &options));
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            runtime.ParseAnalyzeOptions(
+                "{\"model_name\":\"huawei/glm-5.2\",\"mode\":\"rag\","
+                "\"output_format\":\"json\",\"return_sources\":false}",
+                &options));
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            runtime.ParseAnalyzeOptions(
+                "{\"model_name\":\"huawei/glm-5.2\",\"mode\":\"rag\","
+                "\"output_format\":\"text\",\"return_sources\":true}",
+                &options));
+}
+
+TEST(AiRuntimeTest, EnforcesAnalyzeParameterUpperBounds) {
+  Ai_runtime runtime(nullptr, nullptr);
+  Ai_analyze_options options;
+
+  EXPECT_EQ(Ai_error::k_ok,
+            runtime.ParseAnalyzeOptions(
+                "{\"model_name\":\"huawei/glm-5.2\","
+                "\"max_output_tokens\":25600,\"timeout_ms\":60000}",
+                &options));
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            runtime.ParseAnalyzeOptions(
+                "{\"model_name\":\"huawei/glm-5.2\","
+                "\"max_output_tokens\":0}", &options));
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            runtime.ParseAnalyzeOptions(
+                "{\"model_name\":\"huawei/glm-5.2\","
+                "\"max_output_tokens\":32769}", &options));
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            runtime.ParseAnalyzeOptions(
+                "{\"model_name\":\"huawei/glm-5.2\",\"timeout_ms\":0}",
+                &options));
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            runtime.ParseAnalyzeOptions(
+                "{\"model_name\":\"huawei/glm-5.2\","
+                "\"timeout_ms\":60001}", &options));
+}
+
+TEST(AiRuntimeTest, RuntimeValidationRejectsConstructedUnsafeOptions) {
+  Ai_analyze_options rag_options;
+  rag_options.model_name = "unconfigured/rag";
+  rag_options.mode = "rag";
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            ValidateAnalyzeOptions(rag_options));
+
+  Ai_analyze_options limit_options;
+  limit_options.model_name = "unconfigured/limits";
+  limit_options.max_output_tokens = k_ai_analyze_max_output_tokens + 1;
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            ValidateAnalyzeOptions(limit_options));
+
+  limit_options.max_output_tokens = 0;
+  limit_options.timeout_ms = k_ai_analyze_max_timeout_ms + 1;
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            ValidateAnalyzeOptions(limit_options));
+
+  limit_options.timeout_ms = 0;
+  EXPECT_EQ(Ai_error::k_ok, ValidateAnalyzeOptions(limit_options));
 }
 
 TEST(AiRuntimeTest, RecordsReasoningTokensButNeverReasoningText) {

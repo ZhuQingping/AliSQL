@@ -1,15 +1,20 @@
+# Omitting the model is rejected before fixture setup, audit, credential lookup, or HTTP.
+SELECT AI_EMBEDDING('missing model');
+ERROR HY000: Incorrect arguments to ai_embedding
 # AI_EMBEDDING offline fixture: setup is isolated and never reads a credential or performs HTTP.
 GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
+DROP USER IF EXISTS 'ai_embedding_tester'@'localhost';
+SET @ai_embedding_fixture_old_vidx_disabled = @@GLOBAL.vidx_disabled;
+SET GLOBAL vidx_disabled = OFF;
 CREATE USER 'ai_embedding_tester'@'localhost';
+# An empty or NULL model is rejected locally before the AI_INVOKE privilege check.
+SELECT AI_EMBEDDING('empty model', '', 1024);
+ERROR HY000: Incorrect arguments to ai_embedding
+SELECT AI_EMBEDDING('NULL model', NULL, 1024);
+ERROR HY000: Incorrect arguments to ai_embedding
 GRANT AI_INVOKE ON *.* TO 'ai_embedding_tester'@'localhost';
-INSERT INTO mysql.taurusdb_ai_model_config
-(model_name, provider, capability, provider_model_name, endpoint_url,
-credential_mode, credential_ref, default_dimension, status)
-VALUES
-('mtr/fixture-embedding', 'mtr', 'TEXT_EMBEDDING', 'fixture-embedding',
-'https://db4ai-mtr-fixture.invalid/v1/embeddings',
-'SECRET_REF', 'mtr/not-read', 1024, 'ACTIVE');
-SET @ai_embedding_fixture_config_id = LAST_INSERT_ID();
+CALL dbms_ai.register_model('mtr/fixture-embedding', 'TEXT_EMBEDDING',
+'fixture-embedding', 'SECRET_REF', 'mtr/not-read');
 # The resolved metadata exposes the fixed fixture dimension, not a secret or endpoint override.
 SELECT JSON_UNQUOTE(JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.model_name')),
 JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.dimension');
@@ -48,7 +53,6 @@ SELECT AI_EMBEDDING(NULL, 'mtr/fixture-embedding', 1024);
 AI_EMBEDDING(NULL, 'mtr/fixture-embedding', 1024)
 NULL
 # Resource cleanup leaves no user or Profile.
-DELETE FROM mysql.taurusdb_ai_model_config
-WHERE Id = @ai_embedding_fixture_config_id;
+CALL dbms_ai.delete_model('mtr/fixture-embedding', 'TEXT_EMBEDDING');
 SET GLOBAL vidx_disabled = @ai_embedding_fixture_old_vidx_disabled;
 DROP USER 'ai_embedding_tester'@'localhost';

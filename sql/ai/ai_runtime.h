@@ -3,12 +3,24 @@
 #define SQL_AI_AI_RUNTIME_INCLUDED
 
 #include <string>
+#include <vector>
 #include "sql/ai/ai_audit.h"
 #include "sql/ai/ai_provider_adapter.h"
 
 class THD;
 
 namespace alisql::ai {
+// Fixed P0 request ceilings.  They are intentionally not model-table fields:
+// customer SQL gets a small, predictable safety envelope while an omitted
+// option preserves the adapter's existing default behavior.
+inline constexpr uint32_t k_ai_analyze_max_output_tokens = 32768;
+inline constexpr uint32_t k_ai_analyze_max_timeout_ms = 60000;
+
+struct Ai_analyze_source {
+  std::string source_id;
+  uint64_t chunk_id{0};
+};
+
 struct Ai_analyze_options {
   std::string model_name;
   std::string mode{"analyze"};
@@ -17,6 +29,12 @@ struct Ai_analyze_options {
   uint32_t max_output_tokens{0};
   uint32_t timeout_ms{0};
 };
+
+// Validates the canonical Runtime contract. Zero for either numeric option is
+// the internal sentinel for the adapter default; SQL parsing separately
+// rejects an explicitly supplied zero.
+Ai_error ValidateAnalyzeOptions(const Ai_analyze_options &options);
+
 class Ai_runtime {
  public:
   Ai_runtime(Ai_provider_adapter *adapter, Ai_audit_sink *audit)

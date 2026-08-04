@@ -12,12 +12,28 @@
 -- db4ai_live_embedding_probe and db4ai_live_knowledge_base in the current
 -- schema. The caller needs AI_INVOKE, CREATE, DROP, and permission to set
 -- SESSION binlog_row_image. It never reads, stores, or prints an API key.
+--
+-- Register the embedding model once through dbms_ai as an AI_ADMIN account;
+-- do not modify mysql.taurusdb_ai_model_config directly. For a Debug/development
+-- instance, replace <DEVELOPMENT_API_KEY> only in an interactive session:
+--
+-- CALL dbms_ai.register_model('huawei/bge-m3', 'TEXT_EMBEDDING', 'bge-m3',
+--                             'PLAINTEXT_DEV', '<DEVELOPMENT_API_KEY>');
+-- CALL dbms_ai.register_model('huawei/glm-5.2', 'TEXT_GENERATION', 'glm-5.2',
+--                             'PLAINTEXT_DEV', '<DEVELOPMENT_API_KEY>');
+--
+-- For a production/Release instance, use an existing keyring/CSMS reference:
+--
+-- CALL dbms_ai.register_model('huawei/bge-m3', 'TEXT_EMBEDDING', 'bge-m3',
+--                             'SECRET_REF', '<EXISTING_SECRET_REFERENCE>');
+-- CALL dbms_ai.register_model('huawei/glm-5.2', 'TEXT_GENERATION', 'glm-5.2',
+--                             'SECRET_REF', '<EXISTING_SECRET_REFERENCE>');
 
 -- Edit these values for the configured Embedding Profile under test.
 SET @db4ai_embedding_model = 'huawei/bge-m3';
+SET @db4ai_generation_model = 'huawei/glm-5.2';
 SET @db4ai_expected_embedding_dimension = 1024;
 SET @db4ai_vector_distance = 'cosine';
-SET @db4ai_expected_top_id = 3;
 
 -- VECTOR indexes require READ-COMMITTED in the current AliSQL implementation.
 SET SESSION transaction_isolation = 'READ-COMMITTED';
@@ -62,8 +78,12 @@ SELECT 'STORED generated vector and RAG retrieval' AS test_step;
 SET @db4ai_sql = CONCAT(
   'CREATE TABLE db4ai_live_knowledge_base ('
   'id INT AUTO_INCREMENT PRIMARY KEY, '
+  'tenant_id BIGINT UNSIGNED NOT NULL, '
+  'source_id VARCHAR(64) NOT NULL, '
+  'chunk_id INT UNSIGNED NOT NULL, '
   'doc TEXT NOT NULL, '
   'category VARCHAR(32) NOT NULL DEFAULT ''general'', '
+  'access_label VARCHAR(32) NOT NULL DEFAULT ''support'', '
   'vec VECTOR(', @db4ai_expected_embedding_dimension, ') AS '
   '(AI_EMBEDDING(doc, ', QUOTE(@db4ai_embedding_model), ', ',
   @db4ai_expected_embedding_dimension, ')) STORED, '
@@ -73,30 +93,38 @@ PREPARE db4ai_stmt FROM @db4ai_sql;
 EXECUTE db4ai_stmt;
 DEALLOCATE PREPARE db4ai_stmt;
 
-INSERT INTO db4ai_live_knowledge_base (doc) VALUES
-  ('TaurusDB 与 MySQL 兼容，并为特定业务负载提供更高吞吐。'),
-  ('数据库实例的存储容量可扩展到 128 TB。'),
-  ('最多可添加 15 个只读副本，以分担主节点的读取压力。'),
-  ('快照可在数秒内完成，并支持按时间点恢复。');
+INSERT INTO db4ai_live_knowledge_base
+  (tenant_id, source_id, chunk_id, doc, category, access_label) VALUES
+  (42, 'taurusdb-guide', 1,
+   'TaurusDB 与 MySQL 兼容，并为特定业务负载提供更高吞吐。', 'product', 'support'),
+  (42, 'taurusdb-guide', 2,
+   '数据库实例的存储容量可扩展到 128 TB。', 'product', 'support'),
+  (42, 'taurusdb-guide', 3,
+   '最多可添加 15 个只读副本，以分担主节点的读取压力。', 'operations', 'support'),
+  (42, 'taurusdb-guide', 4,
+   '快照可在数秒内完成，并支持按时间点恢复。', 'backup', 'support'),
+  (77, 'private-guide', 1,
+   '租户 77 的私有运维过程。', 'operations', 'private');
 
 SELECT COUNT(*) INTO @db4ai_stored_dimension_rows
   FROM db4ai_live_knowledge_base
- WHERE VECTOR_DIM(vec) = @db4ai_expected_embedding_dimension;
-SELECT id, VECTOR_DIM(vec) AS vector_dimension
+ WHERE tenant_id = 42
+   AND VECTOR_DIM(vec) = @db4ai_expected_embedding_dimension;
+SELECT tenant_id, source_id, chunk_id, VECTOR_DIM(vec) AS vector_dimension
   FROM db4ai_live_knowledge_base
- ORDER BY id;
+ ORDER BY tenant_id, source_id, chunk_id;
 
 -- Changing the document must regenerate its vector.
 UPDATE db4ai_live_knowledge_base
    SET doc = '最多可添加 15 个只读副本，以分担主数据库节点的读取压力。'
- WHERE id = 3;
+ WHERE tenant_id = 42 AND source_id = 'taurusdb-guide' AND chunk_id = 3;
 
 -- Changing only a management field must not require a new document vector.
 SET @db4ai_saved_binlog_row_image = @@SESSION.binlog_row_image;
 SET SESSION binlog_row_image = 'MINIMAL';
 UPDATE db4ai_live_knowledge_base
-   SET category = 'operations'
- WHERE id = 3;
+   SET category = 'verified'
+ WHERE tenant_id = 42 AND source_id = 'taurusdb-guide' AND chunk_id = 3;
 SET SESSION binlog_row_image = @db4ai_saved_binlog_row_image;
 
 SET @db4ai_rag_query = AI_EMBEDDING(
@@ -104,20 +132,71 @@ SET @db4ai_rag_query = AI_EMBEDDING(
   @db4ai_expected_embedding_dimension);
 SELECT id INTO @db4ai_top_id
   FROM db4ai_live_knowledge_base FORCE INDEX (ix_knowledge_vec)
+ WHERE tenant_id = 42
+   AND access_label = 'support'
  ORDER BY VEC_DISTANCE(vec, @db4ai_rag_query), id
  LIMIT 1;
-SELECT id, doc, category,
+SELECT tenant_id, source_id, chunk_id, doc, category,
        ROUND(VEC_DISTANCE(vec, @db4ai_rag_query), 6) AS distance
   FROM db4ai_live_knowledge_base FORCE INDEX (ix_knowledge_vec)
+ WHERE tenant_id = 42
+   AND access_label = 'support'
  ORDER BY VEC_DISTANCE(vec, @db4ai_rag_query), id
  LIMIT 2;
 
+-- Build RAG evidence only from the SQL-filtered, vector-retrieved rows.
+SELECT JSON_OBJECT(
+         'question', '如何通过只读副本分担主数据库的读取压力？',
+         'sources', JSON_ARRAYAGG(JSON_OBJECT('source_id', source_id,
+                                               'chunk_id', chunk_id,
+                                               'content', doc)))
+  INTO @db4ai_rag_input
+  FROM (
+    SELECT source_id, chunk_id, doc
+      FROM db4ai_live_knowledge_base FORCE INDEX (ix_knowledge_vec)
+     WHERE tenant_id = 42
+       AND access_label = 'support'
+     ORDER BY VEC_DISTANCE(vec, @db4ai_rag_query), id
+     LIMIT 2
+  ) AS db4ai_permitted_rag_sources;
+SELECT JSON_ARRAYAGG(JSON_OBJECT('source_id', source_id,
+                                 'chunk_id', chunk_id))
+  INTO @db4ai_expected_rag_sources
+  FROM (
+    SELECT source_id, chunk_id
+      FROM db4ai_live_knowledge_base FORCE INDEX (ix_knowledge_vec)
+     WHERE tenant_id = 42
+       AND access_label = 'support'
+     ORDER BY VEC_DISTANCE(vec, @db4ai_rag_query), id
+     LIMIT 2
+  ) AS db4ai_permitted_rag_source_ids;
+SET @db4ai_rag_result = AI_ANALYZE(
+  '仅使用给出的数据库来源回答问题，并用中文简洁作答。',
+  @db4ai_rag_input,
+  JSON_OBJECT('model_name', @db4ai_generation_model,
+              'mode', 'rag',
+              'output_format', 'json',
+              'return_sources', true,
+              'max_output_tokens', 25600,
+              'timeout_ms', 60000));
+SET @db4ai_rag_answer = JSON_UNQUOTE(JSON_EXTRACT(@db4ai_rag_result, '$.content'));
+SET @db4ai_returned_rag_sources = JSON_EXTRACT(@db4ai_rag_result, '$.sources');
+
 SELECT @db4ai_top_id AS rag_top_id,
-       @db4ai_stored_dimension_rows AS stored_dimension_rows;
+       @db4ai_stored_dimension_rows AS stored_dimension_rows,
+       @db4ai_rag_answer AS rag_answer,
+       @db4ai_returned_rag_sources AS rag_sources;
 SELECT IF(VECTOR_DIM(@db4ai_direct_embedding) =
               @db4ai_expected_embedding_dimension
               AND @db4ai_stored_dimension_rows = 4
-              AND @db4ai_top_id = @db4ai_expected_top_id,
+              AND @db4ai_rag_answer IS NOT NULL
+              AND CHAR_LENGTH(@db4ai_rag_answer) > 0
+              AND JSON_LENGTH(@db4ai_returned_rag_sources) =
+                  JSON_LENGTH(@db4ai_expected_rag_sources)
+              AND JSON_CONTAINS(@db4ai_returned_rag_sources,
+                                @db4ai_expected_rag_sources)
+              AND JSON_CONTAINS(@db4ai_expected_rag_sources,
+                                @db4ai_returned_rag_sources),
           'PASS', 'FAIL') AS db4ai_embedding_rag_smoke_result;
 
 -- Normal completion cleanup. If execution stops earlier, run these two lines.

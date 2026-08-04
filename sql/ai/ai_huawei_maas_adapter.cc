@@ -135,7 +135,7 @@ Ai_error Huawei_maas_adapter::ExecuteChat(const Ai_canonical_request &request,
   writer.Key("messages");
   writer.StartArray();
   writer.StartObject(); writer.Key("role"); writer.String("system");
-  writer.Key("content"); writer.String(request.task.c_str()); writer.EndObject();
+  writer.Key("content"); writer.String(request.system_prompt.c_str()); writer.EndObject();
   writer.StartObject(); writer.Key("role"); writer.String("user");
   writer.Key("content"); writer.String(request.input.c_str()); writer.EndObject();
   writer.EndArray();
