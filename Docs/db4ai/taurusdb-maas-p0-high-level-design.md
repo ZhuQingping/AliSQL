@@ -336,6 +336,15 @@ AI_ANALYZE(task_text, input_value, options_json)
 - `input_value` 是文本或 TaurusDB canonical JSON；服务层负责转换为 provider 所需
   的 `messages`、`contents` 或其他请求结构。
 
+**后续优化：调用方任务与受控 system prompt 分离。** 保持
+`AI_ANALYZE(task_text, input_value [, options_json])` 三参数形态，但将 `task_text`
+定义为调用方的任务指令，而不是调用方可控的 provider `system` message；例如“用中文总结
+订单变化，并说明原因和风险”。`input_value` 是待处理的业务数据。模型 Profile 或服务端维护
+不可由普通调用方覆盖的 system prompt，用于固定安全边界、输出规范和产品角色。Runtime 将
+受控 system prompt 与调用方任务、业务数据组合为 provider 请求。这样既保留通用分析能力，
+又避免客户自行覆盖诊断边界或把第一个参数误解为角色设定。当前 AliSQL 原型将
+`task_text` 映射为 provider `system` message；该行为是后续需要收敛的接口语义差异。
+
 ### 4.2 内部 AI Runtime 接口
 
 内置函数调用 provider-neutral 的内部 AI Runtime 接口。该接口接收 canonical request，
