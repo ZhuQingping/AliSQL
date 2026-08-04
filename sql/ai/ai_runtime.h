@@ -29,6 +29,12 @@ struct Ai_analyze_options {
   uint32_t max_output_tokens{0};
   uint32_t timeout_ms{0};
 };
+
+// Validates the canonical Runtime contract. Zero for either numeric option is
+// the internal sentinel for the adapter default; SQL parsing separately
+// rejects an explicitly supplied zero.
+Ai_error ValidateAnalyzeOptions(const Ai_analyze_options &options);
+
 class Ai_runtime {
  public:
   Ai_runtime(Ai_provider_adapter *adapter, Ai_audit_sink *audit)

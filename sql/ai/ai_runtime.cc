@@ -4,11 +4,27 @@
 #include <rapidjson/document.h>
 
 namespace alisql::ai {
+Ai_error ValidateAnalyzeOptions(const Ai_analyze_options &options) {
+  if (options.model_name.empty() ||
+      (options.mode != "analyze" && options.mode != "rag" &&
+       options.mode != "diagnose" && options.mode != "summarize" &&
+       options.mode != "classify" && options.mode != "extract") ||
+      (options.output_format != "text" && options.output_format != "json") ||
+      (options.mode == "rag" &&
+       (options.output_format != "json" || !options.return_sources)) ||
+      (options.return_sources &&
+       (options.mode != "rag" || options.output_format != "json")) ||
+      options.max_output_tokens > k_ai_analyze_max_output_tokens ||
+      options.timeout_ms > k_ai_analyze_max_timeout_ms)
+    return Ai_error::k_invalid_options;
+  return Ai_error::k_ok;
+}
+
 Ai_error Ai_runtime::ParseAnalyzeOptions(const std::string &json,
                                          Ai_analyze_options *out) const {
   if (out == nullptr) return Ai_error::k_invalid_options;
   *out = Ai_analyze_options{};
-  if (json.empty()) return Ai_error::k_ok;
+  if (json.empty()) return ValidateAnalyzeOptions(*out);
   rapidjson::Document doc;
   if (doc.Parse(json.c_str()).HasParseError() || !doc.IsObject())
     return Ai_error::k_invalid_options;
@@ -20,23 +36,12 @@ Ai_error Ai_runtime::ParseAnalyzeOptions(const std::string &json,
     else if (key == "output_format" && value.IsString()) out->output_format = value.GetString();
     else if (key == "return_sources" && value.IsBool()) out->return_sources = value.GetBool();
     else if (key == "max_output_tokens" && value.IsUint() &&
-             value.GetUint() > 0 &&
-             value.GetUint() <= k_ai_analyze_max_output_tokens)
+             value.GetUint() > 0)
       out->max_output_tokens = value.GetUint();
-    else if (key == "timeout_ms" && value.IsUint() && value.GetUint() > 0 &&
-             value.GetUint() <= k_ai_analyze_max_timeout_ms)
+    else if (key == "timeout_ms" && value.IsUint() && value.GetUint() > 0)
       out->timeout_ms = value.GetUint();
     else return Ai_error::k_invalid_options;
   }
-  if (out->model_name.empty() ||
-      (out->mode != "analyze" && out->mode != "rag" && out->mode != "diagnose" &&
-       out->mode != "summarize" && out->mode != "classify" && out->mode != "extract") ||
-      (out->output_format != "text" && out->output_format != "json") ||
-      (out->mode == "rag" &&
-       (out->output_format != "json" || !out->return_sources)) ||
-      (out->return_sources &&
-       (out->mode != "rag" || out->output_format != "json")))
-    return Ai_error::k_invalid_options;
-  return Ai_error::k_ok;
+  return ValidateAnalyzeOptions(*out);
 }
 }  // namespace alisql::ai

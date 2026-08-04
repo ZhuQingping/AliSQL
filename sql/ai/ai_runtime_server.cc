@@ -511,9 +511,10 @@ Ai_error Ai_runtime::Analyze(THD *thd, const std::string &task,
                              const std::string &input,
                              const Ai_analyze_options &options,
                              std::string *final_content) const {
-  if (final_content == nullptr || task.empty() || input.empty() ||
-      options.model_name.empty())
+  if (final_content == nullptr || task.empty() || input.empty())
     return Ai_error::k_provider_error;
+  const Ai_error options_error = ValidateAnalyzeOptions(options);
+  if (options_error != Ai_error::k_ok) return options_error;
   std::vector<Ai_analyze_source> sources;
   const Ai_error input_error = ValidateAnalyzeInput(input, options, &sources);
   if (input_error != Ai_error::k_ok) return input_error;

@@ -75,6 +75,28 @@ TEST(AiRuntimeTest, EnforcesAnalyzeParameterUpperBounds) {
                 "\"timeout_ms\":60001}", &options));
 }
 
+TEST(AiRuntimeTest, RuntimeValidationRejectsConstructedUnsafeOptions) {
+  Ai_analyze_options rag_options;
+  rag_options.model_name = "unconfigured/rag";
+  rag_options.mode = "rag";
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            ValidateAnalyzeOptions(rag_options));
+
+  Ai_analyze_options limit_options;
+  limit_options.model_name = "unconfigured/limits";
+  limit_options.max_output_tokens = k_ai_analyze_max_output_tokens + 1;
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            ValidateAnalyzeOptions(limit_options));
+
+  limit_options.max_output_tokens = 0;
+  limit_options.timeout_ms = k_ai_analyze_max_timeout_ms + 1;
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            ValidateAnalyzeOptions(limit_options));
+
+  limit_options.timeout_ms = 0;
+  EXPECT_EQ(Ai_error::k_ok, ValidateAnalyzeOptions(limit_options));
+}
+
 TEST(AiRuntimeTest, RecordsReasoningTokensButNeverReasoningText) {
   Ai_memory_audit_sink audit;
   Ai_audit_record record;
