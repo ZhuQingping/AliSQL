@@ -19,14 +19,21 @@ Ai_error Ai_runtime::ParseAnalyzeOptions(const std::string &json,
     else if (key == "mode" && value.IsString()) out->mode = value.GetString();
     else if (key == "output_format" && value.IsString()) out->output_format = value.GetString();
     else if (key == "return_sources" && value.IsBool()) out->return_sources = value.GetBool();
-    else if (key == "max_output_tokens" && value.IsUint()) out->max_output_tokens = value.GetUint();
-    else if (key == "timeout_ms" && value.IsUint()) out->timeout_ms = value.GetUint();
+    else if (key == "max_output_tokens" && value.IsUint() &&
+             value.GetUint() > 0 &&
+             value.GetUint() <= k_ai_analyze_max_output_tokens)
+      out->max_output_tokens = value.GetUint();
+    else if (key == "timeout_ms" && value.IsUint() && value.GetUint() > 0 &&
+             value.GetUint() <= k_ai_analyze_max_timeout_ms)
+      out->timeout_ms = value.GetUint();
     else return Ai_error::k_invalid_options;
   }
   if (out->model_name.empty() ||
       (out->mode != "analyze" && out->mode != "rag" && out->mode != "diagnose" &&
        out->mode != "summarize" && out->mode != "classify" && out->mode != "extract") ||
       (out->output_format != "text" && out->output_format != "json") ||
+      (out->mode == "rag" &&
+       (out->output_format != "json" || !out->return_sources)) ||
       (out->return_sources &&
        (out->mode != "rag" || out->output_format != "json")))
     return Ai_error::k_invalid_options;

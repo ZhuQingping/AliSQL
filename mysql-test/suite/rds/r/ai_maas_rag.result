@@ -104,12 +104,28 @@ id	doc	distance
 DROP TABLE knowledge_base;
 SET SESSION binlog_row_image = @rag_original_binlog_row_image;
 # RAG output is paired with database-generated source metadata.
+SET @rag_input = NULL;
+SELECT JSON_OBJECT(
+'question', 'How do I handle an offline gateway?',
+'sources', JSON_ARRAYAGG(JSON_OBJECT('source_id', source_id,
+'chunk_id', chunk_id,
+'content', content)))
+INTO @rag_input
+FROM (
+SELECT source_id, chunk_id, content
+FROM rag_manual_chunk
+WHERE tenant_id = 42
+AND product_line = 'gateway'
+       AND access_label = 'support'
+       AND embedding_model = 'mtr/fixture-embedding'
+       AND embedding_config_version = 1
+AND embedding_space_id = 'mtr/fixture/1024/cosine'
+     ORDER BY source_id, chunk_id
+LIMIT 8
+) AS permitted_rag_sources;
 SELECT JSON_EXTRACT(AI_ANALYZE(
 'Answer from supplied database chunks only.',
-JSON_OBJECT('question', 'How do I handle an offline gateway?',
-'sources', JSON_ARRAY(JSON_OBJECT('source_id', 'manual-42',
-'chunk_id', 1,
-'content', 'Tenant 42 gateway procedure.'))),
+@rag_input,
 JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'rag',
 'output_format', 'json', 'return_sources', true)),
 '$.sources') AS rag_sources;

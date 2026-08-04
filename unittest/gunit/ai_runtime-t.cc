@@ -28,6 +28,53 @@ TEST(AiRuntimeTest, ParsesRagJsonSourceOptions) {
   EXPECT_EQ(128U, options.max_output_tokens);
 }
 
+TEST(AiRuntimeTest, RejectsRagWithoutCanonicalJsonSourcesContract) {
+  Ai_runtime runtime(nullptr, nullptr);
+  Ai_analyze_options options;
+
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            runtime.ParseAnalyzeOptions(
+                "{\"model_name\":\"huawei/glm-5.2\",\"mode\":\"rag\"}",
+                &options));
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            runtime.ParseAnalyzeOptions(
+                "{\"model_name\":\"huawei/glm-5.2\",\"mode\":\"rag\","
+                "\"output_format\":\"json\",\"return_sources\":false}",
+                &options));
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            runtime.ParseAnalyzeOptions(
+                "{\"model_name\":\"huawei/glm-5.2\",\"mode\":\"rag\","
+                "\"output_format\":\"text\",\"return_sources\":true}",
+                &options));
+}
+
+TEST(AiRuntimeTest, EnforcesAnalyzeParameterUpperBounds) {
+  Ai_runtime runtime(nullptr, nullptr);
+  Ai_analyze_options options;
+
+  EXPECT_EQ(Ai_error::k_ok,
+            runtime.ParseAnalyzeOptions(
+                "{\"model_name\":\"huawei/glm-5.2\","
+                "\"max_output_tokens\":25600,\"timeout_ms\":60000}",
+                &options));
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            runtime.ParseAnalyzeOptions(
+                "{\"model_name\":\"huawei/glm-5.2\","
+                "\"max_output_tokens\":0}", &options));
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            runtime.ParseAnalyzeOptions(
+                "{\"model_name\":\"huawei/glm-5.2\","
+                "\"max_output_tokens\":32769}", &options));
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            runtime.ParseAnalyzeOptions(
+                "{\"model_name\":\"huawei/glm-5.2\",\"timeout_ms\":0}",
+                &options));
+  EXPECT_EQ(Ai_error::k_invalid_options,
+            runtime.ParseAnalyzeOptions(
+                "{\"model_name\":\"huawei/glm-5.2\","
+                "\"timeout_ms\":60001}", &options));
+}
+
 TEST(AiRuntimeTest, RecordsReasoningTokensButNeverReasoningText) {
   Ai_memory_audit_sink audit;
   Ai_audit_record record;

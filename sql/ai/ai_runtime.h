@@ -10,6 +10,12 @@
 class THD;
 
 namespace alisql::ai {
+// Fixed P0 request ceilings.  They are intentionally not model-table fields:
+// customer SQL gets a small, predictable safety envelope while an omitted
+// option preserves the adapter's existing default behavior.
+inline constexpr uint32_t k_ai_analyze_max_output_tokens = 32768;
+inline constexpr uint32_t k_ai_analyze_max_timeout_ms = 60000;
+
 struct Ai_analyze_source {
   std::string source_id;
   uint64_t chunk_id{0};

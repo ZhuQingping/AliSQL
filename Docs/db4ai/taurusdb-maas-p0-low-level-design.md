@@ -72,16 +72,19 @@ Runtime 按 `mode` 选择内置且不可被普通用户覆盖的 system prompt�
 user message 发送。P0 支持 `analyze`、`summarize`、`rag`、`diagnose`、`classify`、`extract`；
 它们共用文本生成 Adapter，但 `rag` 和 `diagnose` 使用更严格的输入和输出校验。
 
-- 默认 `output_format='text'`，返回模型最终内容。
+- 非 RAG 调用默认 `output_format='text'`，返回模型最终内容。
 - `output_format='json'` 返回 TaurusDB 生成的 JSON，包含 `content`、`model_name`、
   `config_version` 和 `usage`。不返回原始 Provider JSON 或 reasoning。
-- `mode='rag'` 且 `return_sources=true` 时，`input_value` 必须是 JSON object，并包含
+- `mode='rag'` 必须同时指定 `output_format='json'` 和 `return_sources=true`；否则在权限、
+  审计、凭据读取和 MaaS 出站前失败。`input_value` 必须是 JSON object，并包含
   `question` 及 `sources` 数组。每个 source 至少有 `source_id`、`chunk_id` 和 `content`。
   Runtime 将 `sources` 的 `source_id`、`chunk_id` 原样写入返回 JSON；模型只能生成
   `content`，不能制造来源。
 - `mode='diagnose'` 的输入必须是 JSON object 形式的证据集合。受控 system prompt 强制
   “原因、证据、风险、建议”的只读诊断边界，禁止自动执行或生成修复 SQL。
 - `return_sources=true` 仅允许 `mode='rag'` 和 `output_format='json'`。
+- `max_output_tokens` 和 `timeout_ms` 省略时保持 Adapter 既有默认值；显式设置时必须分别在
+  `1..32768` 和 `1..60000` 之间。P0 使用固定上限，不增加客户可见的模型参数字段。
 
 RAG 调用方仍必须在数据库 SQL 中完成业务租户、访问标签和标量过滤后，才将可访问片段传给
 `AI_ANALYZE()`；该函数不尝试绕过或替代数据库的数据访问控制。

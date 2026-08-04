@@ -3,6 +3,50 @@ SELECT AI_ANALYZE('task', JSON_OBJECT('rows', 1));
 ERROR HY000: Incorrect arguments to ai_analyze
 SELECT AI_ANALYZE('task', JSON_OBJECT('rows', 1), JSON_OBJECT('mode', 'analyze'));
 ERROR HY000: Incorrect arguments to ai_analyze
+# Invalid RAG options fail before privileges, audit, credentials, or HTTP.
+SELECT AI_ANALYZE(
+'Answer only from supplied source chunks.',
+JSON_OBJECT('question', 'How do I handle an offline gateway?',
+'sources', JSON_ARRAY(JSON_OBJECT('source_id', 'manual-42',
+'chunk_id', 1,
+'content', 'Tenant procedure.'))),
+JSON_OBJECT('model_name', 'unconfigured/rag', 'mode', 'rag'));
+ERROR HY000: Incorrect arguments to ai_analyze
+SELECT AI_ANALYZE(
+'Answer only from supplied source chunks.',
+JSON_OBJECT('question', 'How do I handle an offline gateway?',
+'sources', JSON_ARRAY(JSON_OBJECT('source_id', 'manual-42',
+'chunk_id', 1,
+'content', 'Tenant procedure.'))),
+JSON_OBJECT('model_name', 'unconfigured/rag', 'mode', 'rag',
+'output_format', 'json', 'return_sources', false));
+ERROR HY000: Incorrect arguments to ai_analyze
+SELECT AI_ANALYZE(
+'Answer only from supplied source chunks.',
+JSON_OBJECT('question', 'How do I handle an offline gateway?',
+'sources', JSON_ARRAY(JSON_OBJECT('source_id', 'manual-42',
+'chunk_id', 1,
+'content', 'Tenant procedure.'))),
+JSON_OBJECT('model_name', 'unconfigured/rag', 'mode', 'rag',
+'output_format', 'text', 'return_sources', true));
+ERROR HY000: Incorrect arguments to ai_analyze
+# Explicit zero and values over fixed P0 bounds fail before an invocation.
+SELECT AI_ANALYZE('task', JSON_OBJECT('rows', 1),
+JSON_OBJECT('model_name', 'unconfigured/limits',
+'max_output_tokens', 0));
+ERROR HY000: Incorrect arguments to ai_analyze
+SELECT AI_ANALYZE('task', JSON_OBJECT('rows', 1),
+JSON_OBJECT('model_name', 'unconfigured/limits',
+'max_output_tokens', 32769));
+ERROR HY000: Incorrect arguments to ai_analyze
+SELECT AI_ANALYZE('task', JSON_OBJECT('rows', 1),
+JSON_OBJECT('model_name', 'unconfigured/limits',
+'timeout_ms', 0));
+ERROR HY000: Incorrect arguments to ai_analyze
+SELECT AI_ANALYZE('task', JSON_OBJECT('rows', 1),
+JSON_OBJECT('model_name', 'unconfigured/limits',
+'timeout_ms', 60001));
+ERROR HY000: Incorrect arguments to ai_analyze
 GRANT AI_INVOKE, AI_ADMIN ON *.* TO 'root'@'localhost';
 INSERT INTO mysql.taurusdb_ai_model_config
 (model_name, provider, capability, provider_model_name, endpoint_url,
@@ -18,7 +62,8 @@ JSON_OBJECT('period', '2026-07',
 'rows', JSON_ARRAY(JSON_OBJECT('region', 'cn-north',
 'orders', 12))),
 JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'analyze',
-'output_format', 'json', 'max_output_tokens', 128))
+'output_format', 'json', 'max_output_tokens', 25600,
+'timeout_ms', 60000))
 AS analysis_result;
 analysis_result
 {"content":"offline analysis","model_name":"mtr/fixture-chat","config_version":1,"usage":{"prompt_tokens":0,"completion_tokens":0,"reasoning_tokens":0,"cached_tokens":0,"total_tokens":1}}
