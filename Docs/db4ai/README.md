@@ -1,9 +1,11 @@
 # TaurusDB MySQL 对接华为云 MaaS：移植 README
 
 本目录记录 AliSQL 中 TaurusDB MySQL 对接华为云 MaaS 的 P0 实现、验证与移植边界。
-本文是将该能力移植到 TaurusDB 代码线时的入口文档；详细设计以
+本文是将该能力移植到 TaurusDB 代码线时的入口文档。Committer 评审以
+[`taurusdb-maas-p0-committer-design.md`](taurusdb-maas-p0-committer-design.md) 为准；总体演进
+设计与实现级历史设计分别见
 [`taurusdb-maas-p0-high-level-design.md`](taurusdb-maas-p0-high-level-design.md) 和
-[`alisql-maas-p0-low-level-design.md`](alisql-maas-p0-low-level-design.md) 为准。
+[`alisql-maas-p0-low-level-design.md`](alisql-maas-p0-low-level-design.md)。
 
 ## 1. 目标与范围
 
