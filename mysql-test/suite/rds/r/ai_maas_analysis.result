@@ -34,6 +34,13 @@ JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
 AS diagnosis_result;
 diagnosis_result
 {"content":"offline diagnosis: evidence only","model_name":"mtr/fixture-chat","config_version":1,"usage":{"prompt_tokens":0,"completion_tokens":0,"reasoning_tokens":0,"cached_tokens":0,"total_tokens":1}}
+# An adversarial provider repair statement is rejected locally.
+SELECT AI_ANALYZE(
+'Diagnose the supplied evidence only.',
+JSON_OBJECT('fixture', 'mtr_fixture_repair_sql', 'elapsed_ms', 4210),
+JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
+'output_format', 'json'));
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI diagnosis output violated the read-only contract'
 # Diagnose requires a JSON object evidence bundle.
 SELECT AI_ANALYZE(
 'Diagnose only supplied evidence.',

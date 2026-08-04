@@ -39,6 +39,7 @@ const char *ErrorName(Ai_error error) {
     case Ai_error::k_ok: return "OK";
     case Ai_error::k_invalid_options: return "INVALID_OPTIONS";
     case Ai_error::k_incomplete_output: return "INCOMPLETE_OUTPUT";
+    case Ai_error::k_unsafe_output: return "UNSAFE_OUTPUT";
     case Ai_error::k_dimension_mismatch: return "DIMENSION_MISMATCH";
     case Ai_error::k_timeout: return "TIMEOUT";
     case Ai_error::k_provider_error: return "PROVIDER_ERROR";

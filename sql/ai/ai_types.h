@@ -15,6 +15,7 @@ enum class Ai_error {
   k_ok,
   k_invalid_options,
   k_incomplete_output,
+  k_unsafe_output,
   k_dimension_mismatch,
   k_timeout,
   k_provider_error,

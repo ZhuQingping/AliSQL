@@ -37,3 +37,28 @@
 - The controlled prompts constrain the provider request but do not replace
   the caller's SQL-side tenant/access filtering; the existing RAG test keeps
   those predicates in SQL.
+
+## Review round 1
+
+- Diagnose now validates final content before either text or canonical JSON is
+  returned. A conservative lexical policy rejects executable DML, DDL, and
+  administrative repair sequences (including `INSERT INTO`, `UPDATE ... SET`,
+  `DELETE FROM`, `ALTER/DROP/CREATE TABLE`, `TRUNCATE/REPAIR/OPTIMIZE TABLE`,
+  and `SET GLOBAL`). It records the local `UNSAFE_OUTPUT` audit error and
+  returns `k_unsafe_output`; analyze and RAG bypass this validator.
+- The debug-only offline fixture emits `ALTER TABLE ...` only for the explicit
+  `mtr_fixture_repair_sql` diagnose evidence marker. MTR proves that response
+  is rejected while the existing evidence-only diagnose response succeeds.
+- Adapter GUnit now compiles after the canonical request rename and asserts
+  the serialized fixed system message is separate from the caller-derived
+  user message. RAG MTR now compares the complete returned source array and
+  rejects `return_sources` in RAG text mode.
+- Fresh verification: `cmake --build . --target mysqld ai_runtime-t
+  ai_huawei_maas_adapter-t -j4`; `./runtime_output_directory/ai_runtime-t`
+  (4/4); `./runtime_output_directory/ai_huawei_maas_adapter-t` (10/10); and
+  `./mtr --suite=rds --record ai_maas_analysis ai_maas_rag` (all passed).
+- `./mtr --suite=rds ai_maas_contract` also passed, preserving the existing
+  non-diagnose text `AI_ANALYZE` behavior.
+- The lexical guard intentionally favors safety over prose fidelity. A
+  diagnosis that quotes an executable repair statement is rejected rather
+  than attempting fragile context-aware SQL interpretation.

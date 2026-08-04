@@ -112,15 +112,25 @@ JSON_OBJECT('question', 'How do I handle an offline gateway?',
 'content', 'Tenant 42 gateway procedure.'))),
 JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'rag',
 'output_format', 'json', 'return_sources', true)),
-'$.sources[0].source_id') AS rag_source_id;
-rag_source_id
-"manual-42"
+'$.sources') AS rag_sources;
+rag_sources
+[{"chunk_id": 1, "source_id": "manual-42"}]
 # RAG must receive source chunks from the SQL retrieval path.
 SELECT AI_ANALYZE(
 'Answer from supplied database chunks only.',
 JSON_OBJECT('question', 'How do I handle an offline gateway?'),
 JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'rag',
 'output_format', 'json', 'return_sources', true));
+ERROR HY000: Incorrect arguments to ai_analyze
+# Source provenance cannot be requested from a text RAG response.
+SELECT AI_ANALYZE(
+'Answer from supplied database chunks only.',
+JSON_OBJECT('question', 'How do I handle an offline gateway?',
+'sources', JSON_ARRAY(JSON_OBJECT('source_id', 'manual-42',
+'chunk_id', 1,
+'content', 'Tenant 42 gateway procedure.'))),
+JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'rag',
+'output_format', 'text', 'return_sources', true));
 ERROR HY000: Incorrect arguments to ai_analyze
 SELECT JSON_ARRAYAGG(JSON_OBJECT('source_id', source_id, 'chunk_id', chunk_id))
 AS sources

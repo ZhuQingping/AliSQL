@@ -43,8 +43,8 @@ Ai_canonical_request EmbeddingRequest() {
 Ai_canonical_request ChatRequest() {
   Ai_canonical_request request;
   request.capability = Ai_capability::k_text_generation;
-  request.task = "Summarize";
-  request.input = "input";
+  request.system_prompt = "Server-owned system instructions";
+  request.input = "Task:\nCaller task text\n\nInput:\ncaller evidence";
   request.model.model_name = "huawei/glm-5.2";
   request.model.provider = "huawei";
   request.model.provider_model_name = "glm-5.2";
@@ -108,6 +108,24 @@ TEST(HuaweiMaaSTest, ChatReturnsFinalContentButNeverReasoning) {
   EXPECT_EQ(2U, response.usage.completion_tokens);
   EXPECT_EQ("provider-request-17", response.provider_request_id);
   EXPECT_EQ(200U, response.http_status);
+}
+
+TEST(HuaweiMaaSTest, ChatSerializesControlledSystemAndUserMessages) {
+  Fake_transport transport;
+  transport.next_response.status_code = 200;
+  transport.next_response.body =
+      "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"final\"}}]}";
+  Huawei_maas_adapter adapter(&transport);
+  Ai_canonical_response response;
+
+  ASSERT_EQ(Ai_error::k_ok,
+            adapter.Execute(ChatRequest(), k_test_token, &response));
+  EXPECT_NE(std::string::npos,
+            transport.last_request.body.find(
+                "\"role\":\"system\",\"content\":\"Server-owned system instructions\""));
+  EXPECT_NE(std::string::npos,
+            transport.last_request.body.find(
+                "\"role\":\"user\",\"content\":\"Task:\\nCaller task text\\n\\nInput:\\ncaller evidence\""));
 }
 
 TEST(HuaweiMaaSTest, ChatMapsStableOutputAndTimeoutLimits) {

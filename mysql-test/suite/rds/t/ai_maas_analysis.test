@@ -34,6 +34,14 @@ SELECT AI_ANALYZE(
               'output_format', 'json', 'max_output_tokens', 128))
   AS diagnosis_result;
 
+--echo # An adversarial provider repair statement is rejected locally.
+--error ER_NOT_SUPPORTED_YET
+SELECT AI_ANALYZE(
+  'Diagnose the supplied evidence only.',
+  JSON_OBJECT('fixture', 'mtr_fixture_repair_sql', 'elapsed_ms', 4210),
+  JSON_OBJECT('model_name', 'mtr/fixture-chat', 'mode', 'diagnose',
+              'output_format', 'json'));
+
 --echo # Diagnose requires a JSON object evidence bundle.
 --error ER_WRONG_ARGUMENTS
 SELECT AI_ANALYZE(

@@ -90,6 +90,9 @@ void RaiseAiRuntimeError(Ai_error error) {
     case Ai_error::k_audit_unavailable:
       detail = "DB4AI audit service is unavailable";
       break;
+    case Ai_error::k_unsafe_output:
+      detail = "DB4AI diagnosis output violated the read-only contract";
+      break;
     default:
       break;
   }
