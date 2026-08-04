@@ -2,16 +2,10 @@ SET GLOBAL vidx_disabled = OFF;
 SET transaction_isolation = 'READ-COMMITTED';
 GRANT AI_INVOKE, AI_ADMIN ON *.* TO 'root'@'localhost';
 # Debug-only fixture Profiles never contact a provider or read a secret.
-INSERT INTO mysql.taurusdb_ai_model_config
-(model_name, provider, capability, provider_model_name, endpoint_url,
-credential_mode, credential_ref, default_dimension, status)
-VALUES
-('mtr/fixture-embedding', 'mtr', 'TEXT_EMBEDDING', 'fixture-embedding',
-'https://db4ai-mtr-fixture.invalid/v1/embeddings',
-'SECRET_REF', 'mtr/not-read', 1024, 'ACTIVE'),
-('mtr/fixture-chat', 'mtr', 'TEXT_GENERATION', 'fixture-chat',
-'https://db4ai-mtr-fixture.invalid/v2/chat/completions',
-'SECRET_REF', 'mtr/not-read', NULL, 'ACTIVE');
+CALL dbms_ai.register_model('mtr/fixture-embedding', 'TEXT_EMBEDDING',
+'fixture-embedding', 'SECRET_REF', 'mtr/not-read');
+CALL dbms_ai.register_model('mtr/fixture-chat', 'TEXT_GENERATION',
+'fixture-chat', 'SECRET_REF', 'mtr/not-read');
 CREATE TABLE rag_manual_chunk (
 tenant_id BIGINT UNSIGNED NOT NULL,
 source_id VARCHAR(64) NOT NULL,
@@ -155,5 +149,6 @@ WHERE tenant_id = 42 AND source_id = 'manual-42';
 sources
 [{"chunk_id": 1, "source_id": "manual-42"}]
 DROP TABLE rag_manual_chunk;
-DELETE FROM mysql.taurusdb_ai_model_config WHERE model_name IN ('mtr/fixture-embedding', 'mtr/fixture-chat');
+CALL dbms_ai.delete_model('mtr/fixture-embedding', 'TEXT_EMBEDDING');
+CALL dbms_ai.delete_model('mtr/fixture-chat', 'TEXT_GENERATION');
 SET GLOBAL vidx_disabled = ON;

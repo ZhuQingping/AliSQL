@@ -20,8 +20,4 @@ SELECT COUNT(*) AS active_profiles
   FROM mysql.taurusdb_ai_model_config
  WHERE model_name = 'huawei/mtr-model-admin-rpl' AND status = 'ACTIVE';
 
---source include/rpl_connection_master.inc
-DELETE FROM mysql.taurusdb_ai_model_config
- WHERE model_name = 'huawei/mtr-model-admin-rpl';
---source include/rpl_sync.inc
 --source include/rpl_end.inc

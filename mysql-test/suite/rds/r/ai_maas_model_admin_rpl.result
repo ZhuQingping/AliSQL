@@ -23,8 +23,4 @@ FROM mysql.taurusdb_ai_model_config
 WHERE model_name = 'huawei/mtr-model-admin-rpl' AND status = 'ACTIVE';
 active_profiles
 0
-[connection master]
-DELETE FROM mysql.taurusdb_ai_model_config
-WHERE model_name = 'huawei/mtr-model-admin-rpl';
-include/rpl_sync.inc
 include/rpl_end.inc

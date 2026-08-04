@@ -15,13 +15,15 @@ mock 或成功编译替代真实云端验收。
 | 文件审计 | `runtime_output_directory/ai_file_audit-t` + `rds.ai_maas_governance` | 出站前 `STARTED`、终态、JSON Lines 脱敏字段、文件安全权限与全局动态开关覆盖 |
 | VECTOR 编码 | `runtime_output_directory/ai_vector_codec-t` | native float VECTOR 编码、维度和非有限数拒绝覆盖 |
 | SQL/MTR 契约 | `cd build-control-audit && perl mysql-test/mysql-test-run.pl --suite=rds ai_maas_contract ai_maas_embedding ai_maas_analysis ai_maas_governance ai_maas_rag` | 5 个用例通过；覆盖 SQL arity、NULL 无 egress、`AI_INVOKE`、实例默认 Profile、维度失败和脱敏元数据 |
-| 控制面权限 | `rds.ai_maas_governance` | 无 `AI_ADMIN` 时拒绝发布；`AI_ADMIN` 可发布和停用受控华为 Profile；无 `AI_INVOKE` 的账号不能关闭全局审计 |
+| 控制面权限 | `rds.ai_maas_model_admin` | 普通客户端即使拥有 `AI_ADMIN` 和表 DML/DDL 权限也不能直接修改控制表；仅 `dbms_ai` 可发布、更新和停用 Profile，复制 applier 覆盖见 `ai_maas_model_admin_rpl` |
 | 受控 RAG | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_rag` | Debug 离线 fixture 经实际 `AI_EMBEDDING` 写入 VECTOR INDEX；tenant/业务/embedding-space 过滤、schema contract 拒绝与来源回传覆盖 |
 | 分析与只读诊断 | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_analysis` | JSON input、analyze/diagnose mode 和私有 provider options 拒绝覆盖；fixture 不读取 secret、不发起 HTTP |
-| Release 明文门禁 | 临时 Release `mysqld` 隔离实例，含 `PLAINTEXT_DEV` fixture 的 `AI_EMBEDDING` | 调用前返回 `DB4AI credential is unavailable`；未发生 HTTP 请求 |
+| Release 凭据门禁 | `rds.ai_maas_model_admin_release`（隔离 component keyring 的 Release MTR） | 先发布可读的 fake `SECRET_REF`，移除后 `update_model()` 失败且原 active 版本保持不变；未知引用的 `register_model()` 失败且不发布新行 |
 
-默认测试均使用 mock transport、不存在的 `SECRET_REF` 或不回显的 Debug fixture；
-plaintext fixture 仅触发 Adapter 的本地端点协议拒绝，不会发送真实 HTTP 请求。
+默认 Debug 测试均使用 mock transport 或精确的 `mtr/fixture-*` 离线 Profile；它们通过
+`dbms_ai` 注册、不会加载 keyring，也不会发送真实 HTTP 请求。Release MTR 使用隔离的
+component keyring 和假的测试数据验证发布前探测及 fail-closed，不等同于目标环境 keyring 的
+成功验收。
 
 ## 真实 MaaS 的 opt-in 检查
 
@@ -39,9 +41,9 @@ plaintext fixture 仅触发 Adapter 的本地端点协议拒绝，不会发送�
 
 - 审计写入本地受控文件；日志采集、保留、磁盘满告警和运维平台查询由 TaurusDB 日志平台
   提供，不在 P0 SQL 面交付。
-- `AI_ADMIN` 与普通表 DML 权限共同保护
-  `mysql.taurusdb_ai_model_config` 的 Profile 发布和停用；该 DML 进入 binlog，不提供通用
-  任意 Provider/Endpoint 的 SQL 透传。
+- `mysql.taurusdb_ai_model_config` 是内部控制表，不支持客户直接 DML/DDL；Profile 发布、更新
+  和停用必须经 `dbms_ai`，其变更进入 binlog。生产发布还需在目标环境以实际 keyring 引用
+  验证 reader 可读、轮换及权限配置。
 - embedding-space、distance metric 和 index compatibility 已在 RAG schema/查询
   示例中强制过滤；服务器尚未把它们做成 Profile 元数据和通用写入时强制校验。
 - 百炼、Bedrock、方舟 Adapter 仅由 canonical Adapter 边界预留，P0 只实现华为

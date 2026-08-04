@@ -15,8 +15,10 @@ Provider、Endpoint、向量维度、内部 ID、配置版本或白名单；P0 �
 ## 2. `dbms_ai` 原生管理包
 
 复用 AliSQL Native Procedure 框架，在 `dbms_ai` schema 注册四个过程。四个过程均要求
-全局动态权限 `AI_ADMIN`。系统表 `mysql.taurusdb_ai_model_config` 只供内核运行时、升级和
-受控管理包读写；普通账号不得直接获得该表的 DML 权限。
+全局动态权限 `AI_ADMIN`。系统表 `mysql.taurusdb_ai_model_config` 是内部控制表；其写入只供
+升级和受控管理包，运行时仅作内部读取。普通账号即使同时具有 `AI_ADMIN` 和该表的 DML/DDL 权限，也不能直接
+`INSERT`、`UPDATE`、`DELETE`、`ALTER`、`DROP` 或改索引。SQL 授权层仅放行 server bootstrap、
+server upgrade 和复制 applier；`dbms_ai` 通过 `System_table_access` 完成受控写入。
 
 ```sql
 CALL dbms_ai.register_model(
@@ -106,7 +108,14 @@ JSON Lines 文件；写入失败则请求失败且不出站。调用结束后写
 
 开发验证可使用 `PLAINTEXT_DEV`；其密钥仅短暂构造 Authorization header，代码不会写入
 错误日志、审计日志或 SQL 结果。生产只能使用 `SECRET_REF`，并通过现有 keyring reader
-在内存中读取 Secret。
+在内存中读取 Secret。Release 中 `register_model()` 和 `update_model()` 在发布前用同一
+reader 探测引用可读且非空；探测失败不写配置、不回显 Secret。运行时仍在每次调用读取
+Secret，因此发布后的 keyring 删除或轮换失败也会在出站前 fail-closed。
+
+默认 Debug MTR 不加载 keyring：仅两个精确的 `mtr/fixture-*` Profile 在 Debug 编译中以
+本地离线响应执行，且由 `dbms_ai` 管理包注册/删除。该例外不编入 Release，也不能作为
+生产 `SECRET_REF` 验证证据；Release 的未知引用拒绝与目标环境的已配置 keyring 成功发布
+分别验证。
 
 Endpoint 不再由 SQL 管理员输入，运行时只接受由 capability 派生的华为标准 HTTPS Endpoint。
 这同时形成 P0 的 Endpoint allowlist，避免 loopback、内网、任意端口和 DNS 重绑定类配置风险。
@@ -119,8 +128,10 @@ Endpoint 不再由 SQL 管理员输入，运行时只接受由 capability 派生
 ## 6. 测试与验收
 
 默认 MTR 全离线，使用 `mtr/fixture-*`，不得读取真实密钥或访问公网。覆盖原生管理包权限、
-注册/更新/删除/展示、无默认模型、Endpoint 自动映射、维度校验、受控 Analyze JSON、RAG
-来源、诊断边界、审计起始失败、终态失败和脱敏。
+注册/更新/删除/展示、AI_ADMIN 加表 DML/DDL 仍拒绝直接控制表、复制 applier、无默认模型、
+Endpoint 自动映射、维度校验、受控 Analyze JSON、RAG 来源、诊断边界、审计起始失败、终态
+失败和脱敏。Release MTR 使用隔离 component keyring 先发布 fake `SECRET_REF`，移除该
+引用后验证 `update_model()` 不改变 active 版本；未知 `SECRET_REF` 的发布必须在写表前失败。
 
 真实 MaaS 验证保持显式 opt-in：使用 `scripts/db4ai_maas_smoke.sql` 验证 Embedding/Analyze，
 使用 `scripts/db4ai_maas_real_embedding_rag_smoke.sql` 验证 Embedding、向量索引、STORED

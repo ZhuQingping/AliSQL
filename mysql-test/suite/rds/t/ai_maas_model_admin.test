@@ -4,7 +4,8 @@ DROP USER IF EXISTS 'ai_model_admin_dml'@'localhost';
 --enable_warnings
 CREATE USER 'ai_model_admin_dml'@'localhost';
 CREATE USER 'ai_model_admin_super'@'localhost';
-GRANT SELECT, INSERT, UPDATE, DELETE ON mysql.taurusdb_ai_model_config
+GRANT SELECT, INSERT, UPDATE, DELETE, ALTER, DROP, INDEX
+  ON mysql.taurusdb_ai_model_config
   TO 'ai_model_admin_dml'@'localhost';
 GRANT SUPER ON *.* TO 'ai_model_admin_super'@'localhost';
 
@@ -20,6 +21,39 @@ CALL dbms_ai.register_model('mtr/model-admin-forbidden-embedding', 'TEXT_EMBEDDI
 --error ER_SPECIFIC_ACCESS_DENIED_ERROR
 CALL dbms_ai.show_models();
 --disconnect model_admin_super
+--connection default
+
+--echo # AI_ADMIN is sufficient for dbms_ai but never permits direct control-table writes.
+GRANT AI_ADMIN ON *.* TO 'ai_model_admin_dml'@'localhost';
+--connect (model_admin_dml,localhost,ai_model_admin_dml,,test)
+--error ER_TABLEACCESS_DENIED_ERROR
+INSERT INTO mysql.taurusdb_ai_model_config
+  (model_name, provider, capability, provider_model_name, endpoint_url,
+   credential_mode, credential_ref, default_dimension, status)
+SELECT 'huawei/direct-insert-must-fail', 'huawei', 'TEXT_EMBEDDING', 'bge-m3',
+       'https://api.modelarts-maas.com/v1/embeddings',
+       'SECRET_REF', 'mtr/not-read', 1024, 'ACTIVE'
+ WHERE FALSE;
+--error ER_TABLEACCESS_DENIED_ERROR
+UPDATE mysql.taurusdb_ai_model_config
+   SET status = 'DISABLED'
+ WHERE model_name = 'huawei/direct-update-must-fail';
+--error ER_TABLEACCESS_DENIED_ERROR
+DELETE FROM mysql.taurusdb_ai_model_config
+ WHERE model_name = 'huawei/direct-delete-must-fail';
+--error ER_TABLEACCESS_DENIED_ERROR
+ALTER TABLE mysql.taurusdb_ai_model_config COMMENT = 'direct alter must fail';
+--error ER_TABLEACCESS_DENIED_ERROR
+DROP TABLE mysql.taurusdb_ai_model_config;
+--error ER_TABLEACCESS_DENIED_ERROR
+DROP INDEX direct_drop_must_fail ON mysql.taurusdb_ai_model_config;
+--echo # The same account can write only through the governed native package.
+CALL dbms_ai.register_model('huawei/model-admin-user-generation', 'TEXT_GENERATION',
+                            'glm-5.2', 'SECRET_REF', 'mtr/not-read');
+CALL dbms_ai.update_model('huawei/model-admin-user-generation', 'TEXT_GENERATION',
+                          'kimi-k2.6', 'SECRET_REF', 'mtr/not-read');
+CALL dbms_ai.delete_model('huawei/model-admin-user-generation', 'TEXT_GENERATION');
+--disconnect model_admin_dml
 --connection default
 
 GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
@@ -65,7 +99,8 @@ CALL dbms_ai.show_models();
 --error ER_NOT_SUPPORTED_YET
 SELECT AI_MODEL_INFO('huawei/mtr-model-admin-generation');
 
-REVOKE SELECT, INSERT, UPDATE, DELETE ON mysql.taurusdb_ai_model_config
+REVOKE SELECT, INSERT, UPDATE, DELETE, ALTER, DROP, INDEX
+  ON mysql.taurusdb_ai_model_config
   FROM 'ai_model_admin_dml'@'localhost';
 DROP USER 'ai_model_admin_dml'@'localhost';
 DROP USER 'ai_model_admin_super'@'localhost';

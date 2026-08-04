@@ -51,13 +51,8 @@ SELECT AI_ANALYZE('task', JSON_OBJECT('rows', 1),
                               'timeout_ms', 60001));
 
 GRANT AI_INVOKE, AI_ADMIN ON *.* TO 'root'@'localhost';
-INSERT INTO mysql.taurusdb_ai_model_config
-  (model_name, provider, capability, provider_model_name, endpoint_url,
-   credential_mode, credential_ref, status)
-VALUES
-  ('mtr/fixture-chat', 'mtr', 'TEXT_GENERATION', 'fixture-chat',
-   'https://db4ai-mtr-fixture.invalid/v2/chat/completions',
-   'SECRET_REF', 'mtr/not-read', 'ACTIVE');
+CALL dbms_ai.register_model('mtr/fixture-chat', 'TEXT_GENERATION',
+                            'fixture-chat', 'SECRET_REF', 'mtr/not-read');
 
 --echo # Bounded aggregate JSON reaches the stable analyze mode.
 SELECT AI_ANALYZE(
@@ -162,4 +157,4 @@ SELECT AI_ANALYZE('task', JSON_OBJECT('rows', JSON_ARRAY()),
                   JSON_OBJECT('model_name', 'mtr/fixture-chat',
                               'temperature', 0));
 
-DELETE FROM mysql.taurusdb_ai_model_config WHERE model_name = 'mtr/fixture-chat';
+CALL dbms_ai.delete_model('mtr/fixture-chat', 'TEXT_GENERATION');

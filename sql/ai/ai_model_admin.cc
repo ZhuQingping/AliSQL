@@ -52,7 +52,61 @@ const char *Endpoint(Ai_capability capability) {
              ? "https://api.modelarts-maas.com/v1/embeddings"
              : "https://api.modelarts-maas.com/v2/chat/completions";
 }
-bool ValidRequest(const Ai_model_admin_request &request) {
+bool IsDebugMtrFixtureName(const Ai_model_admin_request &request) {
+#ifndef NDEBUG
+  return (request.model_name == "mtr/fixture-embedding" &&
+          request.capability == Ai_capability::k_text_embedding) ||
+         (request.model_name == "mtr/fixture-chat" &&
+          request.capability == Ai_capability::k_text_generation);
+#else
+  (void)request;
+  return false;
+#endif
+}
+bool IsDebugMtrFixture(const Ai_model_admin_request &request) {
+  return IsDebugMtrFixtureName(request) &&
+         ((request.capability == Ai_capability::k_text_embedding &&
+           request.provider_model_name == "fixture-embedding") ||
+          (request.capability == Ai_capability::k_text_generation &&
+           request.provider_model_name == "fixture-chat"));
+}
+const char *Provider(const Ai_model_admin_request &request) {
+  return IsDebugMtrFixture(request) ? "mtr" : "huawei";
+}
+const char *Endpoint(const Ai_model_admin_request &request) {
+  if (IsDebugMtrFixture(request))
+    return request.capability == Ai_capability::k_text_embedding
+               ? "https://db4ai-mtr-fixture.invalid/v1/embeddings"
+               : "https://db4ai-mtr-fixture.invalid/v2/chat/completions";
+  return Endpoint(request.capability);
+}
+bool SecretReferenceIsReadableInRelease(THD *thd,
+                                        const Ai_model_admin_request &request) {
+#ifdef NDEBUG
+  if (request.credential_mode != "SECRET_REF") return true;
+
+  // Validate a production reference when it is published, rather than
+  // accepting a broken profile and discovering it only after a customer SQL
+  // call. Ai_credential_resolver uses the same server-owned keyring reader as
+  // runtime dispatch; Secure_string clears the fetched value on scope exit.
+  Ai_resolved_model probe;
+  probe.credential_kind = "SECRET_REF";
+  probe.credential_ref = std::string(request.credential_value.view());
+  Ai_credential_resolver resolver;
+  Secure_string secret;
+  return resolver.ReadSecret(thd, probe, &secret) == Ai_error::k_ok &&
+         !secret.empty();
+#else
+  // Offline Debug MTR deliberately has no keyring component.  Its fixtures
+  // cover package behavior without reading a secret; target-environment
+  // keyring validation is a Release acceptance check.
+  (void)thd;
+  (void)request;
+  return true;
+#endif
+}
+
+bool ValidRequest(THD *thd, const Ai_model_admin_request &request) {
   if (request.model_name.empty() || request.provider_model_name.empty() ||
       request.credential_value.empty()) return false;
   if (request.credential_mode != "SECRET_REF" &&
@@ -62,9 +116,12 @@ bool ValidRequest(const Ai_model_admin_request &request) {
   // builds. This is enforced at the package boundary, before table access.
   if (request.credential_mode == "PLAINTEXT_DEV") return false;
 #endif
-  return request.capability == Ai_capability::k_text_generation ||
-         (request.capability == Ai_capability::k_text_embedding &&
-          request.provider_model_name == "bge-m3");
+  if (IsDebugMtrFixture(request)) return true;
+  if (!(request.capability == Ai_capability::k_text_generation ||
+        (request.capability == Ai_capability::k_text_embedding &&
+         request.provider_model_name == "bge-m3")))
+    return false;
+  return SecretReferenceIsReadableInRelease(thd, request);
 }
 void Store(Field *field, const std::string &value) {
   field->store(value.c_str(), value.length(), system_charset_info);
@@ -75,10 +132,10 @@ void WriteRecord(TABLE *table, const Ai_model_admin_request &request, uint64_t v
   table->next_number_field = table->found_next_number_field;
   table->field[0]->set_null();
   Store(table->field[1], request.model_name);
-  StoreText(table->field[2], "huawei");
+  StoreText(table->field[2], Provider(request));
   StoreText(table->field[3], CapabilityName(request.capability));
   Store(table->field[4], request.provider_model_name);
-  StoreText(table->field[5], Endpoint(request.capability));
+  StoreText(table->field[5], Endpoint(request));
   StoreText(table->field[6], "BEARER_API_KEY");
   Store(table->field[7], request.credential_mode);
   if (request.credential_mode == "SECRET_REF") {
@@ -124,7 +181,7 @@ void ResetAutoIncrement(TABLE *table) {
   }
 }
 bool Register(THD *thd, const Ai_model_admin_request &request) {
-  if (!ValidRequest(request)) { my_error(ER_WRONG_ARGUMENTS, MYF(0), "dbms_ai model request"); return true; }
+  if (!ValidRequest(thd, request)) { my_error(ER_WRONG_ARGUMENTS, MYF(0), "dbms_ai model request"); return true; }
   Ai_system_table_access access; Open_tables_backup backup; TABLE *table = nullptr;
   if (Open(&access, thd, &table, &backup)) return true;
   bool error = table->file->ha_rnd_init(true) != 0;
@@ -136,7 +193,7 @@ bool Register(THD *thd, const Ai_model_admin_request &request) {
   return CloseWrite(&access, thd, table, &backup, error);
 }
 bool Update(THD *thd, const Ai_model_admin_request &request) {
-  if (!ValidRequest(request)) { my_error(ER_WRONG_ARGUMENTS, MYF(0), "dbms_ai model request"); return true; }
+  if (!ValidRequest(thd, request)) { my_error(ER_WRONG_ARGUMENTS, MYF(0), "dbms_ai model request"); return true; }
   Ai_system_table_access access; Open_tables_backup backup; TABLE *table = nullptr;
   if (Open(&access, thd, &table, &backup)) return true;
   bool error = table->file->ha_rnd_init(true) != 0; uint64_t version = 0; bool found = false;
@@ -154,7 +211,31 @@ bool Delete(THD *thd, const Ai_model_admin_request &request) {
   if (Open(&access, thd, &table, &backup)) return true;
   bool error = table->file->ha_rnd_init(true) != 0;
   const bool scan_initialized = !error;
-  while (!error) { int rc = table->file->ha_rnd_next(table->record[0]); if (rc == HA_ERR_END_OF_FILE) break; if (rc) { error = true; break; } if (!Match(table, request)) continue; std::memcpy(table->record[1], table->record[0], table->s->reclength); std::memcpy(table->record[0], table->record[1], table->s->reclength); StoreText(table->field[17], "RETIRED"); if (table->file->ha_update_row(table->record[1], table->record[0])) { error = true; break; } }
+  while (!error) {
+    const int rc = table->file->ha_rnd_next(table->record[0]);
+    if (rc == HA_ERR_END_OF_FILE) break;
+    if (rc) {
+      error = true;
+      break;
+    }
+    if (!Match(table, request)) continue;
+
+    std::memcpy(table->record[1], table->record[0], table->s->reclength);
+    if (IsDebugMtrFixtureName(request)) {
+      if (table->file->ha_delete_row(table->record[1])) {
+        error = true;
+        break;
+      }
+      continue;
+    }
+
+    std::memcpy(table->record[0], table->record[1], table->s->reclength);
+    StoreText(table->field[17], "RETIRED");
+    if (table->file->ha_update_row(table->record[1], table->record[0])) {
+      error = true;
+      break;
+    }
+  }
   if (scan_initialized) table->file->ha_rnd_end();
   return CloseWrite(&access, thd, table, &backup, error);
 }

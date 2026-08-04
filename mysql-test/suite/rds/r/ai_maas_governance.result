@@ -21,15 +21,8 @@ audit_reenabled
 1
 # A terminal audit write failure fails the SQL call after STARTED and logs only correlation metadata.
 GRANT AI_ADMIN, AI_INVOKE ON *.* TO 'root'@'localhost';
-DELETE FROM mysql.taurusdb_ai_model_config
-WHERE model_name = 'mtr/fixture-embedding';
-INSERT INTO mysql.taurusdb_ai_model_config
-(model_name, provider, capability, provider_model_name, endpoint_url,
-credential_mode, credential_ref, default_dimension, status)
-VALUES
-('mtr/fixture-embedding', 'mtr', 'TEXT_EMBEDDING', 'fixture-embedding',
-'https://db4ai-mtr-fixture.invalid/v1/embeddings',
-'SECRET_REF', 'mtr/not-read', 1024, 'ACTIVE');
+CALL dbms_ai.register_model('mtr/fixture-embedding', 'TEXT_EMBEDDING',
+'fixture-embedding', 'SECRET_REF', 'mtr/not-read');
 SET debug = '+d,db4ai_audit_terminal_write_failure';
 SELECT AI_EMBEDDING('request-secret-must-not-reach-the-error-log',
 'mtr/fixture-embedding', 1024);
@@ -37,47 +30,8 @@ ERROR 42000: This version of MySQL doesn't yet support 'DB4AI audit service is u
 SET debug = '';
 include/assert_grep.inc [Terminal audit failure has a call id, capability, and logical model only]
 include/assert_grep.inc [Terminal audit failure never writes request content to the error log]
-DELETE FROM mysql.taurusdb_ai_model_config
-WHERE model_name = 'mtr/fixture-embedding';
-# Both normal table DML and AI_ADMIN are required for Profile management.
-GRANT SELECT, INSERT, UPDATE, DELETE, ALTER ON mysql.taurusdb_ai_model_config
-TO 'ai_audit_reader'@'localhost';
-INSERT INTO mysql.taurusdb_ai_model_config
-(model_name, provider, capability, provider_model_name, endpoint_url,
-credential_mode, credential_ref, default_dimension, status, config_version)
-VALUES
-('huawei/admin-profile', 'huawei', 'TEXT_EMBEDDING', 'bge-m3',
-'https://db4ai-mtr-fixture.invalid/v1/embeddings',
-'SECRET_REF', 'mtr/not-read', 1024, 'ACTIVE', 1);
-ERROR 42000: Access denied; you need (at least one of) the AI_ADMIN privilege(s) for this operation
-ALTER TABLE mysql.taurusdb_ai_model_config COMMENT = 'must not change';
-ERROR 42000: Access denied; you need (at least one of) the AI_ADMIN privilege(s) for this operation
-GRANT AI_ADMIN ON *.* TO 'ai_audit_reader'@'localhost';
-INSERT INTO mysql.taurusdb_ai_model_config
-(model_name, provider, capability, provider_model_name, endpoint_url,
-credential_mode, credential_ref, default_dimension, status, config_version)
-VALUES
-('huawei/admin-profile', 'huawei', 'TEXT_EMBEDDING', 'bge-m3',
-'https://db4ai-mtr-fixture.invalid/v1/embeddings',
-'SECRET_REF', 'mtr/not-read', 1024, 'ACTIVE', 1),
-('huawei/admin-profile', 'huawei', 'TEXT_EMBEDDING', 'bge-m3',
-'https://db4ai-mtr-fixture.invalid/v1/embeddings',
-'SECRET_REF', 'mtr/not-read', 1024, 'ACTIVE', 2);
-SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/admin-profile'), '$.config_version')
-AS resolved_latest_config_version;
-resolved_latest_config_version
-2
-UPDATE mysql.taurusdb_ai_model_config
-SET status = 'DISABLED'
- WHERE model_name = 'huawei/admin-profile';
-SELECT AI_MODEL_INFO('huawei/admin-profile');
-ERROR 42000: This version of MySQL doesn't yet support 'DB4AI model configuration was not found'
-DELETE FROM mysql.taurusdb_ai_model_config
-WHERE model_name = 'huawei/admin-profile';
+CALL dbms_ai.delete_model('mtr/fixture-embedding', 'TEXT_EMBEDDING');
 # AI_AUDIT_VIEWER remains grant-compatible but does not expose audit files by SQL.
 GRANT AI_AUDIT_VIEWER ON *.* TO 'ai_audit_reader'@'localhost';
 REVOKE AI_AUDIT_VIEWER ON *.* FROM 'ai_audit_reader'@'localhost';
-REVOKE AI_ADMIN ON *.* FROM 'ai_audit_reader'@'localhost';
-REVOKE SELECT, INSERT, UPDATE, DELETE, ALTER ON mysql.taurusdb_ai_model_config
-FROM 'ai_audit_reader'@'localhost';
 DROP USER 'ai_audit_reader'@'localhost';
