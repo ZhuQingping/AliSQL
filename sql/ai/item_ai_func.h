@@ -16,6 +16,7 @@ class Item_func_ai_embedding final : public Item_str_func {
       : Item_str_func(pos, a, b) {}
   Item_func_ai_embedding(const POS &pos, Item *a, Item *b, Item *c)
       : Item_str_func(pos, a, b, c) {}
+  bool itemize(Parse_context *pc, Item **res) override;
   bool resolve_type(THD *thd) override;
   String *val_str(String *str) override;
   const char *func_name() const override { return "ai_embedding"; }
@@ -30,6 +31,7 @@ class Item_func_ai_analyze final : public Item_str_func {
       : Item_str_func(pos, a, b) {}
   Item_func_ai_analyze(const POS &pos, Item *a, Item *b, Item *c)
       : Item_str_func(pos, a, b, c) {}
+  bool itemize(Parse_context *pc, Item **res) override;
   bool resolve_type(THD *thd) override;
   String *val_str(String *str) override;
   const char *func_name() const override { return "ai_analyze"; }

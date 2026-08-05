@@ -3,7 +3,7 @@
 #
 # Explicit opt-in real-provider embedding smoke check. This script never reads,
 # accepts, or prints an API key. The database server must already contain an
-# active model profile, its protected credential, a tenant binding, and grants
+# active model profile, protected server-side credential, and grants
 # for the connecting database account. It is not called by MTR or CI.
 
 set -euo pipefail
@@ -81,18 +81,14 @@ SELECT JSON_UNQUOTE(JSON_EXTRACT(AI_MODEL_INFO(@model_name), '$.model_name')),
        JSON_EXTRACT(AI_MODEL_INFO(@model_name), '$.config_id'),
        JSON_EXTRACT(AI_MODEL_INFO(@model_name), '$.dimension');
 SET @embedding = AI_EMBEDDING(
-  'AliSQL real provider embedding smoke probe', @model_name, @expected_dimension);
+  @model_name, 'AliSQL real provider embedding smoke probe',
+  JSON_OBJECT('dimension', @expected_dimension));
 SET @returned_dimension = VECTOR_DIM(@embedding);
 SET @self_distance = VEC_DISTANCE_COSINE(@embedding, @embedding);
-SET @audit = AI_AUDIT_INFO(100);
-SET @audit_is_sanitized =
-  JSON_CONTAINS_PATH(@audit, 'one', '$[0].endpoint', '$[0].credential_ref', '$[0].input') = 0;
 SELECT CONCAT('returned_dimension=', @returned_dimension,
-              ', self_distance=', @self_distance,
-              ', audit_sanitized=', @audit_is_sanitized);
+              ', self_distance=', @self_distance);
 SELECT IF(@returned_dimension = @expected_dimension
-              AND ABS(@self_distance) < 0.000001
-              AND @audit_is_sanitized,
+              AND ABS(@self_distance) < 0.000001,
           'PASS', 'FAIL');
 SQL
 )"

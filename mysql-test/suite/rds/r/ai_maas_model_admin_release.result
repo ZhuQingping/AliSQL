@@ -1,35 +1,25 @@
-# Release publishes only Secret references that the configured keyring can read.
-# Seed one governed profile through a real keyring, then remove its
-# reference to model a production secret becoming unavailable.
-# Creating local configuration file for keyring component: component_keyring_file
-# Creating manifest file for current MySQL server instance
-# Re-starting mysql server with manifest file
+# This test deliberately has no Debug fixture or keyring dependency.
+# It validates the production control-plane shape in every build type.
+SET GLOBAL rds_ai_maas = ON;
 GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
-CALL dbms_ai.register_model('huawei/release-existing-secret', 'TEXT_EMBEDDING',
-'bge-m3', 'SECRET_REF', 'ai-maas-release-readable');
-SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/release-existing-secret'), '$.config_version');
-JSON_EXTRACT(AI_MODEL_INFO('huawei/release-existing-secret'), '$.config_version')
+# Publishing a Huawei Profile stores no credential with the model.
+CALL dbms_ai.register_model('huawei/release-control-plane', 'TEXT_EMBEDDING',
+'huawei', 'bge-m3',
+'https://api.modelarts-maas.com/v1/embeddings', 1024, '{}');
+SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/release-control-plane'), '$.config_version');
+JSON_EXTRACT(AI_MODEL_INFO('huawei/release-control-plane'), '$.config_version')
 1
-# An unreadable reference rejects update before the active version changes.
-CALL dbms_ai.update_model('huawei/release-existing-secret', 'TEXT_EMBEDDING',
-'bge-m3', 'SECRET_REF', 'ai-maas-release-readable');
+SELECT api_key_plaintext FROM mysql.ai_model_config;
+ERROR 42S22: Unknown column 'api_key_plaintext' in 'field list'
+# An endpoint outside the provider allowlist cannot be published.
+CALL dbms_ai.register_model('huawei/release-bad-endpoint', 'TEXT_GENERATION',
+'huawei', 'glm-5.2',
+'https://api.modelarts-maas.com/v1/embeddings', 0, '{}');
 ERROR HY000: Incorrect arguments to dbms_ai model request
 CALL dbms_ai.show_models();
 MODEL_NAME	CAPABILITY	PROVIDER_MODEL_NAME	DIMENSION	CONFIG_VERSION
-huawei/release-existing-secret	TEXT_EMBEDDING	bge-m3	1024	1
-SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/release-existing-secret'), '$.config_version');
-JSON_EXTRACT(AI_MODEL_INFO('huawei/release-existing-secret'), '$.config_version')
-1
-# An unreadable reference rejects registration before any active row is published.
-CALL dbms_ai.register_model('huawei/release-unreadable-secret', 'TEXT_EMBEDDING',
-'bge-m3', 'SECRET_REF', 'mtr/not-configured');
-ERROR HY000: Incorrect arguments to dbms_ai model request
-CALL dbms_ai.show_models();
-MODEL_NAME	CAPABILITY	PROVIDER_MODEL_NAME	DIMENSION	CONFIG_VERSION
-huawei/release-existing-secret	TEXT_EMBEDDING	bge-m3	1024	1
-SELECT AI_MODEL_INFO('huawei/release-unreadable-secret');
+huawei/release-control-plane	TEXT_EMBEDDING	bge-m3	1024	1
+SELECT AI_MODEL_INFO('huawei/release-bad-endpoint');
 ERROR 42000: This version of MySQL doesn't yet support 'DB4AI model configuration was not found'
-# Removing manifest file for current MySQL server instance
-# Removing local keyring file for keyring component: component_keyring_file
-# Removing local configuration file for keyring component: component_keyring_file
-# Restarting server without the manifest file
+CALL dbms_ai.delete_model('huawei/release-control-plane', 'TEXT_EMBEDDING');
+SET GLOBAL rds_ai_maas = OFF;

@@ -110,7 +110,8 @@ SET @model_name = '${DB4AI_EMBEDDING_MODEL}';
 SET @expected_dimension = ${DB4AI_EXPECTED_EMBEDDING_DIMENSION};
 
 SET @direct_embedding = AI_EMBEDDING(
-  'AliSQL real provider embedding smoke probe', @model_name, @expected_dimension);
+  @model_name, 'AliSQL real provider embedding smoke probe',
+  JSON_OBJECT('dimension', @expected_dimension));
 SELECT VECTOR_DIM(@direct_embedding) AS direct_dimension,
        ROUND(VEC_DISTANCE_COSINE(@direct_embedding, @direct_embedding), 6)
          AS cosine_self_distance,
@@ -132,8 +133,8 @@ CREATE TABLE ${knowledge_table} (
   doc TEXT NOT NULL,
   category VARCHAR(32) NOT NULL DEFAULT 'general',
   vec VECTOR(${DB4AI_EXPECTED_EMBEDDING_DIMENSION})
-    AS (AI_EMBEDDING(doc, '${DB4AI_EMBEDDING_MODEL}',
-                     ${DB4AI_EXPECTED_EMBEDDING_DIMENSION})) STORED,
+    AS (AI_EMBEDDING('${DB4AI_EMBEDDING_MODEL}', doc,
+                     JSON_OBJECT('dimension', ${DB4AI_EXPECTED_EMBEDDING_DIMENSION}))) STORED,
   VECTOR INDEX ix_knowledge_vec (vec) m=3 distance=${distance}
 ) ENGINE=InnoDB;
 
@@ -156,7 +157,8 @@ UPDATE ${knowledge_table} SET category = 'operations' WHERE id = 3;
 SET SESSION binlog_row_image = @saved_binlog_row_image;
 
 SET @rag_query = AI_EMBEDDING(
-  '如何通过只读副本分担主数据库的读取压力？', @model_name, @expected_dimension);
+  @model_name, '如何通过只读副本分担主数据库的读取压力？',
+  JSON_OBJECT('dimension', @expected_dimension));
 SELECT id INTO @top_id
   FROM ${knowledge_table} FORCE INDEX (ix_knowledge_vec)
  ORDER BY VEC_DISTANCE(vec, @rag_query), id

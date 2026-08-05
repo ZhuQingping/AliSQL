@@ -26,6 +26,9 @@ enum class Ai_error {
   k_rate_limited,
   k_protocol_mismatch,
   k_audit_unavailable,
+  k_feature_disabled,
+  k_replication_unsafe,
+  k_request_too_large,
 };
 
 struct Ai_usage {
@@ -37,21 +40,15 @@ struct Ai_usage {
 };
 
 struct Ai_resolved_model {
-  uint64_t tenant_id{0};
   uint64_t config_id{0};
   uint64_t config_version{0};
   uint32_t dimension{0};
   Ai_capability capability{Ai_capability::k_text_generation};
   std::string model_name;
   std::string provider_model_name;
-  std::string model_revision;
   std::string provider;
-  std::string endpoint_type;
+  std::string provider_options;
   std::string endpoint;
-  std::string embedding_space_id;
-  std::string distance_metric;
-  std::string credential_kind;
-  std::string credential_ref;
 };
 
 struct Ai_canonical_request {

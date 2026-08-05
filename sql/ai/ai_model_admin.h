@@ -14,10 +14,12 @@ extern const LEX_CSTRING AI_MODEL_ADMIN_PROC_SCHEMA;
 
 struct Ai_model_admin_request {
   std::string model_name;
+  std::string provider;
   Ai_capability capability;
   std::string provider_model_name;
-  std::string credential_mode;
-  Secure_string credential_value;
+  std::string endpoint_url;
+  uint32_t dimension{0};
+  std::string provider_options;
 };
 
 class Ai_model_admin_proc : public im::Proc, public im::Disable_copy_base {

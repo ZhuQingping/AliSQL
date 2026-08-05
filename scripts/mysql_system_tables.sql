@@ -584,32 +584,22 @@ INSERT IGNORE INTO engine_cost(engine_name, device_type, cost_name) VALUES
 -- DB4AI MaaS instance-level model Profiles. Invocation authorization uses
 -- dynamic privileges and telemetry uses a local append-only audit file; new
 -- instances deliberately do not create tenant mapping or audit tables.
-SET @cmd = "CREATE TABLE IF NOT EXISTS taurusdb_ai_model_config (
+SET @cmd = "CREATE TABLE IF NOT EXISTS ai_model_config (
   Id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   model_name VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   provider VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   capability ENUM('TEXT_EMBEDDING','TEXT_GENERATION') NOT NULL,
   provider_model_name VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  endpoint_url TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  auth_type VARCHAR(64) CHARACTER SET ascii NOT NULL DEFAULT 'BEARER_API_KEY',
-  credential_mode ENUM('SECRET_REF','PLAINTEXT_DEV','AWS_IAM_ROLE') NOT NULL DEFAULT 'SECRET_REF',
-  credential_ref VARCHAR(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
-  api_key_plaintext BLOB DEFAULT NULL,
-  default_dimension INT UNSIGNED DEFAULT NULL,
-  allowed_dimensions JSON DEFAULT NULL,
-  model_revision VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
-  generation_defaults JSON DEFAULT NULL,
-  generation_limits JSON DEFAULT NULL,
-  is_builtin BOOLEAN NOT NULL DEFAULT TRUE,
-  is_default BOOLEAN NOT NULL DEFAULT FALSE,
+  endpoint_url VARCHAR(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  dimension INT UNSIGNED DEFAULT NULL,
+  provider_options JSON NOT NULL,
   status ENUM('ACTIVE','DISABLED','RETIRED') NOT NULL DEFAULT 'ACTIVE',
   config_version BIGINT UNSIGNED NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY(Id),
   UNIQUE KEY uq_ai_model_config(model_name, capability, config_version),
-  KEY ix_ai_model_active(model_name, capability, status),
-  KEY ix_ai_model_default(capability, is_default, status))
+  KEY ix_ai_model_active(model_name, capability, status))
   DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC";
 SET @str = CONCAT(@cmd, " ENCRYPTION='", @is_mysql_encrypted, "'");
 PREPARE stmt FROM @str;

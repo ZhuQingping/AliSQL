@@ -2,6 +2,8 @@
 
 #include "sql/ai/ai_runtime.h"
 
+#include <atomic>
+
 #include <chrono>
 #include <cctype>
 #include <iomanip>
@@ -15,14 +17,71 @@
 #include "sql/auth/sql_security_ctx.h"
 #include "sql/mysqld.h"
 #include "sql/sql_class.h"
+#include "sql/sql_lex.h"
+#include "sql/sql_parse.h"
 
 namespace alisql::ai {
+
+bool IsAiMaaSEnabled() { return opt_rds_ai_maas; }
 
 Ai_error CompleteAiInvocationAudit(THD *caller, Ai_audit_sink *sink,
                                    uint64_t call_id,
                                    const Ai_audit_record &record);
 
 namespace {
+
+std::atomic<uint32_t> ai_inflight_invocations{0};
+
+class Ai_invocation_budget final {
+ public:
+  Ai_error Reserve(THD *thd) {
+    if (thd != nullptr) {
+      // query_id is assigned once for the SQL statement, including every
+      // generated-column evaluation and every row of a multi-row DML.
+      // Keep the counter thread-local because one THD executes on one server
+      // thread at a time; reset it when the next statement starts.
+      static thread_local THD *last_thd = nullptr;
+      static thread_local query_id_t last_query_id = 0;
+      static thread_local uint32_t calls_in_statement = 0;
+      if (last_thd != thd || last_query_id != thd->query_id) {
+        last_thd = thd;
+        last_query_id = thd->query_id;
+        calls_in_statement = 0;
+      }
+      if (++calls_in_statement > k_ai_max_invocations_per_statement)
+        return Ai_error::k_rate_limited;
+    }
+
+    const uint32_t previous = ai_inflight_invocations.fetch_add(
+        1, std::memory_order_acq_rel);
+    if (previous >= k_ai_max_concurrent_invocations) {
+      ai_inflight_invocations.fetch_sub(1, std::memory_order_acq_rel);
+      return Ai_error::k_rate_limited;
+    }
+    reserved_ = true;
+    return Ai_error::k_ok;
+  }
+
+  ~Ai_invocation_budget() {
+    if (reserved_)
+      ai_inflight_invocations.fetch_sub(1, std::memory_order_acq_rel);
+  }
+
+ private:
+  bool reserved_{false};
+};
+
+Ai_error RequireRowBinlogForAiWrite(THD *thd) {
+  if (thd == nullptr || thd->lex == nullptr ||
+      !is_update_query(thd->lex->sql_command))
+    return Ai_error::k_ok;
+  // A remote invocation must never be replayed by a replica.  ROW is already
+  // the normal safe form; MIXED is promoted before the invocation.  Pure SBR
+  // fails locally before audit/credential/egress.
+  if (thd->variables.binlog_format == BINLOG_FORMAT_STMT)
+    return Ai_error::k_replication_unsafe;
+  return Ai_error::k_ok;
+}
 
 std::string EndpointAuthority(const std::string &endpoint) {
   constexpr char k_scheme[] = "https://";
@@ -121,7 +180,6 @@ void LogIncompleteAuditTerminal(uint64_t call_id,
 Ai_audit_record NewAuditRecord(THD *thd, const Ai_resolved_model &model,
                                Ai_capability capability) {
   Ai_audit_record record;
-  record.tenant_id = model.tenant_id;
   record.config_id = model.config_id;
   record.config_version = model.config_version;
   record.capability = capability;
@@ -166,7 +224,11 @@ Ai_error CompleteInvocation(THD *thd, Ai_audit_sink *sink, uint64_t call_id,
   if (CompleteAiInvocationAudit(thd, sink, call_id, record) !=
       Ai_error::k_ok) {
     LogIncompleteAuditTerminal(call_id, model, capability);
-    return Ai_error::k_audit_unavailable;
+    // STARTED is durable, but the terminal append failed.  This is a DFX
+    // failure, not a reason to rewrite a completed provider outcome.  The
+    // collector classifies the unmatched STARTED as UNKNOWN from the log
+    // stream while the SQL client receives the original provider result.
+    return result;
   }
   return result;
 }
@@ -176,7 +238,16 @@ Ai_error CompleteInvocation(THD *thd, Ai_audit_sink *sink, uint64_t call_id,
 Ai_error Ai_runtime::Embed(THD *thd, const std::string &text,
                            const std::string &model_name, uint32_t dimension,
                            std::string *encoded_vector) const {
+  if (thd != nullptr && !IsAiMaaSEnabled())
+    return Ai_error::k_feature_disabled;
   if (encoded_vector == nullptr || text.empty()) return Ai_error::k_provider_error;
+  if (text.size() > k_ai_max_input_bytes)
+    return Ai_error::k_request_too_large;
+  const Ai_error binlog_error = RequireRowBinlogForAiWrite(thd);
+  if (binlog_error != Ai_error::k_ok) return binlog_error;
+  Ai_invocation_budget budget;
+  const Ai_error budget_error = budget.Reserve(thd);
+  if (budget_error != Ai_error::k_ok) return budget_error;
   Ai_model_registry registry;
   Ai_resolved_model model;
   const Ai_error resolve = registry.Resolve(
@@ -215,6 +286,11 @@ Ai_error Ai_runtime::Embed(THD *thd, const std::string &text,
   }
 #endif
 
+  // Dispatch is intentionally explicit.  A stored Profile for a future
+  // provider must not accidentally be serialized as a Huawei request.
+  if (model.provider != "huawei")
+    return complete(nullptr, Ai_error::k_protocol_mismatch);
+
   Ai_credential_resolver credential_resolver;
   Secure_string credential;
   const Ai_error credential_error =
@@ -247,8 +323,17 @@ Ai_error Ai_runtime::Analyze(THD *thd, const std::string &model_name,
                              const std::string &prompt,
                              const Ai_analyze_options &options,
                              std::string *final_content) const {
+  if (thd != nullptr && !IsAiMaaSEnabled())
+    return Ai_error::k_feature_disabled;
   if (final_content == nullptr || model_name.empty() || prompt.empty())
     return Ai_error::k_provider_error;
+  if (prompt.size() > k_ai_max_input_bytes)
+    return Ai_error::k_request_too_large;
+  const Ai_error binlog_error = RequireRowBinlogForAiWrite(thd);
+  if (binlog_error != Ai_error::k_ok) return binlog_error;
+  Ai_invocation_budget budget;
+  const Ai_error budget_error = budget.Reserve(thd);
+  if (budget_error != Ai_error::k_ok) return budget_error;
   const Ai_error options_error = ValidateAnalyzeOptions(options);
   if (options_error != Ai_error::k_ok) return options_error;
   Ai_model_registry registry;
@@ -281,6 +366,9 @@ Ai_error Ai_runtime::Analyze(THD *thd, const std::string &model_name,
     return complete(&response, Ai_error::k_ok);
   }
 #endif
+
+  if (model.provider != "huawei")
+    return complete(nullptr, Ai_error::k_protocol_mismatch);
 
   Ai_credential_resolver credential_resolver;
   Secure_string credential;

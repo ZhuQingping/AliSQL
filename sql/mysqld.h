@@ -406,6 +406,8 @@ extern ulong connection_errors_internal;
 extern ulong connection_errors_peer_addr;
 extern char *opt_log_error_suppression_list;
 extern char *opt_log_error_services;
+extern bool opt_rds_ai_maas;
+extern char *opt_rds_api_key;
 extern bool opt_ai_invoke_audit;
 extern char *opt_ai_invoke_audit_log_file;
 extern char *opt_protocol_compression_algorithms;

@@ -35,7 +35,6 @@ Ai_canonical_request EmbeddingRequest() {
   request.model.model_name = "huawei/bge-m3";
   request.model.provider = "huawei";
   request.model.provider_model_name = "bge-m3";
-  request.model.endpoint_type = "HTTPS_JSON";
   request.model.endpoint = "https://maas.example.invalid/v1/embeddings";
   return request;
 }
@@ -48,7 +47,6 @@ Ai_canonical_request ChatRequest() {
   request.model.model_name = "huawei/glm-5.2";
   request.model.provider = "huawei";
   request.model.provider_model_name = "glm-5.2";
-  request.model.endpoint_type = "HTTPS_JSON";
   request.model.endpoint = "https://maas.example.invalid/v2/chat/completions";
   return request;
 }

@@ -11,7 +11,6 @@ namespace alisql::ai {
 enum class Ai_audit_status { k_started, k_succeeded, k_failed };
 struct Ai_audit_record {
   uint64_t call_id{0};
-  uint64_t tenant_id{0};
   uint64_t config_id{0};
   uint64_t config_version{0};
   Ai_capability capability{Ai_capability::k_text_generation};

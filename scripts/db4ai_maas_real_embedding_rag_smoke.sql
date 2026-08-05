@@ -12,22 +12,16 @@
 -- db4ai_live_embedding_probe and db4ai_live_knowledge_base in the current
 -- schema. The caller needs AI_INVOKE, CREATE, DROP, and permission to set
 -- SESSION binlog_row_image. It never reads, stores, or prints an API key.
+-- An administrator must first set GLOBAL rds_ai_maas = ON; the default is OFF.
 --
 -- Register the embedding model once through dbms_ai as an AI_ADMIN account;
--- do not modify mysql.taurusdb_ai_model_config directly. For a Debug/development
--- instance, replace <DEVELOPMENT_API_KEY> only in an interactive session:
+-- do not modify mysql.ai_model_config directly. The Huawei API key is managed
+-- separately by the TaurusDB control plane through protected rds_api_key:
 --
--- CALL dbms_ai.register_model('huawei/bge-m3', 'TEXT_EMBEDDING', 'bge-m3',
---                             'PLAINTEXT_DEV', '<DEVELOPMENT_API_KEY>');
--- CALL dbms_ai.register_model('huawei/glm-5.2', 'TEXT_GENERATION', 'glm-5.2',
---                             'PLAINTEXT_DEV', '<DEVELOPMENT_API_KEY>');
---
--- For a production/Release instance, use an existing keyring/CSMS reference:
---
--- CALL dbms_ai.register_model('huawei/bge-m3', 'TEXT_EMBEDDING', 'bge-m3',
---                             'SECRET_REF', '<EXISTING_SECRET_REFERENCE>');
--- CALL dbms_ai.register_model('huawei/glm-5.2', 'TEXT_GENERATION', 'glm-5.2',
---                             'SECRET_REF', '<EXISTING_SECRET_REFERENCE>');
+-- CALL dbms_ai.register_model('huawei/bge-m3', 'TEXT_EMBEDDING', 'huawei',
+--   'bge-m3', 'https://api.modelarts-maas.com/v1/embeddings', 1024, '{}');
+-- CALL dbms_ai.register_model('huawei/glm-5.2', 'TEXT_GENERATION', 'huawei',
+--   'glm-5.2', 'https://api.modelarts-maas.com/v2/chat/completions', 0, '{}');
 
 -- Edit these values for the configured Embedding Profile under test.
 SET @db4ai_embedding_model = 'huawei/bge-m3';
@@ -47,8 +41,8 @@ SELECT AI_MODEL_INFO(@db4ai_embedding_model) AS model_info;
 
 SELECT 'Direct embedding and vector index' AS test_step;
 SET @db4ai_direct_embedding = AI_EMBEDDING(
-  'AliSQL real provider embedding smoke probe', @db4ai_embedding_model,
-  @db4ai_expected_embedding_dimension);
+  @db4ai_embedding_model, 'AliSQL real provider embedding smoke probe',
+  JSON_OBJECT('dimension', @db4ai_expected_embedding_dimension));
 SELECT VECTOR_DIM(@db4ai_direct_embedding) AS direct_dimension,
        ROUND(VEC_DISTANCE_COSINE(@db4ai_direct_embedding,
                                  @db4ai_direct_embedding), 6)
@@ -85,8 +79,8 @@ SET @db4ai_sql = CONCAT(
   'category VARCHAR(32) NOT NULL DEFAULT ''general'', '
   'access_label VARCHAR(32) NOT NULL DEFAULT ''support'', '
   'vec VECTOR(', @db4ai_expected_embedding_dimension, ') AS '
-  '(AI_EMBEDDING(doc, ', QUOTE(@db4ai_embedding_model), ', ',
-  @db4ai_expected_embedding_dimension, ')) STORED, '
+  '(AI_EMBEDDING(', QUOTE(@db4ai_embedding_model), ', doc, JSON_OBJECT(''dimension'', ',
+  @db4ai_expected_embedding_dimension, '))) STORED, '
   'VECTOR INDEX ix_knowledge_vec (vec) m=3 distance=',
   @db4ai_vector_distance, ') ENGINE=InnoDB');
 PREPARE db4ai_stmt FROM @db4ai_sql;
@@ -128,8 +122,8 @@ UPDATE db4ai_live_knowledge_base
 SET SESSION binlog_row_image = @db4ai_saved_binlog_row_image;
 
 SET @db4ai_rag_query = AI_EMBEDDING(
-  '如何通过只读副本分担主数据库的读取压力？', @db4ai_embedding_model,
-  @db4ai_expected_embedding_dimension);
+  @db4ai_embedding_model, '如何通过只读副本分担主数据库的读取压力？',
+  JSON_OBJECT('dimension', @db4ai_expected_embedding_dimension));
 SELECT id INTO @db4ai_top_id
   FROM db4ai_live_knowledge_base FORCE INDEX (ix_knowledge_vec)
  WHERE tenant_id = 42

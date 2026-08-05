@@ -73,7 +73,8 @@ fi
 
 # Output is deliberately limited to a dimension and a character count.
 probe_output="$("${DB4AI_MYSQL}" "${mysql_args[@]}" "${DB4AI_DATABASE}" <<SQL
-SET @embedding = AI_EMBEDDING('db4ai smoke probe', '${embedding_model}', ${expected_dimension});
+SET @embedding = AI_EMBEDDING('${embedding_model}', 'db4ai smoke probe',
+                              JSON_OBJECT('dimension', ${expected_dimension}));
 SELECT VECTOR_DIM(@embedding) AS embedding_dimension;
 SET @analysis = AI_ANALYZE(
   '${generation_model}', 'Respond with a short acknowledgement. Evidence: db4ai smoke probe.',

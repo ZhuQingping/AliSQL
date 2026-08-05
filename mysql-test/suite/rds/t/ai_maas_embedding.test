@@ -1,5 +1,6 @@
+SET GLOBAL rds_ai_maas = ON;
 --echo # Omitting the model is rejected before fixture setup, audit, credential lookup, or HTTP.
---error ER_WRONG_ARGUMENTS
+--error ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT
 SELECT AI_EMBEDDING('missing model');
 
 --echo # AI_EMBEDDING offline fixture: setup is isolated and never reads a credential or performs HTTP.
@@ -14,18 +15,19 @@ SET GLOBAL vidx_disabled = OFF;
 CREATE USER 'ai_embedding_tester'@'localhost';
 
 --connect (embedding_unprivileged,localhost,ai_embedding_tester,,test)
---echo # An empty or NULL model is rejected locally before the AI_INVOKE privilege check.
+--echo # An empty model is rejected locally; NULL SQL arguments return NULL before the AI_INVOKE privilege check.
 --error ER_WRONG_ARGUMENTS
-SELECT AI_EMBEDDING('empty model', '', 1024);
---error ER_WRONG_ARGUMENTS
-SELECT AI_EMBEDDING('NULL model', NULL, 1024);
+SELECT AI_EMBEDDING('', 'empty model', JSON_OBJECT('dimension', 1024));
+SELECT AI_EMBEDDING(NULL, 'NULL model', JSON_OBJECT('dimension', 1024));
 --disconnect embedding_unprivileged
 --connection default
 
 GRANT AI_INVOKE ON *.* TO 'ai_embedding_tester'@'localhost';
 
-CALL dbms_ai.register_model('mtr/fixture-embedding', 'TEXT_EMBEDDING',
-                            'fixture-embedding', 'SECRET_REF', 'mtr/not-read');
+CALL dbms_ai.register_model('mtr/fixture-embedding', 'TEXT_EMBEDDING', 'mtr',
+                            'fixture-embedding',
+                            'https://db4ai-mtr-fixture.invalid/v1/embeddings',
+                            1024, '{}');
 
 --connect (embedding,localhost,ai_embedding_tester,,test)
 --disable_query_log
@@ -36,10 +38,25 @@ SELECT JSON_UNQUOTE(JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.mode
        JSON_EXTRACT(AI_MODEL_INFO('mtr/fixture-embedding'), '$.dimension');
 
 --echo # The Debug-only fixture returns a deterministic vector through the normal SQL, audit, and codec path.
+SELECT VECTOR_DIM(AI_EMBEDDING('mtr/fixture-embedding',
+                               'two-argument embedding regression probe'))
+  AS two_argument_dimension;
 SET @embedding = AI_EMBEDDING(
-  'offline embedding regression probe', 'mtr/fixture-embedding', 1024);
+  'mtr/fixture-embedding', 'offline embedding regression probe',
+  JSON_OBJECT('dimension', 1024));
 SELECT VECTOR_DIM(@embedding) AS dimension,
        VEC_DISTANCE_COSINE(@embedding, @embedding) AS self_distance;
+
+--echo # The extensible options object permits an omitted dimension but rejects
+--echo # unknown, non-numeric and legacy positional forms before dispatch.
+SELECT VECTOR_DIM(AI_EMBEDDING('mtr/fixture-embedding', 'default dimension', '{}'))
+  AS default_dimension;
+--error ER_WRONG_ARGUMENTS
+SELECT AI_EMBEDDING('mtr/fixture-embedding', 'bad option', JSON_OBJECT('foo', 1));
+--error ER_WRONG_ARGUMENTS
+SELECT AI_EMBEDDING('mtr/fixture-embedding', 'bad option', JSON_OBJECT('dimension', '1024'));
+--error ER_WRONG_ARGUMENTS
+SELECT AI_EMBEDDING('legacy text first', 'mtr/fixture-embedding', 1024);
 
 --echo # The AI result is convertible to text and supports the explicit Euclidean distance function.
 SELECT LEFT(VEC_TOTEXT(@embedding), 4) = '[1,0' AS vector_text_prefix_is_expected,
@@ -63,8 +80,10 @@ DROP TABLE ai_embedding_vector_probe;
 --connect (embedding,localhost,ai_embedding_tester,,test)
 --error ER_NOT_SUPPORTED_YET
 SELECT AI_EMBEDDING(
-  'offline embedding regression probe', 'mtr/fixture-embedding', 512);
-SELECT AI_EMBEDDING(NULL, 'mtr/fixture-embedding', 1024);
+  'mtr/fixture-embedding', 'offline embedding regression probe',
+  JSON_OBJECT('dimension', 512));
+SELECT AI_EMBEDDING('mtr/fixture-embedding', NULL,
+                    JSON_OBJECT('dimension', 1024));
 --disconnect embedding
 --connection default
 
@@ -72,3 +91,4 @@ SELECT AI_EMBEDDING(NULL, 'mtr/fixture-embedding', 1024);
 CALL dbms_ai.delete_model('mtr/fixture-embedding', 'TEXT_EMBEDDING');
 SET GLOBAL vidx_disabled = @ai_embedding_fixture_old_vidx_disabled;
 DROP USER 'ai_embedding_tester'@'localhost';
+SET GLOBAL rds_ai_maas = OFF;

@@ -1,3 +1,4 @@
+SET GLOBAL rds_ai_maas = ON;
 --echo # dbms_ai accepts only the governed model-management package.
 --disable_warnings
 DROP USER IF EXISTS 'ai_model_admin_dml'@'localhost';
@@ -5,7 +6,7 @@ DROP USER IF EXISTS 'ai_model_admin_dml'@'localhost';
 CREATE USER 'ai_model_admin_dml'@'localhost';
 CREATE USER 'ai_model_admin_super'@'localhost';
 GRANT SELECT, INSERT, UPDATE, DELETE, ALTER, DROP, INDEX
-  ON mysql.taurusdb_ai_model_config
+  ON mysql.ai_model_config
   TO 'ai_model_admin_dml'@'localhost';
 GRANT SUPER ON *.* TO 'ai_model_admin_super'@'localhost';
 
@@ -13,7 +14,8 @@ GRANT SUPER ON *.* TO 'ai_model_admin_super'@'localhost';
 --echo # Table DML alone cannot administer models through the package.
 --error ER_SPECIFIC_ACCESS_DENIED_ERROR
 CALL dbms_ai.register_model('mtr/model-admin-forbidden-embedding', 'TEXT_EMBEDDING',
-                            'fixture-embedding', 'SECRET_REF', 'mtr/not-read');
+                            'mtr', 'fixture-embedding',
+                            'https://db4ai-mtr-fixture.invalid/v1/embeddings', 1024, '{}');
 --disconnect model_admin_dml
 --connection default
 
@@ -27,61 +29,71 @@ CALL dbms_ai.show_models();
 GRANT AI_ADMIN ON *.* TO 'ai_model_admin_dml'@'localhost';
 --connect (model_admin_dml,localhost,ai_model_admin_dml,,test)
 --error ER_TABLEACCESS_DENIED_ERROR
-INSERT INTO mysql.taurusdb_ai_model_config
+INSERT INTO mysql.ai_model_config
   (model_name, provider, capability, provider_model_name, endpoint_url,
-   credential_mode, credential_ref, default_dimension, status)
+   dimension, provider_options, status)
 SELECT 'huawei/direct-insert-must-fail', 'huawei', 'TEXT_EMBEDDING', 'bge-m3',
        'https://api.modelarts-maas.com/v1/embeddings',
-       'SECRET_REF', 'mtr/not-read', 1024, 'ACTIVE'
+       1024, JSON_OBJECT(), 'ACTIVE'
  WHERE FALSE;
 --error ER_TABLEACCESS_DENIED_ERROR
-UPDATE mysql.taurusdb_ai_model_config
+UPDATE mysql.ai_model_config
    SET status = 'DISABLED'
  WHERE model_name = 'huawei/direct-update-must-fail';
 --error ER_TABLEACCESS_DENIED_ERROR
-DELETE FROM mysql.taurusdb_ai_model_config
+DELETE FROM mysql.ai_model_config
  WHERE model_name = 'huawei/direct-delete-must-fail';
 --error ER_TABLEACCESS_DENIED_ERROR
-ALTER TABLE mysql.taurusdb_ai_model_config COMMENT = 'direct alter must fail';
+ALTER TABLE mysql.ai_model_config COMMENT = 'direct alter must fail';
 --error ER_TABLEACCESS_DENIED_ERROR
-DROP TABLE mysql.taurusdb_ai_model_config;
+DROP TABLE mysql.ai_model_config;
 --error ER_TABLEACCESS_DENIED_ERROR
-DROP INDEX direct_drop_must_fail ON mysql.taurusdb_ai_model_config;
+DROP INDEX direct_drop_must_fail ON mysql.ai_model_config;
 --echo # The same account can write only through the governed native package.
-CALL dbms_ai.register_model('huawei/model-admin-user-generation', 'TEXT_GENERATION',
-                            'glm-5.2', 'SECRET_REF', 'mtr/not-read');
-CALL dbms_ai.update_model('huawei/model-admin-user-generation', 'TEXT_GENERATION',
-                          'kimi-k2.6', 'SECRET_REF', 'mtr/not-read');
+CALL dbms_ai.register_model('huawei/model-admin-user-generation', 'TEXT_GENERATION', 'huawei',
+                            'glm-5.2', 'https://api.modelarts-maas.com/v2/chat/completions', 0, '{}');
+CALL dbms_ai.update_model('huawei/model-admin-user-generation', 'TEXT_GENERATION', 'huawei',
+                          'kimi-k2.6', 'https://api.modelarts-maas.com/v2/chat/completions', 0, '{}');
 CALL dbms_ai.delete_model('huawei/model-admin-user-generation', 'TEXT_GENERATION');
 --disconnect model_admin_dml
 --connection default
 
 GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
 CALL dbms_ai.register_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION',
-                            'glm-5.2', 'SECRET_REF', 'mtr/not-read');
+                            'huawei', 'glm-5.2',
+                            'https://api.modelarts-maas.com/v2/chat/completions', 0, '{}');
 --echo # The package makes its fixed bge-m3/1024 embedding contract resolvable.
 CALL dbms_ai.register_model('huawei/mtr-model-admin-embedding', 'TEXT_EMBEDDING',
-                            'bge-m3', 'SECRET_REF', 'mtr/not-read');
+                            'huawei', 'bge-m3',
+                            'https://api.modelarts-maas.com/v1/embeddings', 1024, '{}');
 SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/mtr-model-admin-embedding'), '$.dimension');
 CALL dbms_ai.delete_model('huawei/mtr-model-admin-embedding', 'TEXT_EMBEDDING');
 --echo # Duplicate names and unsupported embedding profiles are rejected locally.
 --error ER_WRONG_ARGUMENTS
 CALL dbms_ai.register_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION',
-                            'glm-5.2', 'SECRET_REF', 'mtr/not-read');
+                            'huawei', 'glm-5.2',
+                            'https://api.modelarts-maas.com/v2/chat/completions', 0, '{}');
 --error ER_WRONG_ARGUMENTS
 CALL dbms_ai.register_model('huawei/mtr-invalid-embedding', 'TEXT_EMBEDDING',
-                            'not-bge-m3', 'SECRET_REF', 'mtr/not-read');
---echo # PLAINTEXT_DEV is accepted by this Debug-only package test but never invoked.
-CALL dbms_ai.register_model('huawei/mtr-plaintext-dev', 'TEXT_GENERATION',
-                            'glm-5.2', 'PLAINTEXT_DEV', 'dev-only-not-invoked');
-SELECT credential_mode
-  FROM mysql.taurusdb_ai_model_config
- WHERE model_name = 'huawei/mtr-plaintext-dev' AND status = 'ACTIVE';
-CALL dbms_ai.delete_model('huawei/mtr-plaintext-dev', 'TEXT_GENERATION');
+                            'huawei', 'not-bge-m3',
+                            'https://api.modelarts-maas.com/v1/embeddings', 1024, '{}');
+--error ER_WRONG_ARGUMENTS
+CALL dbms_ai.register_model('huawei/mtr-invalid-options', 'TEXT_GENERATION',
+                            'huawei', 'glm-5.2',
+                            'https://api.modelarts-maas.com/v2/chat/completions', 0, '[]');
+--error ER_WRONG_ARGUMENTS
+CALL dbms_ai.register_model('huawei/mtr-secret-in-options', 'TEXT_GENERATION',
+                            'huawei', 'glm-5.2',
+                            'https://api.modelarts-maas.com/v2/chat/completions', 0,
+                            '{"api_key":"must-not-be-stored"}');
+--echo # Credentials are intentionally absent from the model control table.
+--error ER_BAD_FIELD_ERROR
+SELECT credential_mode FROM mysql.ai_model_config;
 --echo # The public model list exposes exactly safe lifecycle metadata.
 CALL dbms_ai.show_models();
 CALL dbms_ai.update_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION',
-                          'kimi-k2.6', 'SECRET_REF', 'mtr/not-read');
+                          'huawei', 'kimi-k2.6',
+                          'https://api.modelarts-maas.com/v2/chat/completions', 0, '{}');
 --echo # Updating exposes only the replacement active configuration.
 CALL dbms_ai.show_models();
 --echo # Resolution observes only the successor and cannot invoke a provider.
@@ -90,7 +102,8 @@ SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/mtr-model-admin-generation'), '$.confi
 SET SESSION debug = '+d,inject_error_ha_write_row';
 --error ER_UNKNOWN_ERROR
 CALL dbms_ai.update_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION',
-                          'should-not-persist', 'SECRET_REF', 'mtr/not-read');
+                          'huawei', 'should-not-persist',
+                          'https://api.modelarts-maas.com/v2/chat/completions', 0, '{}');
 SET SESSION debug = '-d,inject_error_ha_write_row';
 SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/mtr-model-admin-generation'), '$.config_version');
 CALL dbms_ai.delete_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION');
@@ -100,7 +113,8 @@ CALL dbms_ai.show_models();
 SELECT AI_MODEL_INFO('huawei/mtr-model-admin-generation');
 
 REVOKE SELECT, INSERT, UPDATE, DELETE, ALTER, DROP, INDEX
-  ON mysql.taurusdb_ai_model_config
+  ON mysql.ai_model_config
   FROM 'ai_model_admin_dml'@'localhost';
 DROP USER 'ai_model_admin_dml'@'localhost';
 DROP USER 'ai_model_admin_super'@'localhost';
+SET GLOBAL rds_ai_maas = OFF;

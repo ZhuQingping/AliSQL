@@ -1,11 +1,14 @@
+SET GLOBAL rds_ai_maas = ON;
 SET GLOBAL vidx_disabled = OFF;
 SET transaction_isolation = 'READ-COMMITTED';
 GRANT AI_INVOKE, AI_ADMIN ON *.* TO 'root'@'localhost';
 # Debug-only fixture Profiles never contact a provider or read a secret.
-CALL dbms_ai.register_model('mtr/fixture-embedding', 'TEXT_EMBEDDING',
-'fixture-embedding', 'SECRET_REF', 'mtr/not-read');
-CALL dbms_ai.register_model('mtr/fixture-chat', 'TEXT_GENERATION',
-'fixture-chat', 'SECRET_REF', 'mtr/not-read');
+CALL dbms_ai.register_model('mtr/fixture-embedding', 'TEXT_EMBEDDING', 'mtr',
+'fixture-embedding',
+'https://db4ai-mtr-fixture.invalid/v1/embeddings', 1024, '{}');
+CALL dbms_ai.register_model('mtr/fixture-chat', 'TEXT_GENERATION', 'mtr',
+'fixture-chat',
+'https://db4ai-mtr-fixture.invalid/v2/chat/completions', 0, '{}');
 CREATE TABLE rag_manual_chunk (
 tenant_id BIGINT UNSIGNED NOT NULL,
 source_id VARCHAR(64) NOT NULL,
@@ -29,14 +32,15 @@ INSERT INTO rag_manual_chunk
 embedding, embedding_model, embedding_config_version, embedding_space_id)
 VALUES
 (42, 'manual-42', 1, 'gateway', 'support', 'Tenant 42 gateway procedure.',
-AI_EMBEDDING('Tenant 42 gateway procedure.', 'mtr/fixture-embedding', 1024),
+AI_EMBEDDING('mtr/fixture-embedding', 'Tenant 42 gateway procedure.', JSON_OBJECT('dimension', 1024)),
 'mtr/fixture-embedding', 1, 'mtr/fixture/1024/cosine'),
 (77, 'manual-77', 1, 'gateway', 'support', 'Tenant 77 private procedure.',
-AI_EMBEDDING('Tenant 77 private procedure.', 'mtr/fixture-embedding', 1024),
+AI_EMBEDDING('mtr/fixture-embedding', 'Tenant 77 private procedure.', JSON_OBJECT('dimension', 1024)),
 'mtr/fixture-embedding', 1, 'mtr/fixture/1024/cosine');
 # The retrieval query keeps tenant and business predicates in SQL.
-SET @query_embedding = AI_EMBEDDING('How do I handle an offline gateway?',
-'mtr/fixture-embedding', 1024);
+SET @query_embedding = AI_EMBEDDING('mtr/fixture-embedding',
+'How do I handle an offline gateway?',
+JSON_OBJECT('dimension', 1024));
 SELECT source_id, chunk_id, content
 FROM rag_manual_chunk
 WHERE tenant_id = 42
@@ -55,7 +59,7 @@ INSERT INTO rag_manual_chunk
 embedding, embedding_model, embedding_config_version, embedding_space_id)
 VALUES
 (42, 'invalid-space', 1, 'gateway', 'support', 'must fail',
-AI_EMBEDDING('must fail', 'mtr/fixture-embedding', 1024),
+AI_EMBEDDING('mtr/fixture-embedding', 'must fail', JSON_OBJECT('dimension', 1024)),
 'mtr/fixture-embedding', 2, 'mtr/fixture/other');
 ERROR HY000: Check constraint 'ck_embedding_contract' is violated.
 # STORED generated vectors synchronously embed document writes and updates.
@@ -64,9 +68,24 @@ id INT AUTO_INCREMENT PRIMARY KEY,
 doc TEXT NOT NULL,
 category VARCHAR(32) NOT NULL DEFAULT 'general',
 vec VECTOR(1024)
-AS (AI_EMBEDDING(doc, 'mtr/fixture-embedding', 1024)) STORED,
+AS (AI_EMBEDDING('mtr/fixture-embedding', doc, JSON_OBJECT('dimension', 1024))) STORED,
 VECTOR INDEX ix_knowledge_vec (vec) m=3 distance=cosine
 ) ENGINE=InnoDB;
+# Statement binlog is rejected before a STORED expression can invoke MaaS.
+SET @rag_original_binlog_format = @@SESSION.binlog_format;
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
+SET @rag_original_transaction_isolation = @@SESSION.transaction_isolation;
+SET SESSION transaction_isolation = 'REPEATABLE-READ';
+SET SESSION binlog_format = 'STATEMENT';
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
+INSERT INTO knowledge_base (doc) VALUES ('statement binlog must not invoke MaaS');
+ERROR 42000: This version of MySQL doesn't yet support 'DB4AI MaaS invocation in a data-changing statement requires row-based binlog'
+SET SESSION binlog_format = @rag_original_binlog_format;
+Warnings:
+Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
+SET SESSION transaction_isolation = @rag_original_transaction_isolation;
 INSERT INTO knowledge_base (doc) VALUES
 ('TaurusDB improves MySQL-compatible database throughput.'),
 ('A database instance can grow to 128 TB of storage.'),
@@ -87,7 +106,8 @@ SET @rag_original_binlog_row_image = @@SESSION.binlog_row_image;
 SET SESSION binlog_row_image = 'MINIMAL';
 UPDATE knowledge_base SET category = 'operations' WHERE id = 3;
 SET @knowledge_query = AI_EMBEDDING(
-'How can read traffic be offloaded?', 'mtr/fixture-embedding', 1024);
+'mtr/fixture-embedding', 'How can read traffic be offloaded?',
+JSON_OBJECT('dimension', 1024));
 SELECT id, doc, VEC_DISTANCE(vec, @knowledge_query) AS distance
 FROM knowledge_base FORCE INDEX (ix_knowledge_vec)
 ORDER BY VEC_DISTANCE(vec, @knowledge_query), id
@@ -135,3 +155,4 @@ DROP TABLE rag_manual_chunk;
 CALL dbms_ai.delete_model('mtr/fixture-embedding', 'TEXT_EMBEDDING');
 CALL dbms_ai.delete_model('mtr/fixture-chat', 'TEXT_GENERATION');
 SET GLOBAL vidx_disabled = ON;
+SET GLOBAL rds_ai_maas = OFF;
