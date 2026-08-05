@@ -228,7 +228,9 @@ P0 采用两条相互衔接但职责分离的主线：**调用执行主线（Dat
 负责模型生命周期、凭据、用户授权和发布。模型治理的变更只影响发布后的新调用，不能
 改变已开始调用所绑定的配置版本。
 
-![TaurusDB MaaS 双主线流程图](taurusdb-maas-dual-plane-flow.svg)
+![TaurusDB MaaS 双主线流程图](assets/taurusdb-maas-dual-plane-flow.svg)
+
+可编辑源：[`taurusdb-maas-dual-plane-flow.drawio`](assets/taurusdb-maas-dual-plane-flow.drawio)。
 
 ### 3.1 调用执行主线（Data Plane）
 

@@ -3,6 +3,9 @@
 **目标：** 将文本生成接口冻结并实现为 `AI_ANALYZE(model_name, prompt [, options_json])`，移除旧
 `task_text + input_value + mode` 契约，迁移离线 MTR、真实 MaaS SQL 和设计文档。
 
+**图形说明：** 本文不包含独立图片；关联架构与流程图的可编辑 draw.io 源文件位于
+[`assets/taurusdb-maas-committer-diagrams.drawio`](assets/taurusdb-maas-committer-diagrams.drawio)。
+
 **已确认的接口决策：**
 
 - `model_name`、`prompt` 必填；第三参数可省略。

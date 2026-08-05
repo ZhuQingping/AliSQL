@@ -61,7 +61,7 @@ P0 不交付异步/批量推理、多 Provider 生产 Adapter、流式/多模态
 
 ### 2.1 目标
 
-1. 让应用通过 SQL 安全调用已配置的华为 MaaS 文本模型。
+1. 让应用通过 SQL 安全调用已配置的华为 MaaS 文本模型，并为后续接入阿里云百炼、字节方舟等外部模型服务保留接口扩展能力。
 2. 支持“向量化 -> 向量索引和业务过滤 -> 已授权资料回答”的 RAG 闭环。
 3. 支持 SQL 结果摘要、经营分析和 DBA 只读诊断，不执行自动修复 SQL。
 4. 让模型变更、权限、凭据和外部出站可审计、可定位、可演进。
@@ -143,9 +143,13 @@ Aurora 官方参考（调研日期均为 2026-08-05）：
 
 ![TaurusDB MaaS vertical architecture](assets/taurusdb-maas-architecture.svg)
 
+可编辑源：[`taurusdb-maas-committer-diagrams.drawio`，页“01 Architecture”](assets/taurusdb-maas-committer-diagrams.drawio)。
+
 ### 4.2 一次调用的时序
 
 ![AI_ANALYZE controlled invocation flow](assets/taurusdb-maas-invocation-flow.svg)
+
+可编辑源：[`taurusdb-maas-committer-diagrams.drawio`，页“02 Invocation Flow”](assets/taurusdb-maas-committer-diagrams.drawio)。
 
 **图例与返回路径说明：** 实线是 mysqld 代码路径；虚线是每个 Region 必须由云网络/运维完成
 并验收的部署前提，不是 mysqld 自动创建的网络资源。HTTPS 响应与请求使用同一连接的反向流量，
@@ -234,6 +238,8 @@ SELECT AI_ANALYZE(
 ### 6.1 模块边界
 
 ![mysqld server module boundaries](assets/taurusdb-maas-server-modules.svg)
+
+可编辑源：[`taurusdb-maas-committer-diagrams.drawio`，页“03 Server Modules”](assets/taurusdb-maas-committer-diagrams.drawio)。
 
 | 子模块 | 主要文件 | 责任 | 不负责 |
 |---|---|---|---|
@@ -336,6 +342,8 @@ P0 是实例级授权。按 `user@host -> model/capability`、预算、配额和
 
 ![Credential resolution flow](assets/taurusdb-maas-credential-flow.svg)
 
+可编辑源：[`taurusdb-maas-committer-diagrams.drawio`，页“04 Credential Flow”](assets/taurusdb-maas-committer-diagrams.drawio)。
+
 - Release/生产只允许 `SECRET_REF`；注册/更新时验证引用可读且非空，运行时每次调用读取。
 - Debug 开发可使用 `PLAINTEXT_DEV` 缩短联调路径；其值在本次调用的进程内存中构造 Bearer
   header，调用后按现有对象生命周期释放。它不是 OAuth 短生命周期令牌，且不应写入 SQL 结果、
@@ -352,6 +360,8 @@ P0 是实例级授权。按 `user@host -> model/capability`、预算、配额和
 外呼，必须纳入变更记录与告警，而不是常规降级手段。
 
 ![Two phase audit flow](assets/taurusdb-maas-audit-flow.svg)
+
+可编辑源：[`taurusdb-maas-committer-diagrams.drawio`，页“05 Audit Flow”](assets/taurusdb-maas-committer-diagrams.drawio)。
 
 起始事件安全落盘失败时，调用 fail closed、不得出站。终态事件写入失败时，云端请求可能已发生；
 保留 `STARTED`，日志平台按缺失终态处置为 `UNKNOWN`。每行仅包含时间、`call_id`、实例、账号、
