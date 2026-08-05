@@ -41,7 +41,7 @@ component keyring 和假的测试数据验证发布前探测及 fail-closed，�
 
 - 审计写入本地受控文件；日志采集、保留、磁盘满告警和运维平台查询由 TaurusDB 日志平台
   提供，不在 P0 SQL 面交付。
-- `mysql.taurusdb_ai_model_config` 是内部控制表，不支持客户直接 DML/DDL；Profile 发布、更新
+- `mysql.ai_model_config` 是内部控制表，不支持客户直接 DML/DDL；Profile 发布、更新
   和停用必须经 `dbms_ai`，其变更进入 binlog。生产发布还需在目标环境以实际 keyring 引用
   验证 reader 可读、轮换及权限配置。
 - embedding-space、distance metric 和 index compatibility 已在 RAG schema/查询

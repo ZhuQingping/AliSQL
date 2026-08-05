@@ -8,11 +8,11 @@ Profile 和两阶段文件审计模型，使主节点与只读节点均可调用
 
 ## 约束
 
-- Runtime 只读取 `mysql.taurusdb_ai_model_config`，不再读取
+- Runtime 只读取 `mysql.ai_model_config`，不再读取
   `alisql_ai_tenant_account`、`alisql_ai_tenant_binding` 或
   `alisql_ai_call_audit`。
-- `AI_INVOKE` 是唯一调用权限；`AI_ADMIN` 用于 Profile 管理。保留
-  `AI_AUDIT_VIEWER` 注册以兼容已有 grant，但不提供 `AI_AUDIT_INFO()` 文件读取。
+- `AI_INVOKE` 是唯一调用权限；`AI_ADMIN` 用于 Profile 管理。不提供
+  `AI_AUDIT_INFO()` 文件读取。
 - `ai_invoke_audit` 是默认 ON 的动态 GLOBAL 布尔变量；不注册 SESSION 作用域。
 - 审计文件由启动参数 `--ai-invoke-audit-log-file` 配置；未配置时位于 datadir，普通 SQL
   会话不得修改。
@@ -43,7 +43,7 @@ Profile 和两阶段文件审计模型，使主节点与只读节点均可调用
 
 1. 先写失败测试：仅新表中的 ACTIVE Profile 可解析；无 `AI_INVOKE` 在打开 Profile 前拒绝；
    每 capability 一个 ACTIVE 默认模型；Profile 停用后后续调用失败。
-2. 创建 `mysql.taurusdb_ai_model_config`，包含 HLD 的 Profile、凭据、版本、维度、生成限制
+2. 创建 `mysql.ai_model_config`，包含 HLD 的 Profile、凭据、版本、维度、生成限制
    和生命周期字段及默认模型索引。
 3. 在 upgrade SQL 中迁移可转换的旧 Profile 到实例级 Profile，保留旧表，不迁移 tenant/
    account 绑定；Debug `PLAINTEXT_DEV` 只在 Debug 路径保留。

@@ -423,7 +423,7 @@ P0 可以先把这些作为 C++ 结构和函数边界，不要求全部拆成独
 
 ### 5.3 模型配置、凭据与 Provider 路由
 
-P0 模型治理控制面仅使用一张低频配置表 `mysql.taurusdb_ai_model_config`，描述“模型是
+P0 模型治理控制面仅使用一张低频配置表 `mysql.ai_model_config`，描述“模型是
 什么、如何调用”。调用权限不再通过 tenant、账号或模型绑定表表达，而由 MySQL 动态权限
 `AI_INVOKE` 表达；调用审计写入受控的追加式日志文件，见第 8 章。这样模型配置、账号
 授权和审计日志保持清晰边界，且不依赖系统表写入，因此可在只读节点执行。
@@ -433,33 +433,64 @@ P0 模型治理控制面仅使用一张低频配置表 `mysql.taurusdb_ai_model_
 条件或可信会话上下文实现，不能以 AI 模型授权替代数据访问控制。
 
 ```sql
-CREATE TABLE mysql.taurusdb_ai_model_config (
-  Id BIGINT NOT NULL AUTO_INCREMENT,
-  model_name VARCHAR(255) NOT NULL,
-  provider VARCHAR(64) NOT NULL,
-  capability VARCHAR(64) NOT NULL,
-  provider_model_name VARCHAR(255) NOT NULL,
-  endpoint_url TEXT NOT NULL,
-  auth_type VARCHAR(64) NOT NULL,
-  credential_mode VARCHAR(32) NOT NULL DEFAULT 'SECRET_REF',
-  credential_ref VARCHAR(512) NULL,
-  api_key_plaintext TEXT NULL,
-  default_dimension INT NULL,
+CREATE TABLE mysql.ai_model_config (
+  Id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  model_name VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  provider VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  capability ENUM('TEXT_EMBEDDING','TEXT_GENERATION') NOT NULL,
+  provider_model_name VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  endpoint_url TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  auth_type VARCHAR(64) CHARACTER SET ascii NOT NULL DEFAULT 'BEARER_API_KEY',
+  credential_mode ENUM('SECRET_REF','PLAINTEXT_DEV','AWS_IAM_ROLE') NOT NULL DEFAULT 'SECRET_REF',
+  credential_ref VARCHAR(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL,
+  api_key_plaintext BLOB NULL,
+  default_dimension INT UNSIGNED NULL,
   allowed_dimensions JSON NULL,
-  model_revision VARCHAR(128) NULL,
+  model_revision VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL,
   generation_defaults JSON NULL,
   generation_limits JSON NULL,
-  is_builtin BOOLEAN NOT NULL DEFAULT TRUE,
-  is_default BOOLEAN NOT NULL DEFAULT FALSE, -- compatibility field; P0 always FALSE
-  status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
-  config_version BIGINT NOT NULL DEFAULT 1,
+  is_builtin TINYINT(1) NOT NULL DEFAULT 1,
+  is_default TINYINT(1) NOT NULL DEFAULT 0, -- compatibility field; P0 always FALSE
+  status ENUM('ACTIVE','DISABLED','RETIRED') NOT NULL DEFAULT 'ACTIVE',
+  config_version BIGINT UNSIGNED NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (Id),
-  UNIQUE KEY uq_ai_model_config (model_name, capability, config_version)
-);
+  UNIQUE KEY uq_ai_model_config (model_name, capability, config_version),
+  KEY ix_ai_model_active (model_name, capability, status),
+  KEY ix_ai_model_default (capability, is_default, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC;
 ```
+
+评审时按以下字段组理解该表；普通 SQL 只接触 `model_name`，其余内容由 `dbms_ai` 和
+Runtime 使用：
+
+| 字段组 | 字段 | 用途 |
+|---|---|---|
+| Profile 身份 | `Id`、`model_name`、`provider`、`capability`、`provider_model_name` | 把客户使用的逻辑模型名映射为唯一的 Provider 模型与调用能力。 |
+| 受控路由与认证 | `endpoint_url`、`auth_type`、`credential_mode`、`credential_ref`、`api_key_plaintext` | 仅管理面和 Runtime 可见；客户 SQL 不能指定 Endpoint 或读取/写入任何凭据字段。 |
+| Embedding 语义 | `default_dimension`、`allowed_dimensions`、`model_revision` | 用于限制可请求的维度、识别向量兼容空间并支持模型升级。 |
+| 生成策略 | `generation_defaults`、`generation_limits` | 保留服务端治理空间；P0 不透传 Provider 原始 JSON。 |
+| 生命周期与发布 | `is_builtin`、`is_default`、`status`、`config_version`、`created_at`、`updated_at` | 控制模型是否可用、记录不可变配置版本并支持发布、回退和审计。 |
+
+**3344 Debug 验证实例的脱敏 Profile 快照。** 以下数据来自该实例当前物理表
+`mysql.taurusdb_ai_model_config`；其字段和索引与本设计的目标表
+`mysql.ai_model_config` 对齐，物理重命名属于后续升级实施。查询刻意排除了
+`credential_ref` 和 `api_key_plaintext`；`endpoint_url` 作为受控路由配置保留展示。
+
+| Id | 能力 | 逻辑模型名 | Provider 模型 | 受控 Endpoint | 默认维度 | 凭据模式 | 默认 | 状态 | 配置版本 |
+|---:|---|---|---|---|---:|---|---|---|---:|
+| 1 | `TEXT_EMBEDDING` | `huawei/bge-m3` | `bge-m3` | `https://api.modelarts-maas.com/v1/embeddings` | 1024 | `PLAINTEXT_DEV` | 是 | `ACTIVE` | 1 |
+| 2 | `TEXT_GENERATION` | `huawei/glm-5.2` | `glm-5.2` | `https://api.modelarts-maas.com/v2/chat/completions` | — | `PLAINTEXT_DEV` | 是 | `ACTIVE` | 1 |
+| 3 | `TEXT_GENERATION` | `huawei/kimi-k2.6` | `kimi-k2.6` | `https://api.modelarts-maas.com/v2/chat/completions` | — | `PLAINTEXT_DEV` | 否 | `ACTIVE` | 1 |
+| 4 | `TEXT_GENERATION` | `huawei/deepseek-v4-pro` | `deepseek-v4-pro` | `https://api.modelarts-maas.com/v2/chat/completions` | — | `PLAINTEXT_DEV` | 否 | `ACTIVE` | 1 |
+| 5 | `TEXT_GENERATION` | `huawei/deepseek-v4-flash` | `deepseek-v4-flash` | `https://api.modelarts-maas.com/v2/chat/completions` | — | `PLAINTEXT_DEV` | 否 | `ACTIVE` | 1 |
+| 6 | `TEXT_GENERATION` | `huawei/openpangu-2.0-pro` | `openpangu-2.0-pro` | `https://api.modelarts-maas.com/v2/chat/completions` | — | `PLAINTEXT_DEV` | 否 | `ACTIVE` | 1 |
+| 7 | `TEXT_GENERATION` | `huawei/openpangu-2.0-flash` | `openpangu-2.0-flash` | `https://api.modelarts-maas.com/v2/chat/completions` | — | `PLAINTEXT_DEV` | 否 | `ACTIVE` | 1 |
+
+这些 Profile 均为内置 Huawei 模型，认证类型为 `BEARER_API_KEY`。`PLAINTEXT_DEV` 只允许
+隔离开发/验证实例；生产 Profile 必须改为 `SECRET_REF` 或其他受控凭据模式。
 
 字段规则：
 
@@ -503,14 +534,13 @@ CREATE TABLE mysql.taurusdb_ai_model_config (
   新版本。
 - `AI_ADMIN` 是 `dbms_ai` 模型管理包的前置权限。管理员只能通过
   `dbms_ai.register_model()`、`update_model()`、`delete_model()` 和 `show_models()` 管理
-  Profile；`mysql.taurusdb_ai_model_config` 是内部控制表。即使账号同时持有 `AI_ADMIN` 与
+  Profile；`mysql.ai_model_config` 是内部控制表。即使账号同时持有 `AI_ADMIN` 与
   表的 DML/DDL 权限，直接 `INSERT`、`UPDATE`、`DELETE`、`ALTER` 或 `DROP` 仍必须拒绝。
   管理包经受控系统表访问路径发布新 `config_version`、写入 binlog 并复制到备机。动态权限的
   授予和回收仍遵循 MySQL 的 `GRANT`/`REVOKE` 与 `WITH GRANT OPTION` 管理规则，不能因为
   拥有 `AI_ADMIN` 而隐式扩大其他账号的权限。
-- `AI_AUDIT_VIEWER` 不作为 P0 的数据库内审计文件读取能力交付。删除系统表审计后，P0 不
-  提供可由普通 SQL 直接读取审计文件的 `AI_AUDIT_INFO()`；审计查看由 TaurusDB 日志平台
-  的访问控制负责。若后续提供受控审计查询服务，再定义该动态权限的查询语义。
+- P0 不提供可由普通 SQL 直接读取审计文件的 `AI_AUDIT_INFO()`；审计查看由 TaurusDB 日志
+  平台的访问控制负责。若后续提供受控审计查询服务，再单独定义所需动态权限。
 - 配置更新不得覆写会影响向量语义或协议契约的已发布版本。管理接口应创建新
   `config_version`，完成校验后原子发布；停用、下线和撤权必须使后续新调用立即拒绝，
   已开始调用继续按已解析版本完成并写审计。
@@ -1194,7 +1224,7 @@ P0 仅保留一张 AI 系统表：
 
 | 系统表 | 职责 | P0 结论 |
 |---|---|---|
-| `mysql.taurusdb_ai_model_config` | 模型/Profile、版本、Endpoint、维度和凭据引用 | 保留 |
+| `mysql.ai_model_config` | 模型/Profile、版本、Endpoint、维度和凭据引用 | 保留 |
 
 权限记录复用 MySQL 既有 `mysql.global_grants`，其中 `AI_INVOKE` 决定账号能否调用 AI，
 `AI_ADMIN` 用于受控 Profile 管理；它们不是新增 AI 系统表。调用生命周期、计量和故障

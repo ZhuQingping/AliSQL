@@ -31,7 +31,7 @@ Embedding、流式输出、多模态、按模型或预算的细粒度授权，�
 
 1. 业务 SQL 只传逻辑模型名，不能传 Endpoint、Provider 原始 JSON 或 API Key。
 2. 每次调用必须先校验 `AI_INVOKE`，再解析 Profile 和发起网络出站。
-3. 模型配置表 `mysql.taurusdb_ai_model_config` 是内部控制表；只能由 `dbms_ai` 管理过程写入，
+3. 模型配置表 `mysql.ai_model_config` 是内部控制表；只能由 `dbms_ai` 管理过程写入，
    即使持有表 DML/DDL 权限也必须拒绝直接修改。
 4. P0 没有默认模型；`AI_EMBEDDING()` 和 `AI_ANALYZE()` 均须显式选择模型。
 5. 审计开启时，出站前必须先安全写入 `AI_CALL_STARTED`；无法写入则 fail closed，不能请求 MaaS。
@@ -63,7 +63,7 @@ Embedding、流式输出、多模态、按模型或预算的细粒度授权，�
 ## 4. SQL 与运维接口
 
 ```sql
--- 仅 AI_ADMIN 可执行；直接修改 mysql.taurusdb_ai_model_config 会被拒绝。
+-- 仅 AI_ADMIN 可执行；直接修改 mysql.ai_model_config 会被拒绝。
 CALL dbms_ai.register_model(
   'huawei/bge-m3', 'TEXT_EMBEDDING', 'bge-m3',
   'SECRET_REF', 'maas/bge-m3/key');

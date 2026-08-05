@@ -1,35 +1,513 @@
-<mxfile host="app.diagrams.net" modified="2026-08-05T00:00:00.000Z" agent="Codex" version="26.0.14" type="device">
-  <diagram id="architecture" name="01 Architecture"><mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="850" pageHeight="1100"><root><mxCell id="0"/><mxCell id="1" parent="0"/>
-    <mxCell id="t" value="TaurusDB MySQL × Huawei Cloud MaaS&#xa;控制面与数据面分层架构" style="text;html=1;align=left;verticalAlign=middle;fontSize=25;fontStyle=1;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="60" y="30" width="900" height="60" as="geometry"/></mxCell>
-    <mxCell id="client" value="01  应用 / CES / DBA 客户端&#xa;MySQL SQL：模型名、prompt、受控 options" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#CBD5E1;fontSize=16;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="120" y="120" width="760" height="80" as="geometry"/></mxCell>
-    <mxCell id="vpc" value="TaurusDB Tenant VPC · mysqld" style="swimlane;rounded=1;html=1;fillColor=#EFF6FF;strokeColor=#60A5FA;fontColor=#102A43;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="60" y="240" width="880" height="420" as="geometry"/></mxCell>
-    <mxCell id="sql" value="SQL AI Functions&#xa;参数 / NULL / AI_INVOKE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2563EB;strokeColor=#2563EB;fontColor=#FFFFFF;fontStyle=1;fontSize=17;" vertex="1" parent="vpc"><mxGeometry x="80" y="70" width="720" height="70" as="geometry"/></mxCell>
-    <mxCell id="runtime" value="AI Runtime&#xa;Profile 快照 · 审计编排 · 本地拒绝边界" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#93C5FD;fontColor=#102A43;fontSize=16;" vertex="1" parent="vpc"><mxGeometry x="80" y="175" width="720" height="65" as="geometry"/></mxCell>
-    <mxCell id="registry" value="Model Registry &amp; Credential&#xa;固定 Endpoint · SECRET_REF / Debug" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#93C5FD;fontColor=#102A43;" vertex="1" parent="vpc"><mxGeometry x="80" y="280" width="310" height="85" as="geometry"/></mxCell>
-    <mxCell id="audit" value="AI File Audit&#xa;STARTED → SUCCEEDED / FAILED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#2DD4BF;fontColor=#102A43;" vertex="1" parent="vpc"><mxGeometry x="490" y="280" width="310" height="85" as="geometry"/></mxCell>
-    <mxCell id="adapter" value="Huawei MaaS Adapter → libcurl HTTPS Transport" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1D4ED8;strokeColor=#1D4ED8;fontColor=#FFFFFF;fontStyle=1;fontSize=15;" vertex="1" parent="vpc"><mxGeometry x="80" y="395" width="720" height="45" as="geometry"/></mxCell>
-    <mxCell id="egress" value="Controlled Egress · Policy Route / NAT Gateway / Fixed EIP / DNS / TLS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#2DD4BF;fontColor=#102A43;fontSize=15;" vertex="1" parent="1"><mxGeometry x="180" y="710" width="640" height="65" as="geometry"/></mxCell>
-    <mxCell id="maas" value="Huawei Cloud MaaS&#xa;/v1/embeddings · /v2/chat/completions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0F766E;strokeColor=#0F766E;fontColor=#FFFFFF;fontStyle=1;fontSize=17;" vertex="1" parent="1"><mxGeometry x="260" y="825" width="480" height="75" as="geometry"/></mxCell>
-    <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;endFill=1;" edge="1" parent="1" source="client" target="sql"><mxGeometry relative="1" as="geometry"/></mxCell><mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="sql" target="runtime"><mxGeometry relative="1" as="geometry"/></mxCell><mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="runtime" target="adapter"><mxGeometry relative="1" as="geometry"/></mxCell><mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0F766E;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="adapter" target="egress"><mxGeometry relative="1" as="geometry"/></mxCell><mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0F766E;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="egress" target="maas"><mxGeometry relative="1" as="geometry"/></mxCell>
-  </root></mxGraphModel></diagram>
-  <diagram id="invocation" name="02 Invocation Flow"><mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="850" pageHeight="1100"><root><mxCell id="0"/><mxCell id="1" parent="0"/>
-    <mxCell id="t" value="AI_ANALYZE() · 一次受控模型调用" style="text;html=1;fontSize=25;fontStyle=1;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="60" y="30" width="800" height="45" as="geometry"/></mxCell>
-    <mxCell id="l1" value="Client" style="text;html=1;fontStyle=1;fontSize=16;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="110" y="110" width="140" height="30" as="geometry"/></mxCell><mxCell id="l2" value="mysqld" style="text;html=1;fontStyle=1;fontSize=16;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="340" y="110" width="150" height="30" as="geometry"/></mxCell><mxCell id="l3" value="Audit / Credential" style="text;html=1;fontStyle=1;fontSize=16;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="580" y="110" width="180" height="30" as="geometry"/></mxCell><mxCell id="l4" value="Huawei MaaS" style="text;html=1;fontStyle=1;fontSize=16;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="805" y="110" width="140" height="30" as="geometry"/></mxCell>
-    <mxCell id="s1" value="1  SELECT AI_ANALYZE(model, prompt [, options])" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#60A5FA;fontColor=#102A43;fontSize=15;" vertex="1" parent="1"><mxGeometry x="90" y="165" width="800" height="50" as="geometry"/></mxCell><mxCell id="s2" value="参数、AI_INVOKE、options 校验&#xa;空值 / 未知 option / 越界在出站前拒绝" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#93C5FD;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="300" y="245" width="290" height="65" as="geometry"/></mxCell><mxCell id="s3" value="2  审计 ON：AI_CALL_STARTED append + fsync&#xa;失败 → fail closed，不出站" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#2DD4BF;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="535" y="345" width="310" height="65" as="geometry"/></mxCell><mxCell id="s4" value="3  读取 credential；libcurl POST&#xa;经 Policy Route / NAT / EIP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#60A5FA;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="300" y="445" width="290" height="65" as="geometry"/></mxCell><mxCell id="s5" value="Huawei MaaS 推理&#xa;Chat response + usage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#2DD4BF;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="730" y="515" width="180" height="65" as="geometry"/></mxCell><mxCell id="s6" value="4  Adapter 校验最终 content；写 SUCCEEDED / FAILED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#2DD4BF;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="300" y="620" width="440" height="55" as="geometry"/></mxCell><mxCell id="s7" value="5  返回 utf8mb4 文本或 SQL 错误" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#60A5FA;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="90" y="730" width="800" height="50" as="geometry"/></mxCell>
-    <mxCell id="n" value="关键边界：参数 / 权限 / Profile / credential / STARTED 审计失败均不产生 MaaS 调用；出站后的中断、超时或回滚可能仍产生费用。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#FDBA74;fontColor=#7C2D12;fontSize=14;" vertex="1" parent="1"><mxGeometry x="75" y="835" width="830" height="70" as="geometry"/></mxCell>
-    <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="s1" target="s2"><mxGeometry relative="1" as="geometry"/></mxCell><mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="s2" target="s3"><mxGeometry relative="1" as="geometry"/></mxCell><mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="s3" target="s4"><mxGeometry relative="1" as="geometry"/></mxCell><mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="s4" target="s5"><mxGeometry relative="1" as="geometry"/></mxCell><mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0F766E;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="s5" target="s6"><mxGeometry relative="1" as="geometry"/></mxCell><mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0F766E;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="s6" target="s7"><mxGeometry relative="1" as="geometry"/></mxCell>
-  </root></mxGraphModel></diagram>
-  <diagram id="modules" name="03 Server Modules"><mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="850" pageHeight="1100"><root><mxCell id="0"/><mxCell id="1" parent="0"/>
-    <mxCell id="t" value="mysqld 内部模块边界" style="text;html=1;fontSize=25;fontStyle=1;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="60" y="30" width="700" height="45" as="geometry"/></mxCell><mxCell id="dp" value="Data plane · 每次 SQL 调用" style="swimlane;rounded=1;html=1;fillColor=#EFF6FF;strokeColor=#60A5FA;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="60" y="100" width="880" height="260" as="geometry"/></mxCell><mxCell id="cp" value="Control plane · 管理员低频变更" style="swimlane;rounded=1;html=1;fillColor=#ECFDF5;strokeColor=#2DD4BF;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="60" y="420" width="880" height="260" as="geometry"/></mxCell>
-    <mxCell id="f" value="SQL 函数层&#xa;参数 · 类型 · 权限入口" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2563EB;strokeColor=#2563EB;fontColor=#FFFFFF;fontStyle=1;" vertex="1" parent="dp"><mxGeometry x="60" y="75" width="200" height="90" as="geometry"/></mxCell><mxCell id="r" value="AI Runtime&#xa;Profile 快照 · 审计编排" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1D4ED8;strokeColor=#1D4ED8;fontColor=#FFFFFF;fontStyle=1;" vertex="1" parent="dp"><mxGeometry x="340" y="65" width="220" height="110" as="geometry"/></mxCell><mxCell id="a" value="Adapter&#xa;Huawei JSON · libcurl" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0F766E;strokeColor=#0F766E;fontColor=#FFFFFF;fontStyle=1;" vertex="1" parent="dp"><mxGeometry x="650" y="75" width="170" height="90" as="geometry"/></mxCell>
-    <mxCell id="dbms" value="dbms_ai&#xa;注册 · 更新 · 删除 · 展示" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0F766E;strokeColor=#0F766E;fontColor=#FFFFFF;fontStyle=1;" vertex="1" parent="cp"><mxGeometry x="60" y="75" width="200" height="90" as="geometry"/></mxCell><mxCell id="mr" value="Model Registry&#xa;版本 · 能力 · 固定端点" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#047857;strokeColor=#047857;fontColor=#FFFFFF;fontStyle=1;" vertex="1" parent="cp"><mxGeometry x="340" y="65" width="220" height="110" as="geometry"/></mxCell><mxCell id="cr" value="凭据解析&#xa;SECRET_REF / Debug" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0F766E;strokeColor=#0F766E;fontColor=#FFFFFF;fontStyle=1;" vertex="1" parent="cp"><mxGeometry x="650" y="75" width="170" height="90" as="geometry"/></mxCell>
-  </root></mxGraphModel></diagram>
-  <diagram id="credential" name="04 Credential Flow"><mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="850" pageHeight="1100"><root><mxCell id="0"/><mxCell id="1" parent="0"/>
-    <mxCell id="t" value="凭据解析：配置与调用严格分离" style="text;html=1;fontSize=25;fontStyle=1;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="60" y="40" width="800" height="45" as="geometry"/></mxCell><mxCell id="a" value="AI_ADMIN&#xa;dbms_ai 发布配置" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0F766E;strokeColor=#0F766E;fontColor=#FFFFFF;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="70" y="160" width="170" height="90" as="geometry"/></mxCell><mxCell id="p" value="Model Profile&#xa;credential_mode + reference&#xa;版本化、固定 Endpoint" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#047857;strokeColor=#047857;fontColor=#FFFFFF;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="340" y="140" width="220" height="125" as="geometry"/></mxCell><mxCell id="r" value="Runtime&#xa;单次调用解析&#xa;短生命周期内存" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2563EB;strokeColor=#2563EB;fontColor=#FFFFFF;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="660" y="140" width="180" height="125" as="geometry"/></mxCell><mxCell id="s" value="SECRET_REF&#xa;keyring / CSMS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#0F766E;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="670" y="325" width="170" height="65" as="geometry"/></mxCell><mxCell id="d" value="Debug only&#xa;PLAINTEXT_DEV" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#F59E0B;fontColor=#7C2D12;" vertex="1" parent="1"><mxGeometry x="670" y="420" width="170" height="65" as="geometry"/></mxCell><mxCell id="n" value="Release 仅允许 SECRET_REF；凭据不可读时在 MaaS 出站前失败。Debug 明文仅用于临时联调，随后删除配置并轮换 Key。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#CBD5E1;fontColor=#102A43;fontSize=14;" vertex="1" parent="1"><mxGeometry x="70" y="560" width="800" height="70" as="geometry"/></mxCell>
-    <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0F766E;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="a" target="p"><mxGeometry relative="1" as="geometry"/></mxCell><mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0F766E;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="p" target="r"><mxGeometry relative="1" as="geometry"/></mxCell><mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0F766E;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="r" target="s"><mxGeometry relative="1" as="geometry"/></mxCell><mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#F59E0B;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="r" target="d"><mxGeometry relative="1" as="geometry"/></mxCell>
-  </root></mxGraphModel></diagram>
-  <diagram id="audit" name="05 Audit Flow"><mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="850" pageHeight="1100"><root><mxCell id="0"/><mxCell id="1" parent="0"/>
-    <mxCell id="t" value="两阶段审计：先落盘，再出站" style="text;html=1;fontSize=25;fontStyle=1;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="60" y="40" width="800" height="45" as="geometry"/></mxCell><mxCell id="v" value="本地校验&#xa;参数 · 权限 · Profile" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2563EB;strokeColor=#2563EB;fontColor=#FFFFFF;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="70" y="180" width="190" height="90" as="geometry"/></mxCell><mxCell id="st" value="AI_CALL_STARTED&#xa;审计文件 append + fsync&#xa;生成 call_id" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0F766E;strokeColor=#0F766E;fontColor=#FFFFFF;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="400" y="160" width="220" height="125" as="geometry"/></mxCell><mxCell id="m" value="MaaS HTTPS&#xa;请求、响应或失败" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2563EB;strokeColor=#2563EB;fontColor=#FFFFFF;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="760" y="180" width="170" height="90" as="geometry"/></mxCell><mxCell id="te" value="terminal append&#xa;SUCCEEDED / FAILED&#xa;失败按 UNKNOWN 处置" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#047857;strokeColor=#047857;fontColor=#FFFFFF;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="400" y="390" width="220" height="105" as="geometry"/></mxCell><mxCell id="n" value="STARTED 写入失败：本地拒绝，不发送 MaaS 请求" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF2F2;strokeColor=#F87171;fontColor=#B91C1C;fontSize=15;" vertex="1" parent="1"><mxGeometry x="70" y="570" width="860" height="55" as="geometry"/></mxCell>
-    <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="v" target="st"><mxGeometry relative="1" as="geometry"/></mxCell><mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="st" target="m"><mxGeometry relative="1" as="geometry"/></mxCell><mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0F766E;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="m" target="te"><mxGeometry relative="1" as="geometry"/></mxCell>
-  </root></mxGraphModel></diagram>
+<mxfile host="Electron" agent="Codex" pages="6">
+  <diagram id="review-architecture" name="00 Review Architecture">
+    <mxGraphModel dx="1557" dy="1049" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1693" pageHeight="929" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="review-title" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=30;fontStyle=1;fontColor=#102A43;fontFamily=Helvetica;" value="TaurusDB MySQL × Huawei Cloud MaaS：总体架构" vertex="1">
+          <mxGeometry height="42" width="1000" x="30" y="28" as="geometry" />
+        </mxCell>
+        <mxCell id="review-subtitle" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=16;fontColor=#486581;fontFamily=Helvetica;" value="从客户端入口、受控 SQL 执行与治理，到固定出口和 MaaS API 的单一调用" vertex="1">
+          <mxGeometry height="28" width="1050" x="30" y="75" as="geometry" />
+        </mxCell>
+        <mxCell id="review-client-zone" parent="1" style="swimlane;rounded=1;html=1;fillColor=#F8FAFC;strokeColor=#071875;strokeWidth=3;fontColor=#071875;fontSize=18;fontStyle=1;horizontal=1;startSize=36;fontFamily=Helvetica;" value="Client Access" vertex="1">
+          <mxGeometry height="700" width="245" x="41" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="review-app" parent="review-client-zone" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#071875;strokeColor=#071875;fontColor=#FFFFFF;fontSize=16;fontStyle=1;shadow=1;fontFamily=Helvetica;" value="Application / CES&#xa;MySQL protocol" vertex="1">
+          <mxGeometry height="58" width="190" x="35" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="review-entry-label" parent="review-client-zone" style="text;html=1;align=center;verticalAlign=middle;fontSize=16;fontColor=#627D98;fontStyle=1;fontFamily=Helvetica;" value="业务访问路径" vertex="1">
+          <mxGeometry height="24" width="190" x="-23" y="174" as="geometry" />
+        </mxCell>
+        <mxCell id="review-vpc-zone" parent="1" style="swimlane;rounded=1;html=1;fillColor=#EFF6FF;strokeColor=#2563EB;strokeWidth=3;fontColor=#102A43;fontSize=18;fontStyle=1;horizontal=1;startSize=36;fontFamily=Helvetica;" value="TaurusDB Tenant VPC · mysqld" vertex="1">
+          <mxGeometry height="700" width="690" x="320" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="review-egress-zone" parent="1" style="swimlane;rounded=1;html=1;fillColor=#F8FAFC;strokeColor=#071875;strokeWidth=3;fontColor=#071875;fontSize=18;fontStyle=1;horizontal=1;startSize=36;fontFamily=Helvetica;" value="Controlled Egress" vertex="1">
+          <mxGeometry height="700" width="300" x="1040" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="review-cloud-zone" parent="1" style="swimlane;rounded=1;html=1;fillColor=#F6FFF8;strokeColor=#047857;strokeWidth=3;fontColor=#075D12;fontSize=18;fontStyle=1;horizontal=1;startSize=36;fontFamily=Helvetica;" value="Guiyang Region" vertex="1">
+          <mxGeometry height="700" width="270" x="1371" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="review-maas" parent="review-cloud-zone" style="shape=cloud;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#047857;strokeWidth=3;fontColor=#075D12;fontSize=18;fontStyle=1;fontFamily=Helvetica;" value="☁&#xa;Huawei Cloud MaaS" vertex="1">
+          <mxGeometry height="210" width="260" x="5" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="review-private" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#071875;strokeWidth=3;fontColor=#071875;fontSize=16;fontStyle=1;fontFamily=Helvetica;" value="Private VPC" vertex="1">
+          <mxGeometry height="56" width="190" x="76" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="review-public" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#071875;strokeWidth=3;fontColor=#071875;fontSize=16;fontStyle=1;fontFamily=Helvetica;" value="Public EIP → DNAT" vertex="1">
+          <mxGeometry height="56" width="190" x="76" y="455" as="geometry" />
+        </mxCell>
+        <mxCell id="review-admin" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0F766E;strokeColor=#0F766E;fontColor=#FFFFFF;fontSize=16;fontStyle=1;shadow=1;fontFamily=Helvetica;" value="DBA / AI_ADMIN&#xa;dbms_ai 模型管理接口" vertex="1">
+          <mxGeometry height="76" width="190" x="76" y="615" as="geometry" />
+        </mxCell>
+        <mxCell id="review-data-label" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=16;fontColor=#1D4ED8;fontStyle=1;fontFamily=Helvetica;" value="数据面 · 每次 SQL 调用" vertex="1">
+          <mxGeometry height="30" width="320" x="345" y="226" as="geometry" />
+        </mxCell>
+        <mxCell id="review-sql" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2563EB;strokeColor=#2563EB;fontColor=#FFFFFF;fontSize=16;fontStyle=1;shadow=1;fontFamily=Helvetica;" value="&lt;font&gt;SQL AI Functions&lt;br&gt;AI_EMBEDDING / AI_ANALYZE&lt;br&gt;参数 · AI_INVOKE 校验&lt;/font&gt;" vertex="1">
+          <mxGeometry height="108" width="190" x="345" y="275" as="geometry" />
+        </mxCell>
+        <mxCell id="review-runtime" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#60A5FA;strokeWidth=3;fontColor=#102A43;fontSize=16;fontStyle=1;shadow=1;fontFamily=Helvetica;" value="AI Runtime&lt;br&gt;解析 Model Profile&lt;br&gt;&amp;nbsp;· 凭据 · 审计闸门" vertex="1">
+          <mxGeometry height="108" width="190" x="580" y="275" as="geometry" />
+        </mxCell>
+        <mxCell id="review-adapter" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1D4ED8;strokeColor=#1D4ED8;fontColor=#FFFFFF;fontSize=16;fontStyle=1;shadow=1;fontFamily=Helvetica;" value="Huawei MaaS Adapter&lt;br&gt;JSON · libcurl HTTPS" vertex="1">
+          <mxGeometry height="108" width="180" x="815" y="275" as="geometry" />
+        </mxCell>
+        <mxCell id="review-control-label" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=16;fontColor=#047857;fontStyle=1;fontFamily=Helvetica;" value="控制面与安全 · 管理员低频变更 + 每次调用保障" vertex="1">
+          <mxGeometry height="30" width="610" x="328" y="487" as="geometry" />
+        </mxCell>
+        <mxCell id="review-registry" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2DD4BF;strokeWidth=3;fontColor=#102A43;fontSize=16;fontStyle=1;shadow=1;fontFamily=Helvetica;" value="Model Registry &amp;amp; Credential&#xa;能力 · 固定 Endpoint&#xa;SECRET_REF / Debug" vertex="1">
+          <mxGeometry height="100" width="245" x="465" y="520" as="geometry" />
+        </mxCell>
+        <mxCell id="review-audit" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#2DD4BF;strokeWidth=3;fontColor=#102A43;fontSize=16;fontStyle=1;shadow=1;fontFamily=Helvetica;" value="AI File Audit&lt;br&gt;STARTED&amp;nbsp;&lt;div&gt;SUCCEEDED / FAILED&lt;br&gt;审计失败不出站&lt;/div&gt;" vertex="1">
+          <mxGeometry height="100" width="235" x="760" y="520" as="geometry" />
+        </mxCell>
+        <mxCell id="review-boundary" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#FDBA74;strokeWidth=2;fontColor=#7C2D12;fontSize=16;fontStyle=1;fontFamily=Helvetica;" value="Fail-closed：参数、权限、Profile、credential 或 审计失败&lt;div&gt;均不产生 MaaS 调用&lt;/div&gt;" vertex="1">
+          <mxGeometry height="58" width="650" x="345" y="690" as="geometry" />
+        </mxCell>
+        <mxCell id="review-policy" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#006277;strokeWidth=3;fontColor=#0017D8;fontSize=16;fontStyle=1;shadow=1;fontFamily=Helvetica;" value="Policy Route&#xa;DNS / TLS policy" vertex="1">
+          <mxGeometry height="78" width="210" x="1090" y="289" as="geometry" />
+        </mxCell>
+        <mxCell id="review-nat" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#006277;strokeWidth=3;fontColor=#0017D8;fontSize=16;fontStyle=1;shadow=1;fontFamily=Helvetica;" value="NAT Gateway / SNAT" vertex="1">
+          <mxGeometry height="68" width="210" x="1090" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="review-eip" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#006277;strokeWidth=3;fontColor=#0017D8;fontSize=16;fontStyle=1;shadow=1;fontFamily=Helvetica;" value="Fixed EIP" vertex="1">
+          <mxGeometry height="68" width="210" x="1090" y="595" as="geometry" />
+        </mxCell>
+        <mxCell id="review-egress-note" parent="1" style="text;html=1;align=center;verticalAlign=middle;fontSize=16;fontColor=#486581;fontStyle=1;fontFamily=Helvetica;" value="受控出口：仅允许固定路由与固定源地址" vertex="1">
+          <mxGeometry height="42" width="230" x="1077" y="705" as="geometry" />
+        </mxCell>
+        <mxCell id="review-emb-api" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#075D12;strokeWidth=3;fontColor=#075D12;fontSize=17;fontStyle=1;fontFamily=Helvetica;" value="POST /v1/embeddings" vertex="1">
+          <mxGeometry height="54" width="250" x="1382" y="500" as="geometry" />
+        </mxCell>
+        <mxCell id="review-chat-api" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#075D12;strokeWidth=3;fontColor=#075D12;fontSize=17;fontStyle=1;fontFamily=Helvetica;" value="POST /v2/chat/completions" vertex="1">
+          <mxGeometry height="54" width="250" x="1382" y="580" as="geometry" />
+        </mxCell>
+        <mxCell id="review-response-note" parent="1" style="text;html=1;align=center;verticalAlign=middle;fontSize=15;fontColor=#486581;fontStyle=1;fontFamily=Helvetica;" value="HTTPS request / JSON response" vertex="1">
+          <mxGeometry height="30" width="270" x="1372" y="705" as="geometry" />
+        </mxCell>
+        <mxCell id="review-e-app-private" edge="1" parent="1" source="review-app" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#071875;strokeWidth=3;endArrow=block;endFill=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Helvetica;" target="review-private">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="171.03" y="330.51" />
+              <mxPoint x="51.03" y="330.51" />
+              <mxPoint x="51.03" y="388" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="review-e-app-public" edge="1" parent="1" source="review-app" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#071875;strokeWidth=3;endArrow=block;endFill=1;fontFamily=Helvetica;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="171.03" y="330" />
+              <mxPoint x="51.03" y="330" />
+              <mxPoint x="51.03" y="480" />
+            </Array>
+            <mxPoint x="71" y="480" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="review-e-private-sql" edge="1" parent="1" source="review-private" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#071875;strokeWidth=3;endArrow=block;endFill=1;fontFamily=Helvetica;" target="review-sql">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="300" y="388" />
+              <mxPoint x="300" y="329.03" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="review-e-public-sql" edge="1" parent="1" source="review-public" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#071875;strokeWidth=3;endArrow=block;endFill=1;fontFamily=Helvetica;" target="review-sql">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="300" y="483" />
+              <mxPoint x="300" y="329" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="review-e-sql-runtime" edge="1" parent="1" source="review-sql" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=4;endArrow=block;endFill=1;fontFamily=Helvetica;" target="review-runtime">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="review-e-runtime-adapter" edge="1" parent="1" source="review-runtime" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=4;endArrow=block;endFill=1;fontFamily=Helvetica;" target="review-adapter">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="review-e-admin-registry" edge="1" parent="1" source="review-admin" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0F766E;strokeWidth=3;endArrow=block;endFill=1;fontFamily=Helvetica;fontSize=16;" target="review-registry" value="register / update /&amp;nbsp;&lt;div&gt;delete / show&lt;/div&gt;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="350" y="653" />
+              <mxPoint x="350" y="570" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="review-e-registry-runtime" edge="1" parent="1" source="review-registry" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0F766E;strokeWidth=3;dashed=1;dashPattern=8 8;endArrow=block;endFill=1;fontFamily=Helvetica;" target="review-runtime">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="690.08" y="450.08" />
+              <mxPoint x="675" y="450.08" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="review-e-runtime-audit" edge="1" parent="1" source="review-runtime" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0F766E;strokeWidth=3;dashed=1;dashPattern=8 8;endArrow=block;endFill=1;fontFamily=Helvetica;" target="review-audit">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="720.08" y="450.08" />
+              <mxPoint x="875" y="450.08" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="review-e-adapter-policy" edge="1" parent="1" source="review-adapter" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#006277;strokeWidth=4;endArrow=block;endFill=1;fontFamily=Helvetica;" target="review-policy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="review-e-policy-nat" edge="1" parent="1" source="review-policy" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#006277;strokeWidth=4;endArrow=block;endFill=1;fontFamily=Helvetica;" target="review-nat">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="review-e-nat-eip" edge="1" parent="1" source="review-nat" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#006277;strokeWidth=4;endArrow=block;endFill=1;fontFamily=Helvetica;" target="review-eip">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="review-e-eip-maas" edge="1" parent="1" source="review-eip" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#071875;strokeWidth=4;endArrow=block;endFill=1;fontFamily=Helvetica;entryX=0.077;entryY=0.495;entryDx=0;entryDy=0;entryPerimeter=0;" target="review-maas">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1350" y="629" />
+              <mxPoint x="1350" y="324" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="architecture" name="01 Architecture">
+    <mxGraphModel dx="918" dy="650" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=25;fontStyle=1;fontColor=#102A43;" value="TaurusDB MySQL × Huawei Cloud MaaS&#xa;控制面与数据面分层架构" vertex="1">
+          <mxGeometry height="60" width="900" x="60" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="client" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#CBD5E1;fontSize=14;fontColor=#102A43;fontFamily=Verdana;" value="应用 / CES / DBA 客户端&lt;br&gt;AI_EMBEDDING(text, model_name [, dimension]) |&amp;nbsp;AI_ANALYZE(model_name, prompt [, options_json])" vertex="1">
+          <mxGeometry height="65" width="760" x="120" y="135" as="geometry" />
+        </mxCell>
+        <mxCell id="vpc" parent="1" style="swimlane;rounded=1;html=1;fillColor=#EFF6FF;strokeColor=#60A5FA;fontColor=#102A43;fontStyle=1;fontFamily=Verdana;" value="TaurusDB Tenant VPC · mysqld" vertex="1">
+          <mxGeometry height="420" width="880" x="60" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="sql" parent="vpc" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2563EB;strokeColor=#2563EB;fontColor=#FFFFFF;fontStyle=1;fontSize=14;fontFamily=Verdana;" value="SQL AI Functions&#xa;参数 / NULL / AI_INVOKE" vertex="1">
+          <mxGeometry height="45" width="720" x="80" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="runtime" parent="vpc" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#93C5FD;fontColor=#102A43;fontSize=14;fontFamily=Verdana;" value="AI Runtime&#xa;Profile 快照 · 审计编排 · 本地拒绝边界" vertex="1">
+          <mxGeometry height="45" width="720" x="80" y="175" as="geometry" />
+        </mxCell>
+        <mxCell id="registry" parent="vpc" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#93C5FD;fontColor=#102A43;fontFamily=Verdana;fontSize=14;" value="Model Registry &amp;amp; Credential&#xa;固定 Endpoint · SECRET_REF / Debug" vertex="1">
+          <mxGeometry height="60" width="310" x="80" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="audit" parent="vpc" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#2DD4BF;fontColor=#102A43;fontFamily=Verdana;fontSize=14;" value="AI File Audit&#xa;STARTED → SUCCEEDED / FAILED" vertex="1">
+          <mxGeometry height="60" width="310" x="490" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="adapter" parent="vpc" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1D4ED8;strokeColor=#1D4ED8;fontColor=#FFFFFF;fontStyle=1;fontSize=14;fontFamily=Verdana;" value="Huawei MaaS Adapter → libcurl HTTPS Transport" vertex="1">
+          <mxGeometry height="30" width="720" x="80" y="350" as="geometry" />
+        </mxCell>
+        <mxCell id="egress" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#2DD4BF;fontColor=#102A43;fontSize=14;fontFamily=Verdana;" value="容器层：Controlled Egress · Policy Route / NAT Gateway / Fixed EIP / DNS / TLS" vertex="1">
+          <mxGeometry height="30" width="640" x="180" y="680" as="geometry" />
+        </mxCell>
+        <mxCell id="maas" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0F766E;strokeColor=#0F766E;fontColor=#FFFFFF;fontStyle=1;fontSize=14;fontFamily=Verdana;" value="Huawei Cloud MaaS&#xa;/v1/embeddings · /v2/chat/completions" vertex="1">
+          <mxGeometry height="45" width="640" x="180" y="760" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="client" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;endFill=1;" target="sql">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="sql" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;" target="runtime">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="runtime" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;" target="adapter">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="adapter" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0F766E;strokeWidth=3;endArrow=block;" target="egress">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="egress" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0F766E;strokeWidth=3;endArrow=block;" target="maas">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="invocation" name="02 Invocation Flow">
+    <mxGraphModel grid="1" page="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t" parent="1" style="text;html=1;fontSize=25;fontStyle=1;fontColor=#102A43;" value="AI SQL · 一次受控 MaaS 调用" vertex="1">
+          <mxGeometry height="40" width="875" x="45" y="25" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" parent="1" style="text;html=1;fontSize=13;fontColor=#486581;" value="AI_EMBEDDING() / AI_ANALYZE()：客户不传 Endpoint、密钥或 Provider JSON，均由服务端受控处理" vertex="1">
+          <mxGeometry height="26" width="875" x="45" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="lane1" parent="1" style="rounded=1;html=1;fillColor=#F8FBFF;fillOpacity=75;strokeColor=#BFDBFE;strokeWidth=2;" value="" vertex="1">
+          <mxGeometry height="850" width="165" x="45" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="lane2" parent="1" style="rounded=1;html=1;fillColor=#F8FBFF;fillOpacity=75;strokeColor=#60A5FA;strokeWidth=2;" value="" vertex="1">
+          <mxGeometry height="850" width="230" x="240" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="lane3" parent="1" style="rounded=1;html=1;fillColor=#F0FDFA;fillOpacity=75;strokeColor=#2DD4BF;strokeWidth=2;" value="" vertex="1">
+          <mxGeometry height="850" width="220" x="500" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="lane4" parent="1" style="rounded=1;html=1;fillColor=#F0FDFA;fillOpacity=75;strokeColor=#14B8A6;strokeWidth=2;" value="" vertex="1">
+          <mxGeometry height="850" width="165" x="755" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="l1" parent="1" style="text;html=1;fontStyle=1;fontSize=16;fontColor=#102A43;" value="Client" vertex="1">
+          <mxGeometry height="28" width="165" x="45" y="132" as="geometry" />
+        </mxCell>
+        <mxCell id="l2" parent="1" style="text;html=1;fontStyle=1;fontSize=16;fontColor=#102A43;" value="mysqld SQL / Runtime" vertex="1">
+          <mxGeometry height="28" width="230" x="250" y="132" as="geometry" />
+        </mxCell>
+        <mxCell id="l3" parent="1" style="text;html=1;fontStyle=1;fontSize=16;fontColor=#102A43;" value="Audit / Credential" vertex="1">
+          <mxGeometry height="28" width="220" x="530" y="132" as="geometry" />
+        </mxCell>
+        <mxCell id="l4" parent="1" style="text;html=1;fontStyle=1;fontSize=16;fontColor=#102A43;" value="Huawei MaaS" vertex="1">
+          <mxGeometry height="28" width="165" x="780" y="132" as="geometry" />
+        </mxCell>
+        <mxCell id="s1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#60A5FA;fontColor=#102A43;fontSize=13;fontStyle=0;" value="SELECT AI_EMBEDDING()&lt;br&gt;或 AI_ANALYZE()" vertex="1">
+          <mxGeometry height="78" width="145" x="55" y="185" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=light-dark(#eff6ff, #699eff);strokeColor=#1D4ED8;fontColor=light-dark(#102a43, #121212);fontSize=13;fontStyle=0;" value="1 rds_ai_maas = ON？&lt;br&gt;OFF：立即本地返回&lt;br&gt;不解析 Profile / 凭据 / 审计 / 网络" vertex="1">
+          <mxGeometry height="78" width="210" x="250" y="185" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#60A5FA;fontColor=#102A43;fontSize=13;" value="2  SQL 函数校验&#xa;参数 / NULL / 字符集 / options&#xa;AI_INVOKE" vertex="1">
+          <mxGeometry height="76" width="210" x="250" y="305" as="geometry" />
+        </mxCell>
+        <mxCell id="s4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#60A5FA;fontColor=#102A43;fontSize=13;" value="3  Registry 解析 ACTIVE Profile&#xa;能力 / 维度 / config_version&#xa;受控 Endpoint 校验" vertex="1">
+          <mxGeometry height="82" width="210" x="250" y="425" as="geometry" />
+        </mxCell>
+        <mxCell id="s5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#14B8A6;fontColor=#102A43;fontSize=13;fontStyle=0;" value="4  审计 ON：写 STARTED&#xa;append + fsync + call_id&#xa;失败：fail closed，不出站" vertex="1">
+          <mxGeometry height="82" width="200" x="510" y="535" as="geometry" />
+        </mxCell>
+        <mxCell id="s6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#14B8A6;fontColor=#102A43;fontSize=13;" value="5  Huawei 专用凭据&#xa;rds_api_key 密文仅内存解密&#xa;构造 Bearer 请求头" vertex="1">
+          <mxGeometry height="78" width="200" x="510" y="655" as="geometry" />
+        </mxCell>
+        <mxCell id="s7" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#60A5FA;fontColor=#102A43;fontSize=13;" value="6  Huawei Adapter / Transport&#xa;canonical JSON → libcurl HTTPS POST&#xa;Policy Route / NAT / EIP" vertex="1">
+          <mxGeometry height="82" width="210" x="250" y="752" as="geometry" />
+        </mxCell>
+        <mxCell id="s8" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#0F766E;fontColor=#102A43;fontSize=13;fontStyle=0;" value="7  推理&#xa;HTTPS response&#xa;content / vector / usage" vertex="1">
+          <mxGeometry height="82" width="145" x="765" y="752" as="geometry" />
+        </mxCell>
+        <mxCell id="s9" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#60A5FA;fontColor=#102A43;fontSize=13;" value="8  解析与结果校验&#xa;Embedding：1024 维 VECTOR&#xa;Analyze：非空最终文本" vertex="1">
+          <mxGeometry height="78" width="210" x="250" y="885" as="geometry" />
+        </mxCell>
+        <mxCell id="s10" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#047857;fontColor=#102A43;fontSize=13;fontStyle=0;" value="9  终态审计&#xa;SUCCEEDED / FAILED / UNKNOWN&#xa;同一 call_id，脱敏 usage" vertex="1">
+          <mxGeometry height="78" width="200" x="510" y="884" as="geometry" />
+        </mxCell>
+        <mxCell id="ret" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#60A5FA;fontColor=#102A43;fontSize=13;fontStyle=0;" value="SQL 结果或脱敏错误" vertex="1">
+          <mxGeometry height="48" width="145" x="55" y="885" as="geometry" />
+        </mxCell>
+        <mxCell id="n" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#FB923C;fontColor=#7C2D12;fontSize=13;" value="本地失败、不出站：总开关 OFF、参数/options、AI_INVOKE、Profile/Endpoint、STARTED 审计、rds_api_key 解密。&#xa;出站后的超时、连接中断或事务回滚：MaaS 仍可能已接收请求并产生费用。" vertex="1">
+          <mxGeometry height="55" width="865" x="45" y="995" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="s1" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;" target="s2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="s2" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;" target="s3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="s3" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;" target="s4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="s4" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;" target="s5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="s5" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0F766E;strokeWidth=3;endArrow=block;" target="s6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="s6" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;" target="s7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="s7" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;" target="s8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="s9" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0F766E;strokeWidth=3;endArrow=block;" target="s10">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="JwnQCwTH8UFmYrdnq8mK-1" edge="1" parent="1" source="s8" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="s9">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="930" y="990" as="sourcePoint" />
+            <mxPoint x="720" y="1045" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="modules" name="03 Server Modules">
+    <mxGraphModel grid="1" page="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t" parent="1" style="text;html=1;fontSize=25;fontStyle=1;fontColor=#102A43;" value="mysqld AI 子模块边界与依赖" vertex="1">
+          <mxGeometry height="42" width="840" x="55" y="28" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" parent="1" style="text;html=1;fontSize=13;fontColor=#486581;" value="数据面只编排一次受控调用；控制面只发布配置与授权。箭头表示依赖，不表示调用时序。" vertex="1">
+          <mxGeometry height="24" width="840" x="55" y="73" as="geometry" />
+        </mxCell>
+        <mxCell id="dp" parent="1" style="swimlane;rounded=1;html=1;fillColor=#EFF6FF;strokeColor=#60A5FA;fontStyle=1;fontColor=#102A43;" value="数据面 · 每次 AI SQL 调用" vertex="1">
+          <mxGeometry height="385" width="850" x="55" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="sql" parent="dp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2563EB;strokeColor=#1D4ED8;fontColor=#FFFFFF;fontStyle=1;" value="SQL 函数层&#xa;item_ai_func&#xa;参数 / NULL / 权限 / 错误映射" vertex="1">
+          <mxGeometry height="102" width="175" x="38" y="88" as="geometry" />
+        </mxCell>
+        <mxCell id="run" parent="dp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1D4ED8;strokeColor=#1E40AF;fontColor=#FFFFFF;fontStyle=1;" value="AI Runtime&#xa;canonical request/response&#xa;编排、本地失败边界" vertex="1">
+          <mxGeometry height="102" width="190" x="320" y="88" as="geometry" />
+        </mxCell>
+        <mxCell id="reg" parent="dp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#60A5FA;fontColor=#102A43;fontStyle=1;" value="Model Registry&#xa;Profile / capability / dimension&#xa;Endpoint / config_version" vertex="1">
+          <mxGeometry height="86" width="205" x="60" y="245" as="geometry" />
+        </mxCell>
+        <mxCell id="audit" parent="dp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDFA;strokeColor=#14B8A6;fontColor=#102A43;fontStyle=1;" value="Audit Service&#xa;STARTED / terminal&#xa;脱敏文件审计" vertex="1">
+          <mxGeometry height="86" width="180" x="325" y="245" as="geometry" />
+        </mxCell>
+        <mxCell id="cred" parent="dp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDFA;strokeColor=#14B8A6;fontColor=#102A43;fontStyle=1;" value="Credential Resolver&#xa;Huawei：rds_api_key&#xa;仅内存解密" vertex="1">
+          <mxGeometry height="86" width="190" x="565" y="245" as="geometry" />
+        </mxCell>
+        <mxCell id="adapter" parent="dp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0F766E;strokeColor=#0F766E;fontColor=#FFFFFF;fontStyle=1;" value="Provider Adapter&#xa;Huawei JSON / usage / 响应校验&#xa;不负责 SQL 权限" vertex="1">
+          <mxGeometry height="102" width="200" x="600" y="88" as="geometry" />
+        </mxCell>
+        <mxCell id="transport" parent="dp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#60A5FA;fontColor=#102A43;fontStyle=1;" value="HTTP Transport&#xa;libcurl / HTTPS / TLS / timeout&#xa;Host 与路径策略" vertex="1">
+          <mxGeometry height="86" width="185" x="655" y="330" as="geometry" />
+        </mxCell>
+        <mxCell id="vector" parent="dp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#60A5FA;fontColor=#102A43;fontStyle=1;" value="Vector Codec&#xa;float 校验与 MYSQL_TYPE_VECTOR 编码&#xa;不负责 HNSW 索引" vertex="1">
+          <mxGeometry height="52" width="275" x="325" y="350" as="geometry" />
+        </mxCell>
+        <mxCell id="cp" parent="1" style="swimlane;rounded=1;html=1;fillColor=#ECFDF5;strokeColor=#14B8A6;fontStyle=1;fontColor=#102A43;" value="控制面 · 管理员低频发布" vertex="1">
+          <mxGeometry height="250" width="850" x="55" y="545" as="geometry" />
+        </mxCell>
+        <mxCell id="dbms" parent="cp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#047857;strokeColor=#047857;fontColor=#FFFFFF;fontStyle=1;" value="dbms_ai&#xa;注册 / 更新 / 删除 / 展示&#xa;仅 AI_ADMIN" vertex="1">
+          <mxGeometry height="102" width="175" x="45" y="82" as="geometry" />
+        </mxCell>
+        <mxCell id="table" parent="cp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#14B8A6;fontColor=#102A43;fontStyle=1;" value="mysql.ai_model_config&#xa;Profile、Endpoint、版本、状态&#xa;仅受控写入" vertex="1">
+          <mxGeometry height="102" width="200" x="310" y="82" as="geometry" />
+        </mxCell>
+        <mxCell id="grant" parent="cp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#14B8A6;fontColor=#102A43;fontStyle=1;" value="mysql.global_grants&#xa;AI_INVOKE / AI_ADMIN&#xa;MySQL GRANT / REVOKE" vertex="1">
+          <mxGeometry height="102" width="200" x="590" y="82" as="geometry" />
+        </mxCell>
+        <mxCell id="ext" parent="1" style="swimlane;rounded=1;html=1;fillColor=#FFF7ED;strokeColor=#FB923C;fontStyle=1;fontColor=#7C2D12;" value="外部受控依赖" vertex="1">
+          <mxGeometry height="130" width="850" x="55" y="835" as="geometry" />
+        </mxCell>
+        <mxCell id="maas" parent="ext" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#FB923C;fontColor=#7C2D12;fontStyle=1;" value="Huawei MaaS&#xa;HTTPS 推理 API" vertex="1">
+          <mxGeometry height="55" width="180" x="75" y="52" as="geometry" />
+        </mxCell>
+        <mxCell id="network" parent="ext" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#FB923C;fontColor=#7C2D12;fontStyle=1;" value="受控网络出口&#xa;Policy Route / NAT / EIP / DNS / TLS" vertex="1">
+          <mxGeometry height="55" width="260" x="345" y="52" as="geometry" />
+        </mxCell>
+        <mxCell id="logs" parent="ext" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#FB923C;fontColor=#7C2D12;fontStyle=1;" value="TaurusDB 日志平台&#xa;采集、轮转、访问控制、告警" vertex="1">
+          <mxGeometry height="55" width="150" x="680" y="52" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="sql" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;" target="run">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="run" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;" target="adapter">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="dbms" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#047857;strokeWidth=3;endArrow=block;" target="table">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="credential" name="04 Credential Flow">
+    <mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="850" pageHeight="1100">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t" value="凭据解析：配置与调用严格分离" style="text;html=1;fontSize=25;fontStyle=1;fontColor=#102A43;" vertex="1" parent="1">
+          <mxGeometry x="60" y="40" width="800" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="a" value="AI_ADMIN&#xa;dbms_ai 发布配置" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0F766E;strokeColor=#0F766E;fontColor=#FFFFFF;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="70" y="160" width="170" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="p" value="Model Profile&#xa;credential_mode + reference&#xa;版本化、固定 Endpoint" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#047857;strokeColor=#047857;fontColor=#FFFFFF;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="340" y="140" width="220" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="r" value="Runtime&#xa;单次调用解析&#xa;短生命周期内存" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2563EB;strokeColor=#2563EB;fontColor=#FFFFFF;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="660" y="140" width="180" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="s" value="SECRET_REF&#xa;keyring / CSMS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#0F766E;fontColor=#102A43;" vertex="1" parent="1">
+          <mxGeometry x="670" y="325" width="170" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="d" value="Debug only&#xa;PLAINTEXT_DEV" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#F59E0B;fontColor=#7C2D12;" vertex="1" parent="1">
+          <mxGeometry x="670" y="420" width="170" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="n" value="Release 仅允许 SECRET_REF；凭据不可读时在 MaaS 出站前失败。Debug 明文仅用于临时联调，随后删除配置并轮换 Key。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#CBD5E1;fontColor=#102A43;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="70" y="560" width="800" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0F766E;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="a" target="p">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0F766E;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="p" target="r">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0F766E;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="r" target="s">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#F59E0B;strokeWidth=3;endArrow=block;" edge="1" parent="1" source="r" target="d">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="audit" name="05 Audit Flow">
+    <mxGraphModel dx="1012" dy="682" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t" parent="1" style="text;html=1;fontSize=25;fontStyle=1;fontColor=#102A43;" value="两阶段审计：先落盘，再出站" vertex="1">
+          <mxGeometry height="45" width="800" x="60" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="v" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2563EB;strokeColor=#2563EB;fontColor=#FFFFFF;fontStyle=1;" value="本地校验&#xa;参数 · 权限 · Profile" vertex="1">
+          <mxGeometry height="90" width="190" x="70" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="st" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0F766E;strokeColor=#0F766E;fontColor=#FFFFFF;fontStyle=1;" value="AI_CALL_STARTED&#xa;审计文件 append + fsync&#xa;生成 call_id" vertex="1">
+          <mxGeometry height="125" width="220" x="400" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="m" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2563EB;strokeColor=#2563EB;fontColor=#FFFFFF;fontStyle=1;" value="MaaS HTTPS&#xa;请求、响应或失败" vertex="1">
+          <mxGeometry height="90" width="170" x="760" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="te" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#047857;strokeColor=#047857;fontColor=#FFFFFF;fontStyle=1;" value="terminal append&#xa;SUCCEEDED / FAILED&#xa;失败按 UNKNOWN 处置" vertex="1">
+          <mxGeometry height="105" width="220" x="400" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="n" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF2F2;strokeColor=#F87171;fontColor=#B91C1C;fontSize=15;" value="STARTED 写入失败：本地拒绝，不发送 MaaS 请求" vertex="1">
+          <mxGeometry height="55" width="860" x="70" y="570" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="v" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;" target="st">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="st" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;" target="m">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="m" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#0F766E;strokeWidth=3;endArrow=block;" target="te">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="data-plane-detail" name="06 Data Plane Detail">
+    <mxGraphModel page="1" pageWidth="850" pageHeight="1100"><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+      <mxCell id="t" value="数据面：一次 AI SQL 调用的模块协作" style="text;html=1;fontSize=25;fontStyle=1;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="55" y="35" width="820" height="40" as="geometry"/></mxCell>
+      <mxCell id="a" value="SQL Function&#xa;参数 / NULL / options&#xa;AI_INVOKE" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#2563EB;fontColor=#FFFFFF;strokeColor=#1D4ED8;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="60" y="160" width="180" height="95" as="geometry"/></mxCell>
+      <mxCell id="b" value="AI Runtime&#xa;Ai_request / Profile 快照&#xa;call_id 编排" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#1D4ED8;fontColor=#FFFFFF;strokeColor=#1E40AF;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="355" y="160" width="190" height="95" as="geometry"/></mxCell>
+      <mxCell id="c" value="Provider Adapter&#xa;canonical JSON / 响应解析&#xa;usage / request id" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#0F766E;fontColor=#FFFFFF;strokeColor=#047857;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="660" y="160" width="180" height="95" as="geometry"/></mxCell>
+      <mxCell id="d" value="Runtime 依赖服务&#xa;Registry：ACTIVE Profile 快照&#xa;Audit：STARTED / terminal&#xa;Credential：内存认证材料&#xa;Vector Codec：float[] ↔ VECTOR" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#EFF6FF;strokeColor=#60A5FA;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="210" y="375" width="480" height="135" as="geometry"/></mxCell>
+      <mxCell id="n" value="本地失败零出站：rds_ai_maas OFF、参数、权限、Profile、STARTED、凭据。Transport 后的失败可能已产生远端调用。" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#FFF7ED;strokeColor=#FB923C;fontColor=#7C2D12;" vertex="1" parent="1"><mxGeometry x="60" y="620" width="780" height="60" as="geometry"/></mxCell>
+      <mxCell id="e1" edge="1" parent="1" source="a" target="b" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2563EB;strokeWidth=3;endArrow=block;"/><mxCell id="e2" edge="1" parent="1" source="b" target="c" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2563EB;strokeWidth=3;endArrow=block;"/><mxCell id="e3" edge="1" parent="1" source="b" target="d" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#0F766E;strokeWidth=2;dashed=1;endArrow=block;"/>
+    </root></mxGraphModel>
+  </diagram>
+  <diagram id="model-management-detail" name="07 Model Management Detail">
+    <mxGraphModel page="1" pageWidth="850" pageHeight="1100"><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+      <mxCell id="t" value="模型管理：dbms_ai 受控发布与 Registry 刷新" style="text;html=1;fontSize=25;fontStyle=1;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="55" y="35" width="820" height="40" as="geometry"/></mxCell>
+      <mxCell id="a" value="AI_ADMIN&#xa;register / update / delete / show" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#047857;fontColor=#FFFFFF;strokeColor=#047857;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="55" y="170" width="180" height="85" as="geometry"/></mxCell>
+      <mxCell id="b" value="dbms_ai 校验&#xa;Provider / capability / Endpoint&#xa;dimension / options / 凭据可用性" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ECFDF5;strokeColor=#14B8A6;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="330" y="160" width="210" height="105" as="geometry"/></mxCell>
+      <mxCell id="c" value="mysql.ai_model_config&#xa;新 config_version + binlog&#xa;delete → DISABLED" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#FFFFFF;strokeColor=#14B8A6;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="650" y="170" width="180" height="85" as="geometry"/></mxCell>
+      <mxCell id="d" value="Registry 原子发布不可变 Profile 快照&#xa;后续调用用新版本；运行中调用保持旧快照&#xa;复制 applier 应用控制面变更，只读节点不写审计系统表" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#EFF6FF;strokeColor=#60A5FA;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="170" y="390" width="550" height="100" as="geometry"/></mxCell>
+      <mxCell id="e1" edge="1" parent="1" source="a" target="b" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#047857;strokeWidth=3;endArrow=block;"/><mxCell id="e2" edge="1" parent="1" source="b" target="c" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#047857;strokeWidth=3;endArrow=block;"/><mxCell id="e3" edge="1" parent="1" source="c" target="d" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#14B8A6;strokeWidth=2;endArrow=block;"/>
+    </root></mxGraphModel>
+  </diagram>
+  <diagram id="access-detail" name="08 Access Control Detail">
+    <mxGraphModel page="1" pageWidth="850" pageHeight="1100"><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+      <mxCell id="t" value="权限与总开关：出站前的统一控制" style="text;html=1;fontSize=25;fontStyle=1;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="55" y="35" width="820" height="40" as="geometry"/></mxCell>
+      <mxCell id="a" value="rds_ai_maas&#xa;最先检查&#xa;OFF：数据面/管理写本地失败" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#2563EB;fontColor=#FFFFFF;strokeColor=#1D4ED8;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="65" y="175" width="210" height="95" as="geometry"/></mxCell>
+      <mxCell id="b" value="AI_INVOKE&#xa;SQL 函数入口&#xa;Profile 前拒绝" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#EFF6FF;strokeColor=#60A5FA;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="350" y="175" width="180" height="95" as="geometry"/></mxCell>
+      <mxCell id="c" value="AI_ADMIN&#xa;dbms_ai 写操作&#xa;不等同系统表 DML" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ECFDF5;strokeColor=#14B8A6;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="605" y="175" width="180" height="95" as="geometry"/></mxCell>
+      <mxCell id="n" value="升级：动态权限注册后，mysql 系统升级路径为存量 root@'%' 幂等补授予 AI_INVOKE、AI_ADMIN，WITH_GRANT_OPTION=N；不自动授予 SYSTEM_VARIABLES_ADMIN。" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#FFF7ED;strokeColor=#FB923C;fontColor=#7C2D12;" vertex="1" parent="1"><mxGeometry x="65" y="410" width="720" height="75" as="geometry"/></mxCell>
+    </root></mxGraphModel>
+  </diagram>
+  <diagram id="credential-detail" name="09 Credential and Endpoint Detail"><mxGraphModel page="1" pageWidth="850" pageHeight="1100"><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="t" value="凭据与 Endpoint：受控路由，不向客户 SQL 暴露" style="text;html=1;fontSize=25;fontStyle=1;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="55" y="35" width="820" height="40" as="geometry"/></mxCell><mxCell id="a" value="Model Profile&#xa;Endpoint / Provider / version" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#EFF6FF;strokeColor=#60A5FA;fontColor=#102A43;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="55" y="180" width="190" height="90" as="geometry"/></mxCell><mxCell id="b" value="Endpoint Policy&#xa;HTTPS / 443 / Host + path allowlist" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#EFF6FF;strokeColor=#60A5FA;fontColor=#102A43;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="330" y="180" width="200" height="90" as="geometry"/></mxCell><mxCell id="c" value="Huawei Resolver&#xa;rds_api_key 密文 → 仅内存 Bearer" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ECFDF5;strokeColor=#14B8A6;fontColor=#102A43;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="615" y="180" width="200" height="90" as="geometry"/></mxCell><mxCell id="n" value="外部 Provider：provider_options.credential_id → 管控后台受控凭据/IAM Role。密文、明文、Authorization 均不进入 SQL、日志、审计或 binlog。" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#FFF7ED;strokeColor=#FB923C;fontColor=#7C2D12;" vertex="1" parent="1"><mxGeometry x="55" y="410" width="760" height="70" as="geometry"/></mxCell><mxCell id="e1" edge="1" parent="1" source="a" target="b" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2563EB;strokeWidth=3;endArrow=block;"/><mxCell id="e2" edge="1" parent="1" source="b" target="c" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#0F766E;strokeWidth=3;endArrow=block;"/></root></mxGraphModel></diagram>
+  <diagram id="audit-detail" name="10 Audit and DFX Detail"><mxGraphModel page="1" pageWidth="850" pageHeight="1100"><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="t" value="两阶段审计与 DFX：call_id 贯穿一次外部调用" style="text;html=1;fontSize=25;fontStyle=1;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="55" y="35" width="820" height="40" as="geometry"/></mxCell><mxCell id="a" value="STARTED&#xa;append + fsync + call_id&#xa;失败：禁止出站" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#047857;fontColor=#FFFFFF;strokeColor=#047857;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="60" y="180" width="190" height="95" as="geometry"/></mxCell><mxCell id="b" value="MaaS 调用&#xa;成功 / Provider 失败 / 超时&#xa;返回 usage / request id" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#2563EB;fontColor=#FFFFFF;strokeColor=#1D4ED8;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="350" y="180" width="190" height="95" as="geometry"/></mxCell><mxCell id="c" value="terminal&#xa;SUCCEEDED / FAILED / UNKNOWN&#xa;脱敏字段" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#047857;fontColor=#FFFFFF;strokeColor=#047857;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="640" y="180" width="180" height="95" as="geometry"/></mxCell><mxCell id="n" value="DFX：以 call_id 关联 SQL 错误、审计事件、错误日志、配置版本与 Provider request id。终态不可写时保留 STARTED，日志平台按 UNKNOWN 处置。" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#FFF7ED;strokeColor=#FB923C;fontColor=#7C2D12;" vertex="1" parent="1"><mxGeometry x="60" y="410" width="760" height="70" as="geometry"/></mxCell><mxCell id="e1" edge="1" parent="1" source="a" target="b" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#047857;strokeWidth=3;endArrow=block;"/><mxCell id="e2" edge="1" parent="1" source="b" target="c" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#047857;strokeWidth=3;endArrow=block;"/></root></mxGraphModel></diagram>
+  <diagram id="vector-rag-detail" name="11 Vector and RAG Detail"><mxGraphModel page="1" pageWidth="850" pageHeight="1100"><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="t" value="向量与 RAG：模型负责向量，SQL 负责数据权限" style="text;html=1;fontSize=25;fontStyle=1;fontColor=#102A43;" vertex="1" parent="1"><mxGeometry x="55" y="35" width="820" height="40" as="geometry"/></mxCell><mxCell id="a" value="AI_EMBEDDING&#xa;Profile 固定维度&#xa;bge-m3：1024" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#2563EB;fontColor=#FFFFFF;strokeColor=#1D4ED8;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="55" y="180" width="180" height="95" as="geometry"/></mxCell><mxCell id="b" value="Vector Codec&#xa;float[] 校验&#xa;MYSQL_TYPE_VECTOR 编码" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#EFF6FF;strokeColor=#60A5FA;fontColor=#102A43;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="330" y="180" width="190" height="95" as="geometry"/></mxCell><mxCell id="c" value="业务表 / VECTOR INDEX&#xa;正文变更更新 STORED 向量&#xa;非正文更新不调用模型" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#ECFDF5;strokeColor=#14B8A6;fontColor=#102A43;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="615" y="180" width="200" height="95" as="geometry"/></mxCell><mxCell id="n" value="RAG：SQL 先做 tenant、标签与业务过滤，保留来源 ID；仅把已授权片段交给 AI_ANALYZE。模型输出不决定权限、引用真实性或自动修复 SQL。" style="rounded=1;html=1;whiteSpace=wrap;fillColor=#FFF7ED;strokeColor=#FB923C;fontColor=#7C2D12;" vertex="1" parent="1"><mxGeometry x="55" y="410" width="760" height="70" as="geometry"/></mxCell><mxCell id="e1" edge="1" parent="1" source="a" target="b" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#2563EB;strokeWidth=3;endArrow=block;"/><mxCell id="e2" edge="1" parent="1" source="b" target="c" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#0F766E;strokeWidth=3;endArrow=block;"/></root></mxGraphModel></diagram>
 </mxfile>

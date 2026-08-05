@@ -146,7 +146,7 @@ Expected: compilation failure naming `Ai_model_registry`.
 
 Create `mysql.alisql_ai_model_config`, `mysql.alisql_ai_tenant_binding` and
 `mysql.alisql_ai_call_audit` using InnoDB and the `mysql` tablespace. Register
-`AI_INVOKE`, `AI_ADMIN` and `AI_AUDIT_VIEWER`. The model table contains only
+`AI_INVOKE` and `AI_ADMIN`. The model table contains only
 credential references in production; `api_key_plaintext` is nullable and is
 accepted only for `PLAINTEXT_DEV` on development instances.
 
@@ -397,7 +397,7 @@ secret, endpoint, raw prompt, raw response or complete embedding.
 
 Cover one/two/three embedding arguments, `NULL`, invalid dimension, options
 whitelist, final-content behavior, JSON source return, model capability mismatch,
-inactive Profile, `AI_INVOKE` denial, `AI_AUDIT_VIEWER` visibility, keyring
+inactive Profile, `AI_INVOKE` denial, keyring
 missing fail-closed and redacted errors.
 
 - [ ] **Step 5: Run MTR suites.**

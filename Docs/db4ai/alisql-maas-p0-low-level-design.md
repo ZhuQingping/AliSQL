@@ -93,7 +93,7 @@ The bootstrap/upgrade scripts retain one protected InnoDB control-plane table
 in `mysql`:
 
 ```text
-taurusdb_ai_model_config
+ai_model_config
   Id, model_name, provider, capability, provider_model_name, endpoint_url,
   credential_mode, credential_ref, api_key_plaintext, default_dimension,
   model_revision, is_default, status, config_version, created_at, updated_at
@@ -160,7 +160,6 @@ P0 registers three dynamic privileges:
 |---|---|
 | `AI_INVOKE` | Execute `AI_EMBEDDING` and `AI_ANALYZE` for authorized Profiles |
 | `AI_ADMIN` | Invoke the `dbms_ai` model-management package; it does not grant audit-file SQL access |
-| `AI_AUDIT_VIEWER` | Reserved compatibility privilege; P0 has no ordinary SQL audit-file reader |
 
 An independent audit transaction writes `STARTED` before credential lookup and egress; inability to
 record it fails the invocation closed. It is updated to `SUCCEEDED`, `FAILED`

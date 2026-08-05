@@ -6,7 +6,7 @@ AliSQL 分支已经具备的内置函数、VECTOR 索引和离线验证；生产
 
 ## 1. 上线前配置和权限
 
-模型配置由 `dbms_ai` 原生管理包维护，`mysql.taurusdb_ai_model_config` 是内部控制表。
+模型配置由 `dbms_ai` 原生管理包维护，`mysql.ai_model_config` 是内部控制表。
 业务用户只使用逻辑模型名，不能在 SQL 参数中传 endpoint、API Key、provider JSON、厂商
 模型 ID 或 Adapter 名称。
 
