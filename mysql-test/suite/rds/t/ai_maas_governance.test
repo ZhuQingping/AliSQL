@@ -70,5 +70,8 @@ SET debug = '';
 CALL dbms_ai.delete_model('mtr/fixture-embedding', 'TEXT_EMBEDDING');
 CALL dbms_ai.delete_model('mtr/fixture-chat', 'TEXT_GENERATION');
 
+--echo # AI_AUDIT_VIEWER is not registered in the current release.
+--error ER_SYNTAX_ERROR
+GRANT AI_AUDIT_VIEWER ON *.* TO 'ai_audit_reader'@'localhost';
 DROP USER 'ai_audit_reader'@'localhost';
 SET GLOBAL rds_ai_maas = OFF;

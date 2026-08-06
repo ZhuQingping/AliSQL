@@ -2413,14 +2413,10 @@ static Sys_var_bool Sys_rds_ai_maas(
     "Enable TaurusDB MaaS SQL functions and model Profile management",
     GLOBAL_VAR(opt_rds_ai_maas), CMD_LINE(OPT_ARG), DEFAULT(false));
 
-// This value is injected by the TaurusDB control plane after encryption.  It
-// is deliberately read-only and sensitive: SQL users cannot SET or inspect
-// it, and it is never persisted as a normal server variable.
-static Sys_var_charptr Sys_rds_api_key(
-    "rds_api_key", "Encrypted Huawei MaaS API key managed by TaurusDB",
-    SENSITIVE READ_ONLY NOT_VISIBLE NON_PERSIST GLOBAL_VAR(opt_rds_api_key),
-    CMD_LINE(REQUIRED_ARG), IN_FS_CHARSET, DEFAULT(nullptr));
-
+// Development-validation credential. It is deliberately read-only and
+// sensitive: SQL users cannot SET or inspect it, and it is never persisted
+// as a normal server variable. Production control-plane encryption and
+// rotation replace this injection path without changing the SQL interface.
 static Sys_var_bool Sys_ai_invoke_audit(
     "ai_invoke_audit",
     "Write two-stage AI invocation audit events to the protected audit file",

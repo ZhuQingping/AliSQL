@@ -66,5 +66,8 @@ include/assert_grep.inc [Terminal audit failure has a call id, capability, and l
 include/assert_grep.inc [Terminal audit failure never writes request content to the error log]
 CALL dbms_ai.delete_model('mtr/fixture-embedding', 'TEXT_EMBEDDING');
 CALL dbms_ai.delete_model('mtr/fixture-chat', 'TEXT_GENERATION');
+# AI_AUDIT_VIEWER is not registered in the current release.
+GRANT AI_AUDIT_VIEWER ON *.* TO 'ai_audit_reader'@'localhost';
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use
 DROP USER 'ai_audit_reader'@'localhost';
 SET GLOBAL rds_ai_maas = OFF;

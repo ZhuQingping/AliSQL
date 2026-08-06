@@ -1209,7 +1209,6 @@ static std::atomic<enum_server_operational_state> server_operational_state{
 char *opt_log_error_suppression_list;
 char *opt_log_error_services;
 bool opt_rds_ai_maas = false;
-char *opt_rds_api_key = nullptr;
 bool opt_ai_invoke_audit = true;
 char *opt_ai_invoke_audit_log_file = nullptr;
 char *opt_rds_api_key = nullptr;
