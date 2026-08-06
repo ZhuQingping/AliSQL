@@ -27,13 +27,14 @@
 
 | ID | 子模块 | 优先级 | 状态 | 商用验收条件 | 主要依赖 |
 | --- | --- | --- | --- | --- | --- |
-| G-001 | 凭据控制面 | P0-Blocker | 未开始 | 管控面密文下发、解密、轮换、吊销和节点一致性完成；Key 不出现在 SQL、日志、审计、binlog 或备份中。 | TaurusDB 管控面、KMS/Secret 服务 |
+| G-001 | 凭据控制面 | P0-Blocker | 未开始 | SCC/Secret 托管的密文下发、解密、轮换、吊销和节点一致性完成；Key 不出现在 SQL、日志、审计、binlog 或备份中。 | TaurusDB 管控面、KMS/Secret 服务 |
 | G-002 | 主备、故障切换与复制 | P0-Blocker | 验证中 | 主/只读节点真实调用、审计、凭据下发、升主、ROW image 和故障切换矩阵通过。 | RDS HA、复制、网络 |
 | G-003 | 目标 Region 网络与模型准入 | P0-Blocker | 未开始 | 每个上线 Region 的 DNS、TLS、Policy Route/NAT/EIP、安全组、回流、模型配额和 Endpoint 连通验证通过。 | VPC、MaaS、SRE |
-| G-004 | 审计日志平台闭环 | P0-Blocker | 未开始 | 文件轮转、采集、保留、访问控制、磁盘水位和告警闭环完成；STARTED 未闭合可按 `call_id` 追溯为 `UNKNOWN`。 | 日志平台、SRE、安全 |
+| G-004 | 审计日志平台闭环 | P0-Blocker | 未开始 | 日志平台/Agent（或后续内核）完成文件轮转、采集、保留、访问控制、磁盘水位和告警；STARTED 未闭合可按 `call_id` 追溯为 `UNKNOWN`。 | 日志平台、SRE、安全 |
 | G-005 | 升级、回退与备份恢复 | P0-Blocker | 未开始 | 存量实例升级、旧表迁移、root 动态权限补授予、混部复制、降级拦截和备份恢复演练通过。 | 升级框架、备份恢复、复制 |
 | G-006 | 生产错误码与 DFX | P0-Blocker | 设计中 | 为权限、模型、凭据、限流、超时、协议和审计错误定义稳定 SQLSTATE/错误码；控制台可关联 `call_id`、Endpoint 指纹和 Provider request id。 | 内核错误码、DAS/OPS |
 | G-007 | 性能、容量与可靠性 | P0-Blocker | 未开始 | 目标 Region 完成长稳、限流、429、网络故障、审计不可写和磁盘满演练；形成容量模型、告警阈值和灰度退出条件。 | MaaS 配额、SRE、性能测试 |
+| G-008 | 开发者 root 的 AI 调用授权委派 | P0-Blocker | 未开始 | 升级/bootstrap 与新建 root 均使 `root@'%'` 仅对 `AI_INVOKE` 具备动态 `WITH GRANT OPTION`；root 可向业务账号 GRANT/REVOKE `AI_INVOKE`，不能转授 `AI_ADMIN`、总开关或其他系统权限；MTR 覆盖存量升级和新建 root。 | MySQL 动态权限、升级脚本、TaurusDB 账号初始化 |
 
 ## P1：产品扩展与规模化能力
 

@@ -48,6 +48,7 @@ OpenAI-compatible `messages`，从而为后续接入阿里云百炼、字节方�
 | Model Profile | 逻辑模型名到 Provider、Provider 模型、Endpoint、能力、维度、凭据引用和配置版本的受控映射。 |
 | 控制面 | `dbms_ai` 管理模型配置、权限和凭据引用的低频路径。 |
 | 数据面 | 一次 `AI_EMBEDDING()` / `AI_ANALYZE()` 从 SQL 到 MaaS 再返回结果的路径。 |
+| SCC | TaurusDB 管控面使用的安全凭据托管服务；生产 API Key 只以受控版本引用、解密和下发，不进入模型表或 SQL。 |
 | Embedding space | 由模型、版本、维度和编码约束确定的向量兼容域；不同域的向量不得混用。 |
 | 真实 smoke | 显式授权、会访问 MaaS 并可能计费的人工验证；不进入默认 MTR/CI。 |
 | STARTED / terminal | 同一 `call_id` 的两阶段审计：外呼前的起始事件，以及 `SUCCEEDED` 或 `FAILED` 终态；未闭合 STARTED 由日志平台推断为 `UNKNOWN`。 |
@@ -60,7 +61,7 @@ OpenAI-compatible `messages`，从而为后续接入阿里云百炼、字节方�
 | --- | --- |
 | 当前已实现并有离线回归 | 华为 MaaS Adapter、`AI_EMBEDDING(model_name, text [, options_json])`、`AI_ANALYZE(model_name, prompt [, options_json])`、离线 fixture MTR、真实 smoke 脚本、动态权限、两阶段追加式审计、受控 Profile 与 `rds_ai_maas`。 |
 | 后续管控面/Provider 演进 | 管控后台对 `rds_api_key` 的真实加解密/轮换接入、进程级 Registry 缓存与多 Provider Adapter；这些不属于当前开发验证交付。 |
-| 上线阻断 | 主备真实 MaaS 验证、完整 ROW image/故障切换矩阵、目标 Region 网络和日志平台闭环。 |
+| 当前范围边界 | 当前仅支持主节点开发验证；只读节点、故障切换、复制/binlog 传播和跨节点凭据下发不属于本次交付，后续单独立项。目标 Region 网络和日志平台闭环仍是主节点上线前提。 |
 
 当前已实现并经过离线回归覆盖的功能包括：
 
@@ -120,24 +121,67 @@ Provider 协议和业务语义混到同一 JSON 中。
 
 参考：https://docs.snowflake.com/en/sql-reference/functions/ai_complete-single-string
 
-### 1.2.3 Aurora、PolarDB 与其他 Provider
+### 1.2.3 Aurora：Provider 透传路径
 
 Aurora MySQL 的 Bedrock 路径以每个模型一个 UDF、调用方传入原始 JSON 请求体实现；Aurora
 PostgreSQL 也公开 `model_id`、`content_type`、`json_key` 等 Provider 细节。这便于快速透传，
 但模型、协议或字段变化会进入客户 SQL 契约。
 
-PolarDB 的 `EMBEDDING`、生成列和向量检索示例验证了“向量化 + 索引 + 应用侧上下文拼装”的
-知识库范式。TaurusDB 借鉴该范式，并强调业务 SQL 必须先完成授权过滤，模型不能直接读取表。
-
-TaurusDB 不采用 Provider 透传模式。百炼、火山方舟、Bedrock 等后续 Provider 通过新的 Adapter
-和 Model Profile 接入，客户函数不增加 Endpoint、API Key、Provider 模型 ID 或原始 messages。
-优势是 SQL 契约稳定、凭据和审计可控；代价是每个 Provider 协议需实现并验证 Adapter。
-
 参考：
 
 - https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-ml.html
 - https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/postgresql-ml.html
-- https://help.aliyun.com/en/polardb/polardb-for-mysql/use-the-embedding-function
+
+### 1.2.4 PolarDB MySQL：Embedding 与库内知识库范式
+
+PolarDB MySQL 提供内核 `EMBEDDING(text, model_name, dimension)`，当前文档列出
+`text-embedding-v1` 至 `v4` 及其允许维度。官方示例使用 `STORED` 生成列、向量索引、距离计算和
+SQL 内 `CONCAT/GROUP_CONCAT` 拼装 RAG prompt；这验证了“正文写入时向量化，查询时召回并组织证据”的
+库内知识库范式。该功能在官方文档中仍标记为 Beta。
+
+TaurusDB 借鉴其 `STORED + Embedding + VECTOR` 范式，但避免将 Provider 模型、Endpoint 和 API Key
+暴露给每个调用方。PolarDB MySQL 示例中模型与维度直接出现在客户 SQL；TaurusDB 将底层模型映射为
+受控逻辑 Profile，使 Profile、网络和凭据可由管控面统一演进。两者都不能让模型绕过业务 SQL 的
+权限过滤读取资料。
+
+参考：https://help.aliyun.com/en/polardb/polardb-for-mysql/use-the-embedding-function
+
+### 1.2.5 PolarDB PostgreSQL：DataFrame 管道参考，不等同于内核 SQL
+
+当前 PolarDB PostgreSQL 官方 AI 页面介绍的是 Daft DataFrame AI Functions：`prompt`、`embed_text`、
+`classify_text` 等表达式，可由集中 Provider 配置在单机与 Ray 执行模式间复用。它对本设计的启发是
+“Provider 初始化集中化、调用表达式不随 Provider 切换而变化、先过滤后调用高成本模型”。
+
+这不是 PolarDB PostgreSQL 内核 SQL 函数的等价说明，因此本文不将其表述为与 TaurusDB 当前
+`AI_EMBEDDING/AI_ANALYZE` 对等的数据库内核能力。若后续需要比较 PolarDB PostgreSQL 原生扩展、
+向量索引或模型服务，必须补充独立的官方内核资料后再形成结论。
+
+参考：https://help.aliyun.com/en/polardb/polardb-for-postgresql/ai-functions-and-supported-model-providers
+
+### 1.2.6 TaurusDB 差异化：管控面与受控 SQL 数据面的组合
+
+TaurusDB 不采用 Provider 透传模式。百炼、火山方舟、Bedrock 等后续 Provider 通过新的 Adapter
+和 Model Profile 接入，客户函数不增加 Endpoint、API Key、Provider 模型 ID 或原始 messages。
+
+TaurusDB 的差异化定位不是“函数数量更多”，而是面向华为云数据库实例交付以下受控闭环：
+
+1. **管控面代替客户配置基础设施。** 开启 AI 时由管控编排 VPC 出站、受控 EIP/NAT、模型 Profile、
+   SCC 凭据、动态权限、实例开关和日志采集；客户只使用逻辑模型名和 SQL，不管理 Endpoint 或 Key。
+2. **稳定 SQL 契约。** `AI_EMBEDDING(model_name, text [, options_json])` 与
+   `AI_ANALYZE(model_name, prompt [, options_json])` 不透传 Provider JSON。Provider、模型版本、Endpoint
+   或凭据变化由 Profile/Adapter 承接，不能直接破坏客户 SQL。
+3. **数据库内核安全边界。** 在 MaaS 出站前完成总开关、`AI_INVOKE`、Profile 状态、维度、输入上限和
+   Endpoint 策略校验；请求后以 `call_id` 记录两阶段脱敏审计。
+4. **企业 RAG 数据边界。** SQL 先做租户、标签和业务权限过滤，再把有界来源片段交给模型；模型不直接
+   读取业务表，也不能把自然语言输出自动执行为 SQL。
+
+这是一种产品定位而非“业界唯一”声明。PolarDB-X 已展示“控制台启用 AI 后创建 AI Gateway、绑定默认
+模型并提供丰富 AI 函数”的方向；TaurusDB 当前 P0 的优势应聚焦华为云网络、受控 Profile、权限、审计
+和数据边界的闭环，同时如实承认函数丰富度、多模态和异步能力仍落后于其 AI Gateway 范围。
+
+参考：
+
+- https://help.aliyun.com/en/polardb/polardb-for-xscale/ai-function
 
 ## 1.3 场景和功能 | Scenarios and Functions
 
@@ -153,7 +197,7 @@ TaurusDB 不采用 Provider 透传模式。百炼、火山方舟、Bedrock 等�
    调用 `AI_ANALYZE()` 做 RAG 问答。
 4. 运营或 DBA 先以 SQL 聚合和脱敏形成有界事实包，再调用 `AI_ANALYZE()` 生成摘要、解释和只读
    建议；模型输出不得自动执行为 SQL 或运维命令。
-5. 主节点和只读节点均可调用模型并在本地写审计文件；主节点负责模型配置管理。
+5. 当前仅主节点支持模型调用、模型配置和本地审计；只读节点、故障切换与复制不在本次交付范围。
 
 **不支持或不作承诺的场景：**
 
@@ -169,10 +213,45 @@ TaurusDB 不采用 Provider 透传模式。百炼、火山方舟、Bedrock 等�
 | 华为云 MaaS | 提供 `/v1/embeddings`、`/v2/chat/completions` 推理服务、模型准入和配额。 | 没有模型准入、API Key 或服务时不可进行真实调用；离线 MTR fixture 可验证内核路径但不能替代真实服务。 |
 | 租户 VPC、Policy Route、NAT Gateway、EIP、安全组、DNS/TLS | 为 tenant VPC 到 MaaS Endpoint 提供受控 HTTPS 出站和回流。 | 每个 Region 必须验证；缺失时真实调用失败。不能由 mysqld 或 SQL 自动创建，替代是完成云网络部署。 |
 | 开发验证私有配置文件 | 当前通过不可由 SQL 读写的 `rds_api_key` 向 mysqld 注入 Huawei 明文开发 Key；生产所需的密文解密、轮换和外部 Provider 凭据引用是后续后台集成。 | 参数为空时本地失败且不出站；模型表不保存 Key。 |
-| TaurusDB 日志平台 | 采集、轮转、保留、访问控制和告警本地 JSON Lines 审计文件。 | 仍可写本地文件但不具备集中追溯能力；上线前须完成日志采集和磁盘满告警闭环。 |
+| TaurusDB 管控面、SCC 与日志平台 | 管控面负责编排网络、模型 Profile、权限、实例开关和安全凭据；SCC 负责生产 Key 的密文托管；日志平台负责采集、轮转、保留、访问控制和告警本地 JSON Lines 审计文件。 | 当前内核仅支持私有启动文件明文开发验证，且不内置审计文件轮转；上线前须完成密钥、采集、轮转和磁盘满告警闭环。 |
 | `libcurl`、TLS/CA、DNS | mysqld 内进程 HTTPS Transport。 | TLS、DNS 或证书异常导致调用失败并记录脱敏终态；不调用 shell `curl`、Python 或 OpenAI SDK。 |
 
-### 1.3.3 功能清单 | Function List
+### 1.3.3 管控面启用与运维编排 | Control-plane Enablement and Operations
+
+**目标。** 客户在控制台申请并开启 AI 能力后，不需要理解 EIP、NAT、Endpoint、API Key 或模型协议；客户仍需在
+SQL 中显式选择逻辑模型名、提供业务文本并自行完成数据权限过滤。管控面不替客户执行任意业务 SQL，而是在主节点上
+调用受控的 `dbms_ai` 管理接口，并把基础设施、凭据与内核策略配置成一个可审计、可恢复的实例状态。当前版本只编排
+主节点；只读节点、故障切换和模型配置复制不随本流程承诺。
+
+**启用编排。** 下列步骤必须有持久化任务状态、幂等重试、操作者与变更审计。任一步失败时不得打开
+`rds_ai_maas`；已经建立的云资源只能在不存在在途调用、且不影响其他实例时按资源归属安全回收。
+
+1. **准入检查。** 校验 Region 是否提供 MaaS、客户项目/租户是否具备模型准入和配额、计费与数据合规策略是否
+   允许外发文本，并确认实例版本、主节点身份、`libcurl`/CA/DNS 和目标模型兼容。
+2. **网络出站。** 管控面在客户实例的 Tenant VPC 配置受控出站路径：`Policy Route → NAT Gateway → Fixed EIP →
+   Huawei MaaS`，并校验安全组、DNS、TLS、回流路径及仅允许的 MaaS 域名。网络连通不是“绑定一个 EIP”即可完成；
+   EIP 应绑定在 NAT Gateway 等受控出口，不能直接暴露数据库节点。完成后执行最小、可计费的健康调用并记录结果。
+3. **凭据下发。** 生产 Key 由 SCC 托管，管控面以版本化受控方式在节点启动/轮换时注入；不得写入
+   `mysql.ai_model_config`、binlog、审计、错误日志或备份。当前 `rds_api_key` 仅是主机开发验证的明文启动注入，
+   不是 SCC 接入已完成的表述；密钥轮换需要与节点下发和重启/热更新能力一并验收。
+4. **审计就绪。** 确保 `ai_invoke_audit=ON`、`ai_invoke_audit_log_file` 指向受保护目录，并完成日志采集、保留、
+   权限、磁盘水位与告警配置。当前内核按事件追加本地文件，不实现文件自动轮转；P0 上线前由日志平台/Agent 提供轮转，
+   或后续补充内核轮转能力。日志增长风险首先是磁盘写满与采集延迟，不是 mysqld 堆内存膨胀。
+5. **受控发布模型。** 管控面从兼容性白名单选择已验证的 Huawei Profile（模型 ID、Endpoint、能力和版本），通过
+   `dbms_ai.register_model()` / `update_model()` 发布。不得盲目跟随“平台最新模型”：新模型、URL、协议或配额变化
+   必须经过 smoke、回退与发布审批后才可切换。当前版本的 Profile 发布不要求写入 binlog 或复制到只读节点。
+6. **授予最小权限。** 为受限 `root@'%'` 授予 `AI_INVOKE` 及其动态 `WITH GRANT OPTION`，使其能按既有 root
+   职责向业务账号授予/回收调用权限；授予 `AI_ADMIN` 但不授予该动态权限的转授权，避免扩大模型管理面。该授权形态
+   是目标实现，当前升级脚本尚未满足，见商业化 Backlog `G-008`。
+7. **预检和最后启用。** 在不打开总开关的情况下检查主节点的 Profile、权限、审计目的地和凭据；确认主节点状态正确后，最后设置
+   `rds_ai_maas=ON`，再以受控测试账号完成一次 Embedding/Analyze 和审计闭环验证。控制台应展示实例状态、Profile
+   版本、凭据版本标识（非明文）、网络健康、最近 `call_id` 和失败原因类别。
+
+**停用与变更。** 停用顺序为先关闭 `rds_ai_maas` 阻断新调用，再等待或标记在途调用、保留审计和 Profile 历史、
+最后按变更单回收网络或吊销 Key。模型切换、Key 轮换、审计关闭、网络策略变化均属于高风险配置变更，必须记录
+变更人、时间、前后版本、影响实例和回退结果；不能以“客户无感”为由静默替换模型能力或外发路径。
+
+### 1.3.4 功能清单 | Function List
 
 | 功能 | P0 交付内容 | 验收要点 |
 | --- | --- | --- |
@@ -182,9 +261,9 @@ TaurusDB 不采用 Provider 透传模式。百炼、火山方舟、Bedrock 等�
 | 模型治理 | `dbms_ai` 注册、更新、删除和展示 Profile。 | 仅 `AI_ADMIN` 可管理；停用/删除后后续调用失败。 |
 | 权限 | `AI_INVOKE`、`AI_ADMIN` 动态权限。 | 无 `AI_INVOKE` 的调用在出站前失败。 |
 | 审计与 DFX | 两阶段脱敏审计、`call_id`、错误分类和本地日志。 | 开启审计时 STARTED 不可安全写入即 fail closed；日志无密钥和完整内容。 |
-| 主备支持 | 主/只读节点调用与审计；主节点模型管理。 | 不依赖只读节点写系统表。 |
+| 主节点交付边界 | 主节点调用、审计和模型管理。 | 只读节点、故障切换、复制/binlog 传播不属于当前交付。 |
 
-### 1.3.4 典型应用场景
+### 1.3.5 典型应用场景
 
 本节不把“向量化两行数据再提问”当作 RAG。参考 Dify / LangChain 的检索链路，生产系统至少需要
 **资料接入与版本管理 → 内容解析与切分 → 元数据/权限过滤 → 语义召回 → 有界上下文组装 → 生成
@@ -548,14 +627,15 @@ Provider JSON 始终由服务端构造和持有。tenant VPC 到 MaaS 的网络�
 
 权限控制不在 Profile 表中维护用户列表，而复用 MySQL 动态权限和实例参数，保持授权模型简单、可升级。
 
-`rds_ai_maas` 与 root 升级补授权已实现；主备下发和存量升级路径仍以 TaurusDB 升级编排验证为准。
+`rds_ai_maas` 与 root 的基础升级补授权已实现；主备下发和存量升级路径仍以 TaurusDB 升级编排验证为准。为满足
+受限 root 给业务账号授权 `AI_INVOKE` 的产品目标，还需补齐动态 `WITH GRANT OPTION`，见 `G-008`。
 
 | 控制点 | 接口/对象 | 关键流程 |
 | --- | --- | --- |
 | 总开关 | `rds_ai_maas` | 最先检查；OFF 时数据面与管理写操作本地失败，不解析 Profile、凭据、审计或网络。 |
 | 调用权限 | `AI_INVOKE`、`mysql.global_grants` | SQL 函数在 Registry 前检查；无权限不会形成 canonical request 或外部请求。 |
 | 管理权限 | `AI_ADMIN`、`mysql.global_grants` | `dbms_ai` 写操作前检查；不等同于普通系统表 DML/DDL 权限。 |
-| 升级授权 | mysql 系统升级/bootstrap | 动态权限注册后，对存量 `root@'%'` 幂等补授予 `AI_INVOKE`、`AI_ADMIN`，不带动态转授权。 |
+| 升级授权 | mysql 系统升级/bootstrap | 当前对存量 `root@'%'` 幂等补授予 `AI_INVOKE`、`AI_ADMIN`，均不带动态转授权；目标是仅 `AI_INVOKE` 带动态转授权，待 `G-008` 实现。 |
 
 当前是实例级权限：有 `AI_INVOKE` 的账号可调用所有 ACTIVE Profile。按用户/模型/预算/配额授权不是隐含
 能力，后续必须以新的授权模型与系统表单独设计。
@@ -983,15 +1063,18 @@ Huawei 的精确 Endpoint 与空 `provider_options`，以确保模型表不成�
 当前实现实例级授权。按 `user@host -> model/capability`、预算、配额和多租户授权需要明确业务诉求后
 另行设计，不能在 `model_config` 中塞用户列表。
 
-**开发者 root 账号升级授权：**TaurusDB 为开发者提供的 `root@'%'` 是受限 root，不能假定
-其既有静态 `GRANT OPTION` 自动覆盖新增动态权限。升级必须在 AI 动态权限完成注册后，为已存在的
-`root@'%'` 幂等补授予 `AI_INVOKE`、`AI_ADMIN`，且 `WITH_GRANT_OPTION='N'`；这允许开发者调用
-模型和管理 Profile，但不能向其他账号扩散 AI 权限。
+**开发者 root 账号升级授权：**TaurusDB 为开发者提供的 `root@'%'` 是受限 root，不能假定其既有
+静态 `GRANT OPTION` 自动覆盖新增动态权限。动态权限的转授权必须按具体权限授予：全局静态
+`GRANT OPTION` 不会自动使账号拥有 `AI_INVOKE` 的转授权。产品目标是 root 可向业务账号授予或回收
+`AI_INVOKE`，但不得扩散 `AI_ADMIN` 或实例参数管理权限。
+
+当前升级脚本对两项动态权限均写入 `WITH_GRANT_OPTION='N'`，尚不满足上述目标；不得将当前实现表述为
+“root 可授权 AI 调用”。下列 SQL 是商业化 Backlog `G-008` 完成后的目标状态，而不是当前脚本行为：
 
 ```sql
 -- 仅在 mysql 系统升级/bootstrap 路径执行；普通 SQL 用户不得直接修改 global_grants。
 INSERT IGNORE INTO mysql.global_grants (USER, HOST, PRIV, WITH_GRANT_OPTION)
-SELECT User, Host, 'AI_INVOKE', 'N'
+SELECT User, Host, 'AI_INVOKE', 'Y'
   FROM mysql.user
  WHERE User = 'root' AND Host = '%';
 
@@ -1004,7 +1087,8 @@ SELECT User, Host, 'AI_ADMIN', 'N'
 若 `root@'%'` 在升级后才由实例初始化/管控流程创建，应在创建账号后执行标准授权：
 
 ```sql
-GRANT AI_INVOKE, AI_ADMIN ON *.* TO 'root'@'%';
+GRANT AI_INVOKE ON *.* TO 'root'@'%' WITH GRANT OPTION;
+GRANT AI_ADMIN ON *.* TO 'root'@'%';
 ```
 
 两条路径均不自动授予 `SYSTEM_VARIABLES_ADMIN` 或其他总开关管理权限；`rds_ai_maas` 仍由
@@ -1018,7 +1102,7 @@ TaurusDB 管控面/具备系统变量管理权限的管理员控制。总开关�
 | `rds_ai_maas` | 已实现的实例级 AI MaaS 总开关，`GLOBAL` 动态参数，默认 `OFF`。`OFF` 时阻断新的 Embedding/Analyze 调用和模型管理写操作；保留 `show_models()` 只读 DFX。 | 是，管理员级；开启/关闭需变更审计。 | 是；管控必须向主机和所有只读节点一致下发并确认生效。 |
 | `rds_api_key` | 已实现的华为 MaaS 敏感启动参数。当前为开发验证明文模式：mysqld 仅在内存中将其用作 Bearer Token；后台密文加解密、轮换与多节点下发仍需 TaurusDB 管控面接入。它不适用于阿里百炼、字节方舟或 AWS 等外部 Provider。 | 否。客户、DBA 和普通 SQL 均不能设置、读取或通过 `SHOW VARIABLES` 获取该值；从权限为 0600 的私有启动配置文件注入，不得提交真实 Key。 | 当前主机开发验证；后续节点下发使用同一受控密文版本。 |
 | `ai_invoke_audit` | 全局动态开关，默认 `ON`。控制后续新调用是否写两阶段 AI 审计；仅管理员可修改，不支持 `SET SESSION`。 | 是，管理员级；关闭必须有变更记录和告警。 | 是；需鉴权、审计和告警联动。 |
-| `ai_invoke_audit_log_file` | 只读启动参数，默认 `<datadir>/ai_invoke_audit.jsonl`，指定追加式审计文件。 | 否；避免租户任意指定文件路径。 | 是；通过启动配置、日志采集和目录权限管理。 |
+| `ai_invoke_audit_log_file` | 只读启动参数，默认 `<datadir>/ai_invoke_audit.jsonl`，指定追加式审计文件；当前内核不内置轮转。 | 否；避免租户任意指定文件路径。 | 是；通过启动配置、日志采集、平台/Agent 轮转和目录权限管理。 |
 
 开发验证通过权限为 0600 的私有启动配置文件传入 `rds_api_key`，mysqld 仅在内存中用它为 Huawei
 Adapter 构造 `Authorization: Bearer` 请求头；参数为空时调用必须在 MaaS 出站前失败。当前内核不执行
@@ -1039,8 +1123,9 @@ Adapter 构造 `Authorization: Bearer` 请求头；参数为空时调用必须�
 1. 升级脚本可幂等执行，模型配置迁移失败可重试，不产生重复 ACTIVE Profile。
 2. 当前开发验证的华为 Key 仅通过 `rds_api_key` 私有启动配置文件注入，不参与升级数据迁移或复制；
    外部 Provider 凭据由后续后台加密配置和 `credential_id` 引用。旧明文 Key 必须单独迁移、轮换或吊销。
-3. AI 动态权限注册完成后，升级脚本必须仅对已存在的 `root@'%'` 幂等写入 `AI_INVOKE`、`AI_ADMIN`，
-   且两项 `WITH_GRANT_OPTION` 均为 `N`。账号不存在时升级继续成功；升级后新建的开发者 root 由
+3. 当前 AI 动态权限注册完成后，升级脚本仅对已存在的 `root@'%'` 幂等写入 `AI_INVOKE`、`AI_ADMIN`，
+   且两项 `WITH_GRANT_OPTION` 均为 `N`。`G-008` 的目标是仅将 `AI_INVOKE` 调整为 `Y`，使 root 可向
+   业务账号授予调用权限；`AI_ADMIN` 仍为 `N`。账号不存在时升级继续成功；升级后新建的开发者 root 由
    初始化/管控流程执行标准 `GRANT`。不得用普通 SQL 会话直接写 `mysql.global_grants`。
 4. 旧表、旧 `distance_metric`、旧 embedding-space 标识和旧 `task/input/options` 接口需有受控的
    兼容读取或迁移策略；新 SQL 契约不应静默回退到旧行为。
@@ -1192,7 +1277,7 @@ cd build-debug/mysql-test
 | 6 | RAG 与 STORED 生成列 | 产品手册表、可计数 fixture Embedding、双节点复制环境 | 先 SQL 授权过滤，再检索并构造 prompt；插入/更新正文和非正文管理字段；覆盖 ROW FULL/MINIMAL/NOBLOB 与主备切换。 | RAG 资料来自已授权 SQL；正文更新的 Adapter/STARTED 计数加一，非正文更新计数为零；备机 MaaS 调用计数为零。 |
 | 7 | 复制与主备 | row-based replication 测试环境 | 在主节点执行受控模型管理变更，观察只读节点；主/只读分别调用并检查审计。 | Profile 配置复制；执行节点均写本地审计；不要求只读写系统表。 |
 | 8 | 总开关 | 主机和只读节点均启动，分别授予 `AI_INVOKE`、`AI_ADMIN`。 | 默认 OFF 下调用 AI 函数和管理写过程；开启后验证调用/写入；关闭后验证 `show_models()`、STORED DML 和已开始调用。 | OFF 时数据面与管理写均在本地失败、无 MaaS 请求/新调用审计；`show_models()` 可读；触发 STORED 向量生成的 DML 失败；主/只读一致生效。 |
-| 9 | 开发者 root 升级授权 | 创建含/不含 `root@'%'` 的存量实例，完成 AI 动态权限注册。 | 执行升级脚本；检查 `mysql.global_grants` 和 `SHOW GRANTS`；升级后创建 `root@'%'` 并走初始化授权。 | 存量 root 获得 `AI_INVOKE`、`AI_ADMIN` 且无动态权限转授权；不存在 root 时升级成功；新建 root 获得相同权限；不自动获得总开关管理权限。 |
+| 9 | 开发者 root 升级授权 | 创建含/不含 `root@'%'` 的存量实例，完成 AI 动态权限注册。 | 执行升级脚本；检查 `mysql.global_grants` 和 `SHOW GRANTS`；验证 root 仅可对 `AI_INVOKE` 向业务账号 GRANT/REVOKE，不能转授 `AI_ADMIN`；升级后创建 `root@'%'` 并走初始化授权。 | `G-008` 完成后，存量/新建 root 的 `AI_INVOKE` 为动态转授权、`AI_ADMIN` 不可转授权；不存在 root 时升级成功；root 不自动获得总开关管理权限。当前实现两项均不可转授权，不能作为本项验收通过。 |
 | 10 | 华为 API Key 参数 | 配置有效、为空的 `rds_api_key` 开发 Key。 | 分别调用 Huawei Embedding/Analyze；检查请求结果和各类日志/审计；验证主机不可通过 SQL 读取或设置。 | 有效 Key 可调用；为空在出站前失败；Key 不出现在可查询变量、日志或审计中。生产密文解密与轮换由管控面专项验证。 |
 
 ### 5.1.1 RAG 测试入口
@@ -1241,8 +1326,9 @@ cd build-debug/mysql-test
 
 1. 从不含 AI 表的存量实例升级，验证表创建、动态权限、`dbms_ai` 安装和默认审计参数。
 2. 从旧 `alisql_ai_model_config` 迁移，验证幂等重试、旧表保留、显式模型调用和凭据轮换策略。
-3. 验证存量 `root@'%'` 的 `AI_INVOKE`、`AI_ADMIN` 幂等补授予、不带动态 `WITH GRANT OPTION`，以及
-   root 不存在时升级不失败；验证升级后新建 root 的初始化授权。
+3. 当前验证存量 `root@'%'` 的 `AI_INVOKE`、`AI_ADMIN` 幂等补授予，以及 root 不存在时升级不失败；
+   `G-008` 完成后追加验证仅 `AI_INVOKE` 带动态 `WITH GRANT OPTION`、`AI_ADMIN` 不带该选项，并验证
+   升级后新建 root 的初始化授权。
 4. 新旧版本主备混部，分别验证 row/statement binlog、复制 applier、只读节点调用和审计。
 5. 降级预检查，确认目标版本对新 Profile/权限/过程的识别能力；不兼容时阻断降级并验证导出/清理步骤。
 6. 备份恢复后验证 Profile、权限和后台凭据引用；确认审计日志不被当作数据库数据恢复。
