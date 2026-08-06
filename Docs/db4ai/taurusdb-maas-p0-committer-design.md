@@ -1092,7 +1092,7 @@ binlog 与 row-event flags。这些 flags 会影响所有使用该 command 的�
 | 亚健康场景 | 风险 | 检测、隔离与处置 |
 | --- | --- | --- |
 | MaaS 慢响应、配额趋近或 429 增多 | SQL worker 被同步等待，业务延迟和费用不可控。 | 按模型/Endpoint 的耗时、失败率和 429 聚合告警；应用限流、限长，必要时管理员暂时停用 Profile。 |
-| 大 prompt、大 Embedding 文本、RAG sources 或批量 DML | 输入费用、mysqld 内存放大、worker 阻塞和单语句外呼风暴。 | 上线前增加输入字节/Token、单语句外呼次数和实例并发外呼上限；超限本地拒绝且零出站，应用侧先做有界聚合。 |
+| 大 prompt、大 Embedding 文本、RAG sources 或批量 DML | 输入费用、mysqld 内存放大、worker 阻塞和单语句外呼风暴。 | 内核已限制输入不超过 1 MiB、每语句最多 32 次、实例最多 32 个并发调用；上线前补齐超限零出站、并发和容量实测，应用侧先做有界聚合。 |
 | 审计文件增长、磁盘水位升高或采集延迟 | 审计不可写会阻断开启审计的 AI 调用。 | 日志轮转、保留、磁盘水位和采集延迟纳入日志平台；告警恢复后自动清理。 |
 | Debug 明文凭据残留 | Key 进入系统表、binlog、备份的泄露风险。 | 仅隔离开发实例允许；真实联调后删除 Profile 并在 MaaS 侧轮换/吊销 Key。 |
 | 模型配置已 ACTIVE 但上游不可用 | 调用错误集中发生。 | 区分配置 ACTIVE 与最近推理成功；以真实 smoke/健康探测验证，不把可见模型等同于可调用模型。 |
@@ -1266,10 +1266,23 @@ cd build-debug/mysql-test
    和耗时，不得提交 Key 或完整业务内容。
 3. 必须覆盖主/只读节点、节点切换、总开关默认关闭/动态开关/运行中关闭、审计不可写、凭据不可解析、
    网络中断、模型限流、模型停用、控制面复制和升级回退。
-4. 以下为上线前阻断项：输入字节/Token 上限及无出站测试、TaurusDB 后台加密凭据真实验证、
+4. 以下为上线前阻断项：输入字节/调用次数/并发上限的无出站与容量测试、TaurusDB 后台加密凭据真实验证、
    `SQLCOM_ADMIN_PROC` 全量兼容回归、控制表 SELECT/Debug 明文/备份 binlog 安全回归、
    `endpoint_url` 的受控发布/Host-路径校验/版本回退回归、`rds_ai_maas` 主/只读一致性与 STORED
    生成列阻断回归，以及目标 Region 网络和日志平台闭环。
+
+# 6 商用化差距与上线门禁 | Commercialization Gaps and Gates
+
+当前 Huawei MaaS 数据面已经完成主机开发验证，但不能将“真实调用成功”直接等同于商用可用。商用
+阻断项、P1 扩展项、状态、验收条件和关闭证据统一维护在
+[TaurusDB MaaS 商用化差距 Backlog](taurusdb-maas-commercialization-backlog.md)。
+
+上线评审至少确认以下 P0-Blocker 已关闭：生产凭据控制面、主备/故障切换、目标 Region 网络与模型
+准入、审计日志平台、升级回退/备份恢复、稳定错误码与 DFX、性能容量与可靠性。任何一项未关闭时，
+只能按受控开发验证或灰度范围交付，不得承诺生产商用。
+
+内核已具备的输入/调用上限、Endpoint 策略、ROW 复制/STORED 生成列和本地两阶段审计不再标为
+“待开发”；它们仍须在 Backlog 中补齐边界、目标环境或运维闭环证据。
 
 ## 附：资料联动修改
 
@@ -1280,6 +1293,7 @@ cd build-debug/mysql-test
 | 实现级低层设计 | `Docs/db4ai/alisql-maas-p0-low-level-design.md` |
 | 验收标准 | `Docs/db4ai/taurusdb-maas-p0-acceptance-criteria.md` |
 | 验证状态 | `Docs/db4ai/alisql-maas-p0-validation-status.md` |
+| 商用化差距 Backlog | `Docs/db4ai/taurusdb-maas-commercialization-backlog.md` |
 | 代码移植入口 | `Docs/db4ai/README.md` |
 | 离线测试 | `mysql-test/suite/rds/t/ai_maas_*.test` |
 | 真实测试 | `scripts/db4ai_maas_*.sql` |
