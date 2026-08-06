@@ -10,6 +10,7 @@
 #include <rapidjson/document.h>
 
 #include "my_dbug.h"
+#include "sql-common/json_dom.h"
 #include "sql/auth/sql_security_ctx.h"
 #include "sql/derror.h"
 #include "sql/field.h"
@@ -44,6 +45,25 @@ std::string Value(Field *field) {
   String value;
   String *result = field->val_str(&value, &value);
   return result == nullptr ? std::string() : std::string(result->ptr(), result->length());
+}
+bool ReadStringOrJson(Item *item, std::string *value) {
+  if (item == nullptr || value == nullptr) return false;
+  if (item->data_type() == MYSQL_TYPE_JSON) {
+    Json_wrapper wrapper;
+    if (item->val_json(&wrapper) || item->null_value) return false;
+    String serialized;
+    if (wrapper.to_string(&serialized, true, "dbms_ai.provider_options",
+                          JsonDocumentDefaultDepthHandler))
+      return false;
+    value->assign(serialized.ptr(), serialized.length());
+    return true;
+  }
+
+  String storage;
+  String *result = item->val_str(&storage);
+  if (result == nullptr) return false;
+  value->assign(result->ptr(), result->length());
+  return true;
 }
 const char *CapabilityName(Ai_capability capability) {
   return capability == Ai_capability::k_text_embedding ? "TEXT_EMBEDDING" : "TEXT_GENERATION";
@@ -221,30 +241,71 @@ bool ReadRows(THD *thd, std::vector<Safe_row> *rows) {
 }
 bool ReadRequest(mem_root_deque<Item *> *list, Ai_model_admin_request *request, bool delete_only) {
   if (list == nullptr || list->size() != (delete_only ? 2U : 7U)) return false;
-  String storage; String *name = (*list)[0]->val_str(&storage); if (name == nullptr) return false;
-  request->model_name.assign(name->ptr(), name->length());
-  String cap_storage; String *cap = (*list)[1]->val_str(&cap_storage); if (cap == nullptr || !ParseCapability(std::string(cap->ptr(), cap->length()), &request->capability)) return false;
+  if (!ReadStringOrJson((*list)[0], &request->model_name)) return false;
+  std::string capability;
+  if (!ReadStringOrJson((*list)[1], &capability) ||
+      !ParseCapability(capability, &request->capability))
+    return false;
   if (delete_only) return !request->model_name.empty();
-  String provider_storage, model_storage, endpoint_storage, options_storage;
-  String *provider = (*list)[2]->val_str(&provider_storage);
-  String *model = (*list)[3]->val_str(&model_storage);
-  String *endpoint = (*list)[4]->val_str(&endpoint_storage);
-  String *options = (*list)[6]->val_str(&options_storage);
   const longlong dimension = (*list)[5]->val_int();
-  if (provider == nullptr || model == nullptr || endpoint == nullptr ||
-      options == nullptr || (*list)[5]->null_value || dimension < 0 ||
+  if (!ReadStringOrJson((*list)[2], &request->provider) ||
+      !ReadStringOrJson((*list)[3], &request->provider_model_name) ||
+      !ReadStringOrJson((*list)[4], &request->endpoint_url) ||
+      !ReadStringOrJson((*list)[6], &request->provider_options) ||
+      (*list)[5]->null_value || dimension < 0 ||
       static_cast<ulonglong>(dimension) > UINT32_MAX)
     return false;
-  request->provider.assign(provider->ptr(), provider->length());
-  request->provider_model_name.assign(model->ptr(), model->length());
-  request->endpoint_url.assign(endpoint->ptr(), endpoint->length());
   request->dimension = static_cast<uint32_t>(dimension);
-  request->provider_options.assign(options->ptr(), options->length());
   return !request->model_name.empty();
 }
 class Sql_cmd_ai_model_admin final : public im::Sql_cmd_admin_proc {
  public:
   Sql_cmd_ai_model_admin(THD *thd, mem_root_deque<Item *> *list, const Ai_model_admin_proc *proc) : Sql_cmd_admin_proc(thd, list, proc), operation_(proc->operation()) {}
+  bool prepare(THD *thd) override {
+    if (check_access(thd)) return true;
+    if (m_list != nullptr) {
+      for (Item *&item : *m_list) {
+        if ((!item->fixed && item->fix_fields(thd, &item)) ||
+            item->check_cols(1))
+          return true;
+      }
+    }
+    if (check_parameter()) return true;
+    set_prepared();
+    return false;
+  }
+  bool check_parameter() override {
+    const size_t expected = operation_ == Ai_model_admin_proc::Operation::k_show
+                                ? 0U
+                                : operation_ == Ai_model_admin_proc::Operation::k_delete
+                                      ? 2U
+                                      : 7U;
+    const size_t actual = m_list == nullptr ? 0U : m_list->size();
+    if (actual != expected) {
+      my_error(ER_SP_WRONG_NO_OF_ARGS, MYF(0), "PROCEDURE",
+               m_proc->qname().c_str(), expected, actual);
+      return true;
+    }
+    if (m_list == nullptr) return false;
+
+    size_t index = 0;
+    for (Item *item : *m_list) {
+      const enum_field_types actual = item->data_type();
+      const bool options_json =
+          operation_ != Ai_model_admin_proc::Operation::k_delete &&
+          index == 6 &&
+          (actual == MYSQL_TYPE_VARCHAR || actual == MYSQL_TYPE_JSON);
+      const enum_field_types expected_type =
+          index == 5 ? MYSQL_TYPE_LONGLONG : MYSQL_TYPE_VARCHAR;
+      if (!options_json && actual != expected_type) {
+        my_error(ER_NATIVE_PROC_PARAMETER_MISMATCH, MYF(0), index + 1,
+                 m_proc->qname().c_str());
+        return true;
+      }
+      ++index;
+    }
+    return false;
+  }
   bool check_access(THD *thd) override { if (operation_ != Ai_model_admin_proc::Operation::k_show && !IsAiMaaSEnabled()) { my_error(ER_NOT_SUPPORTED_YET, MYF(0), "DB4AI MaaS feature is disabled"); return true; } auto *sctx = thd->security_context(); if (sctx == nullptr || !sctx->has_global_grant(STRING_WITH_LEN("AI_ADMIN")).first) { my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0), "AI_ADMIN"); return true; } return false; }
   bool pc_execute(THD *thd) override { if (operation_ == Ai_model_admin_proc::Operation::k_show) return false; if (!IsAiMaaSEnabled()) { my_error(ER_NOT_SUPPORTED_YET, MYF(0), "DB4AI MaaS feature is disabled"); return true; } Ai_model_admin_request request; if (!ReadRequest(m_list, &request, operation_ == Ai_model_admin_proc::Operation::k_delete)) { my_error(ER_WRONG_ARGUMENTS, MYF(0), "dbms_ai model request"); return true; } return operation_ == Ai_model_admin_proc::Operation::k_register ? Register(thd, request) : operation_ == Ai_model_admin_proc::Operation::k_update ? Update(thd, request) : Delete(thd, request); }
   void send_result(THD *thd, bool error) override { if (error) return; if (operation_ != Ai_model_admin_proc::Operation::k_show) { my_ok(thd); return; } std::vector<Safe_row> rows; if (ReadRows(thd, &rows)) return; if (m_proc->send_result_metadata(thd)) return; for (const auto &row : rows) { Protocol *p = thd->get_protocol(); p->start_row(); p->store_string(row.name.c_str(), row.name.size(), system_charset_info); p->store_string(row.capability.c_str(), row.capability.size(), system_charset_info); p->store_string(row.provider_model.c_str(), row.provider_model.size(), system_charset_info); if (row.has_dimension) p->store_longlong(row.dimension, true); else p->store_null(); p->store_longlong(row.version, true); if (p->end_row()) return; } my_eof(thd); }

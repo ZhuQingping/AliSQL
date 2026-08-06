@@ -61,7 +61,8 @@ CALL dbms_ai.delete_model('huawei/model-admin-user-generation', 'TEXT_GENERATION
 GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
 CALL dbms_ai.register_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION',
                             'huawei', 'glm-5.2',
-                            'https://api.modelarts-maas.com/v2/chat/completions', 0, '{}');
+                            'https://api.modelarts-maas.com/v2/chat/completions', 0,
+                            JSON_OBJECT());
 --echo # The package makes its fixed bge-m3/1024 embedding contract resolvable.
 CALL dbms_ai.register_model('huawei/mtr-model-admin-embedding', 'TEXT_EMBEDDING',
                             'huawei', 'bge-m3',
