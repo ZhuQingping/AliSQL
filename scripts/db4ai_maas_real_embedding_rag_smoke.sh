@@ -4,8 +4,9 @@
 # Explicit opt-in, billable Huawei MaaS validation for the SQL paths covered by
 # ai_maas_embedding.test and the STORED-generated-column case in
 # ai_maas_rag.test. It never reads, accepts, prints, or writes an API key.
-# The database must already contain the active model Profile, server-side
-# credential and AI_INVOKE grant for the selected database account.
+# The database must already contain the active model Profile and AI_INVOKE
+# grant, and mysqld must have started from the private 0600 configuration
+# described in scripts/db4ai_maas_dev.cnf.example.
 
 set -euo pipefail
 

@@ -148,6 +148,19 @@ Ai_error StartInvocation(THD *thd, Ai_audit_sink *sink,
   return result == Ai_error::k_ok ? result : Ai_error::k_audit_unavailable;
 }
 
+Ai_error ReadInvocationCredential(THD *thd, const Ai_resolved_model &model,
+                                  Secure_string *credential) {
+  if (credential == nullptr) return Ai_error::k_credential_unavailable;
+  if (model.provider == "huawei") {
+    if (opt_rds_api_key == nullptr || *opt_rds_api_key == '\0')
+      return Ai_error::k_credential_unavailable;
+    credential->Assign(std::string(opt_rds_api_key));
+    return Ai_error::k_ok;
+  }
+  Ai_credential_resolver credential_resolver;
+  return credential_resolver.ReadSecret(thd, model, credential);
+}
+
 Ai_error CompleteInvocation(THD *thd, Ai_audit_sink *sink, uint64_t call_id,
                             const Ai_resolved_model &model,
                             Ai_capability capability,
@@ -215,10 +228,9 @@ Ai_error Ai_runtime::Embed(THD *thd, const std::string &text,
   }
 #endif
 
-  Ai_credential_resolver credential_resolver;
   Secure_string credential;
   const Ai_error credential_error =
-      credential_resolver.ReadSecret(thd, model, &credential);
+      ReadInvocationCredential(thd, model, &credential);
   if (credential_error != Ai_error::k_ok)
     return complete(nullptr, credential_error);
 
@@ -282,10 +294,9 @@ Ai_error Ai_runtime::Analyze(THD *thd, const std::string &model_name,
   }
 #endif
 
-  Ai_credential_resolver credential_resolver;
   Secure_string credential;
   const Ai_error credential_error =
-      credential_resolver.ReadSecret(thd, model, &credential);
+      ReadInvocationCredential(thd, model, &credential);
   if (credential_error != Ai_error::k_ok)
     return complete(nullptr, credential_error);
 

@@ -3,7 +3,8 @@
 #
 # Explicit opt-in Huawei MaaS smoke check. This script never accepts or prints
 # an API key. The selected logical models must be ACTIVE instance Profiles and
-# their server-side credentials must be available. It is
+# mysqld must have been started from the private 0600 development configuration
+# described in scripts/db4ai_maas_dev.cnf.example. It is
 # intentionally not called by MTR or CI.
 
 set -euo pipefail

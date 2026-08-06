@@ -59,7 +59,7 @@ OpenAI-compatible `messages`，从而为后续接入阿里云百炼、字节方�
 | 状态 | 范围 |
 | --- | --- |
 | 当前已实现并有离线回归 | 华为 MaaS Adapter、当前 `AI_EMBEDDING(text, model_name [, dimension])`、`AI_ANALYZE(model_name, prompt [, options_json])`、离线 fixture MTR、真实 smoke 脚本、动态权限和追加式审计文件。 |
-| P0 待完成 | 新 Embedding 签名、`rds_ai_maas`、`rds_api_key`、受控 Endpoint/Provider 策略、模型配置版本历史、进程级 Registry、终态审计 fail-open 语义与多 Provider dispatch。 |
+| P0 待完成 | 新 Embedding 签名、`rds_ai_maas`、受控 Endpoint/Provider 策略、模型配置版本历史、进程级 Registry、终态审计 fail-open 语义与多 Provider dispatch。 |
 | 上线阻断 | 独立 Endpoint allowlist、凭据轮换、输入/调用数量限制、STORED/复制矩阵、主备验证、审计故障注入和目标环境真实 smoke。 |
 
 当前已实现并经过离线回归覆盖的功能包括：
@@ -171,7 +171,7 @@ TaurusDB 不采用 Provider 透传模式。百炼、火山方舟、Bedrock 等�
 | --- | --- | --- |
 | 华为云 MaaS | 提供 `/v1/embeddings`、`/v2/chat/completions` 推理服务、模型准入和配额。 | 没有模型准入、API Key 或服务时不可进行真实调用；离线 MTR fixture 可验证内核路径但不能替代真实服务。 |
 | 租户 VPC、Policy Route、NAT Gateway、EIP、安全组、DNS/TLS | 为 tenant VPC 到 MaaS Endpoint 提供受控 HTTPS 出站和回流。 | 每个 Region 必须验证；缺失时真实调用失败。不能由 mysqld 或 SQL 自动创建，替代是完成云网络部署。 |
-| TaurusDB 管控后台加密凭据服务 | 华为 MaaS 的加密 API Key 以 `rds_api_key` 下发；外部 Provider 通过 `provider_options.credential_id` 解析客户配置的加密凭据或 IAM Role。 | 凭据不可解析时本地失败且不出站；模型表不保存明文 Key。 |
+| 开发验证私有配置文件 | 华为 MaaS API Key 以 `rds_api_key` 启动参数明文注入 mysqld；外部 Provider 仍预留 `provider_options.credential_id`。 | 当前仅主机开发验证；参数为空时本地失败且不出站，模型表不保存 API Key。 |
 | TaurusDB 日志平台 | 采集、轮转、保留、访问控制和告警本地 JSON Lines 审计文件。 | 仍可写本地文件但不具备集中追溯能力；上线前须完成日志采集和磁盘满告警闭环。 |
 | `libcurl`、TLS/CA、DNS | mysqld 内进程 HTTPS Transport。 | TLS、DNS 或证书异常导致调用失败并记录脱敏终态；不调用 shell `curl`、Python 或 OpenAI SDK。 |
 
@@ -327,8 +327,8 @@ Provider JSON 始终由服务端构造和持有。tenant VPC 到 MaaS 的网络�
    Endpoint 是否符合该 Provider/能力的安全策略。
 5. Runtime 创建 canonical request，并在 `ai_invoke_audit=ON` 时先落盘 `STARTED`；安全落盘失败则
    fail closed，不发送 MaaS 请求。
-6. Huawei Adapter 仅在调用 Huawei Profile 时解析 `rds_api_key` 的加密值；其他 Provider 按
-   `provider_options.credential_id` 解析加密凭据/IAM Role。在内存中构造 Provider 所需认证信息，
+6. Huawei Adapter 仅在调用 Huawei Profile 时读取启动参数 `rds_api_key` 的内存明文；其他 Provider 按
+   `provider_options.credential_id` 预留解析受控凭据/IAM Role 的扩展点。在内存中构造 Provider 所需认证信息，
    不将明文写入表、日志或审计。
 7. Huawei Adapter 将 canonical request 序列化为 MaaS JSON；HTTP Transport 以 libcurl 发起 HTTPS POST。
 8. Adapter 解析 Provider 响应、usage、request id 和结果；Embedding 校验 1024 维并编码为 `VECTOR`，
@@ -430,11 +430,11 @@ Provider JSON 始终由服务端构造和持有。tenant VPC 到 MaaS 的网络�
 | 模块 | 关键对象 | 责任与失败边界 |
 | --- | --- | --- |
 | Model Registry | Profile 的 `endpoint_url`、`config_version` | 校验 Provider、HTTPS Host/路径策略、能力和 Endpoint；普通 SQL 不可覆盖 URL。 |
-| Credential Resolver | Huawei `rds_api_key`；外部 Provider `credential_id` | Huawei 仅在内存解密加密参数；外部 Provider 解析后台凭据/IAM Role。缺失或不可解密在出站前失败。 |
+| Credential Resolver | Huawei `rds_api_key`；外部 Provider `credential_id` | 当前 Huawei 仅在内存读取开发验证明文参数；外部 Provider 预留后台凭据/IAM Role。参数缺失在出站前失败。 |
 | HTTP Transport | libcurl、TLS/CA、DNS、超时和 1 MiB 响应限制 | 接受已验证的 Endpoint 快照，不接受客户端 URL/Header/Authorization。 |
 
-本节的 `rds_api_key`、Provider 凭据解析器和独立 Endpoint 策略均为**目标设计（待实现）**。当前华为
-Endpoint/凭据路径仍是原型实现，不能据此开放生产 Endpoint 修改。
+`rds_api_key` 当前已作为开发验证启动参数实现；Provider 凭据解析器和独立 Endpoint 策略仍为**目标设计
+（待实现）**。当前华为 Endpoint/凭据路径不能据此开放生产 Endpoint 修改。
 
 明文 Key、密文、Authorization、完整 HTTP 请求/响应都不得进入系统表、SQL 结果、binlog 或审计日志。
 Endpoint 变更必须经 `dbms_ai` 版本化发布；仅修改 URL 不能绕过 Adapter 协议兼容性验证。
@@ -668,7 +668,7 @@ CREATE TABLE mysql.ai_model_config (
 {}
 ```
 
-华为 MaaS：凭据由实例敏感参数 `rds_api_key` 保存加密值，因此为空对象。
+华为 MaaS：开发验证凭据仅位于 mysqld 的 `rds_api_key` 内存参数，因此为空对象。
 
 ```json
 {"credential_id":"bailian-prod"}
@@ -723,8 +723,8 @@ SSRF 和业务数据外传。
 ### 2.2.3 当前验证实例的模型 Profile 快照
 
 以下为 3344 Debug 验证实例的非敏感路由/模型信息，按目标表结构转换后的快照。实例当前使用的
-`PLAINTEXT_DEV` 是旧原型调试方式，须在本次收敛中迁出模型表；目标表达中华为凭据由
-`rds_api_key` 保存加密值，故 `provider_options` 为 `{}`。所有 Profile 均为 `ACTIVE`、
+`PLAINTEXT_DEV` 是旧原型调试方式，须迁出模型表；当前开发验证中华为凭据由 mysqld 启动参数
+`rds_api_key` 提供，故 `provider_options` 为 `{}`。所有 Profile 均为 `ACTIVE`、
 `config_version=1`。
 
 | 逻辑模型名 | 能力 | Provider 模型 | Endpoint | 维度 | `provider_options` |
@@ -878,14 +878,14 @@ TaurusDB 管控面/具备系统变量管理权限的管理员控制。总开关�
 | 参数 | 含义 | 是否开放到 Console | 是否对接 OPS |
 | --- | --- | --- | --- |
 | `rds_ai_maas` | **待实现。**实例级 AI MaaS 总开关，`GLOBAL` 动态参数，默认 `OFF`。`OFF` 时阻断新的 Embedding/Analyze 调用和模型管理写操作；保留 `show_models()` 只读 DFX。 | 是，管理员级；开启/关闭需变更审计。 | 是；管控必须向主机和所有只读节点一致下发并确认生效。 |
-| `rds_api_key` | **待实现。**仅用于华为 MaaS 的实例级敏感参数，保存由 TaurusDB 管控后台加密后下发的 API Key 密文。它不适用于阿里百炼、字节方舟或 AWS 等外部 Provider；这些 Provider 继续使用 `provider_options.credential_id` 解析各自的受控凭据。 | 否。客户、DBA 和普通 SQL 均不能设置、读取或通过 `SHOW VARIABLES` 获取该值；仅管控后台可下发、轮换或清空。 | 是；主机和所有只读节点必须使用同一密文版本。 |
+| `rds_api_key` | **当前为开发验证明文模式。**仅用于华为 MaaS，`READ_ONLY + NOT_VISIBLE + NON_PERSIST` 启动参数；Huawei Adapter 仅在内存中将其作为 Bearer Token 使用。它不适用于阿里百炼、字节方舟或 AWS 等外部 Provider。 | 否。普通 SQL 不能设置、读取或通过 `SHOW VARIABLES` 获取该值；从权限为 0600 的本地私有配置文件启动时注入。 | 当前只支持主机开发验证；不写 binlog、不下发备机。 |
 | `ai_invoke_audit` | 全局动态开关，默认 `ON`。控制后续新调用是否写两阶段 AI 审计；仅管理员可修改，不支持 `SET SESSION`。 | 是，管理员级；关闭必须有变更记录和告警。 | 是；需鉴权、审计和告警联动。 |
 | `ai_invoke_audit_log_file` | 只读启动参数，默认 `<datadir>/ai_invoke_audit.jsonl`，指定追加式审计文件。 | 否；避免租户任意指定文件路径。 | 是；通过启动配置、日志采集和目录权限管理。 |
 
-`rds_api_key` 的密文只能在 mysqld 内存中为 Huawei Adapter 解密并构造 `Authorization: Bearer` 请求头；
-解密失败、参数为空或密文版本与实例不匹配时，调用必须在 MaaS 出站前失败。该参数的密文、明文、
-解密错误详情均不得出现在 `SHOW VARIABLES`、Performance Schema、general/slow/error log、binlog、
-AI 审计文件或 SQL 错误消息中。密钥轮换只影响后续新调用；已开始的调用使用其已解析的内存快照完成。
+`rds_api_key` 的明文仅在 mysqld 内存中供 Huawei Adapter 构造 `Authorization: Bearer` 请求头；参数为空时，
+调用必须在 MaaS 出站前失败。它不得出现在 `SHOW VARIABLES`、Performance Schema、general/slow/error log、
+binlog、AI 审计文件或 SQL 错误消息中。当前模式仅用于开发验证；后续由管控面加解密和轮换替换，且不改变
+SQL 接口、模型表或 `dbms_ai` 接口。
 
 `timeout_ms`、`max_output_tokens` 和 Embedding 的 `dimension` 属于 SQL 函数的 `options_json`，
 见 2.3 接口描述，不属于本节实例参数。当前没有输入字节/Token 上限、并发、速率或预算类实例参数；
@@ -900,8 +900,9 @@ Console/OPS 参数。
 升级期间新旧节点共存时，必须满足以下要求：
 
 1. 升级脚本可幂等执行，模型配置迁移失败可重试，不产生重复 ACTIVE Profile。
-2. 华为凭据迁入 `rds_api_key` 的受控加密配置；外部 Provider 凭据迁入后台加密配置并由
-   `credential_id` 引用。旧明文 Key 必须单独迁移、轮换或吊销，不能作为常规升级数据复制。
+2. 当前华为开发验证凭据由主机私有配置文件注入 `rds_api_key`，不写 binlog 或下发备机；后续迁入
+   管控面加密配置。外部 Provider 凭据也由后台加密配置并以 `credential_id` 引用。旧明文 Key 必须单独
+   迁移、轮换或吊销，不能作为常规升级数据复制。
 3. AI 动态权限注册完成后，升级脚本必须仅对已存在的 `root@'%'` 幂等写入 `AI_INVOKE`、`AI_ADMIN`，
    且两项 `WITH_GRANT_OPTION` 均为 `N`。账号不存在时升级继续成功；升级后新建的开发者 root 由
    初始化/管控流程执行标准 `GRANT`。不得用普通 SQL 会话直接写 `mysql.global_grants`。
@@ -1020,7 +1021,7 @@ SRE 和安全 SE 共同确认后定稿。
 | 自检项 | 是否涉及 | 备注 |
 | --- | --- | --- |
 | 通信矩阵变化 | 是 | 新增 tenant VPC 到 MaaS 的 HTTPS 出站、DNS、TLS、Policy Route/NAT/EIP、安全组和回流验证。 |
-| 新增/减少安全凭据 | 是 | 华为 API Key 由管控后台加密后下发至 `rds_api_key`；外部 Provider 的 API Key/IAM Role 由管控后台加密保存，模型表仅存非敏感 `credential_id`。 |
+| 新增/减少安全凭据 | 是 | 当前华为 API Key 通过 0600 私有启动配置明文注入 `rds_api_key`；外部 Provider 的 API Key/IAM Role 后续由管控后台加密保存，模型表仅存非敏感 `credential_id`。 |
 | 安全凭据新用途或新权限 | 是 | 凭据仅供对应 Provider Adapter 的出站认证使用；模型控制表 SELECT 仅授予受信任管理员。 |
 | 权限变化 | 是 | 新增 `AI_INVOKE`、`AI_ADMIN`；审计开关仅管理员可改。 |
 | 新加解密场景 | 否 | P0 复用 HTTPS/TLS 与既有 Secret 机制，不新增自定义加密算法。 |
@@ -1056,17 +1057,16 @@ cd build-debug/mysql-test
 | 7 | 复制与主备 | row-based replication 测试环境 | 在主节点执行受控模型管理变更，观察只读节点；主/只读分别调用并检查审计。 | Profile 配置复制；执行节点均写本地审计；不要求只读写系统表。 |
 | 8 | 总开关 | 主机和只读节点均启动，分别授予 `AI_INVOKE`、`AI_ADMIN`。 | 默认 OFF 下调用 AI 函数和管理写过程；开启后验证调用/写入；关闭后验证 `show_models()`、STORED DML 和已开始调用。 | OFF 时数据面与管理写均在本地失败、无 MaaS 请求/新调用审计；`show_models()` 可读；触发 STORED 向量生成的 DML 失败；主/只读一致生效。 |
 | 9 | 开发者 root 升级授权 | 创建含/不含 `root@'%'` 的存量实例，完成 AI 动态权限注册。 | 执行升级脚本；检查 `mysql.global_grants` 和 `SHOW GRANTS`；升级后创建 `root@'%'` 并走初始化授权。 | 存量 root 获得 `AI_INVOKE`、`AI_ADMIN` 且无动态权限转授权；不存在 root 时升级成功；新建 root 获得相同权限；不自动获得总开关管理权限。 |
-| 10 | 华为 API Key 参数 | 配置有效、为空、不可解密和轮换后的 `rds_api_key` 密文。 | 分别调用 Huawei Embedding/Analyze；检查请求结果和各类日志/审计；在主机、只读节点验证一致性。 | 有效密文可调用；为空/解密失败均在出站前失败；轮换仅影响后续调用；密文和明文均不出现在可查询变量、日志或审计中。 |
+| 10 | 华为 API Key 参数 | 主机以私有 0600 配置文件提供有效或为空的 `rds_api_key`。 | 验证启动、Embedding/Analyze、本地缺失凭据失败，以及 `SHOW`、`@@GLOBAL`、`SET`、`SET PERSIST` 均不可读取或设置。 | 有效参数可调用；为空时出站前失败；Key 不出现在可查询变量、日志、binlog 或审计中。备机、复制、加解密和轮换不在当前范围。 |
 
 ### 5.1.1 RAG 测试入口
 
 图示、关键 SQL 和预期结果见 [2.1.3.6 向量结果与 RAG 边界](#2136-向量结果与-rag-边界)；可复跑实现为
 [`ai_maas_rag.test`](../../mysql-test/suite/rds/t/ai_maas_rag.test)。本节不重复 SQL，避免设计说明与用例分叉。
 
-当前基线已验证 7 个 RDS MTR 用例及 shutdown report 通过。现有 `ai_maas_model_admin_release.test`
-覆盖旧实现的 fake keyring 路径；迁移到 Huawei `rds_api_key` 加密参数和外部 Provider 的
-`provider_options.credential_id` 后，必须替换为对应的凭据解析、轮换和失效回归，不能以旧 keyring
-fixture 代替目标环境集成验证。
+当前基线已验证离线 RDS MTR 与 shutdown report。`ai_maas_rds_api_key.test` 覆盖启动参数接受以及 SQL
+不可读、不可设置和不可持久化。现有 `ai_maas_model_admin_release.test` 覆盖旧 keyring 路径；后续管控面
+加解密、轮换和外部 Provider 凭据解析必须新增独立回归，不能以旧 keyring fixture 代替目标环境集成验证。
 
 **真实 MaaS smoke（管理员显式授权、专用 schema、可撤销凭据）：**
 

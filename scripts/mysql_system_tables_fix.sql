@@ -1593,7 +1593,7 @@ SET @cmd = "CREATE TABLE IF NOT EXISTS mysql.taurusdb_ai_model_config (
   provider_model_name VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   endpoint_url TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   auth_type VARCHAR(64) CHARACTER SET ascii NOT NULL DEFAULT 'BEARER_API_KEY',
-  credential_mode ENUM('SECRET_REF','PLAINTEXT_DEV','AWS_IAM_ROLE') NOT NULL DEFAULT 'SECRET_REF',
+  credential_mode ENUM('SECRET_REF','PLAINTEXT_DEV','SERVER_PARAMETER','AWS_IAM_ROLE') NOT NULL DEFAULT 'SECRET_REF',
   credential_ref VARCHAR(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   api_key_plaintext BLOB DEFAULT NULL,
   default_dimension INT UNSIGNED DEFAULT NULL,
@@ -1616,6 +1616,14 @@ SET @str = CONCAT(@cmd, " ENCRYPTION='", @is_mysql_encrypted, "'");
 PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
+
+-- Existing instances need the server-startup credential mode as well.  The
+-- value itself is never written to this table; Huawei reads rds_api_key only
+-- from server memory during development validation.
+ALTER TABLE mysql.taurusdb_ai_model_config
+  MODIFY credential_mode
+    ENUM('SECRET_REF','PLAINTEXT_DEV','SERVER_PARAMETER','AWS_IAM_ROLE')
+    NOT NULL DEFAULT 'SECRET_REF';
 
 SET @has_legacy_ai_model_config =
   (SELECT COUNT(*) FROM information_schema.tables

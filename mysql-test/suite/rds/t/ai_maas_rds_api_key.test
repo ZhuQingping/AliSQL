@@ -1,0 +1,14 @@
+--echo # rds_api_key is accepted only at server startup and is not exposed to SQL.
+--let $restart_parameters= restart: --rds-api-key=mtr-startup-only-secret
+--source include/restart_mysqld.inc
+
+SHOW GLOBAL VARIABLES LIKE 'rds_api_key';
+--error ER_UNKNOWN_SYSTEM_VARIABLE
+SELECT @@GLOBAL.rds_api_key;
+--error ER_UNKNOWN_SYSTEM_VARIABLE
+SET GLOBAL rds_api_key = 'sql-must-not-set-this';
+--error ER_UNKNOWN_SYSTEM_VARIABLE
+SET PERSIST rds_api_key = 'sql-must-not-set-this';
+
+--let $restart_parameters= restart:
+--source include/restart_mysqld.inc

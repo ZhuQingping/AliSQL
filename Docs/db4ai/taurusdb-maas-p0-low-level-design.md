@@ -13,7 +13,7 @@
 | 数据面 | `item_ai_func`、`Ai_runtime`、Adapter、Transport | 单语句 `Ai_request`/`Ai_response`/Profile 快照 | 本地失败零出站；成功结果映射为 SQL/VECTOR。 |
 | 模型管理 | `dbms_ai`、`Ai_model_registry` | `mysql.ai_model_config`、不可变 Profile 快照 | 管理发布、复制、回退不影响运行中请求。 |
 | 权限与开关 | 动态权限、`rds_ai_maas` | `mysql.global_grants`、全局开关 | 开关/权限在 Profile、审计、凭据和网络前阻断。 |
-| 凭据与路由 | Credential Resolver、Endpoint policy | Huawei `rds_api_key`、外部 `credential_id` | 密钥只在内存存在，URL 不可由普通 SQL 覆盖。 |
+| 凭据与路由 | Credential Resolver、Endpoint policy | Huawei `rds_api_key`、外部 `credential_id` | 当前开发验证密钥仅在主机 mysqld 内存存在，URL 不可由普通 SQL 覆盖。 |
 | 审计与 DFX | `Ai_file_audit_sink`、`call_id` | JSON Lines STARTED/terminal | STARTED 失败 fail closed；终态失败按 UNKNOWN。 |
 | 向量与 RAG | `Ai_vector_codec`、VECTOR SQL | `VECTOR` 值和索引由业务表持有 | 校验模型/版本/维度；SQL 先完成访问过滤。 |
 
@@ -98,9 +98,11 @@ row-based 复制和并发“更新/调用”快照一致性。
 
 ## 5. 凭据、Endpoint 与协议 LLD
 
-Huawei Profile 使用 `rds_api_key`：仅管控后台下发加密密文，Resolver 只在 Huawei Adapter 调用期间在
-内存解密并构造 Bearer header。密文/明文不能经 `SHOW VARIABLES`、日志、binlog、SQL 错误或审计泄露。
-外部 Provider 不读取该参数，而从 `provider_options.credential_id` 解析其受控加密凭据/IAM Role。
+Huawei Profile 当前使用 `rds_api_key`：仅从权限为 0600 的主机私有启动配置以明文注入，Resolver 只在
+Huawei Adapter 调用期间在内存构造 Bearer header。该参数不能经 `SHOW VARIABLES`、日志、binlog、SQL
+错误或审计泄露；不下发备机。外部 Provider 不读取该参数，而从 `provider_options.credential_id` 预留其
+受控凭据/IAM Role 解析。后续管控面加解密和轮换替换该开发验证模式，不改变 SQL 接口、模型表或
+`dbms_ai` 接口。
 
 Endpoint 由 Profile 发布，Transport 接收已验证快照：HTTPS、443、无 userinfo/query/fragment，并匹配
 Provider Host/路径 allowlist。请求协议由 Adapter 固化：Embedding 解析 `data[].embedding`；Chat 解析首个

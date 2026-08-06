@@ -78,6 +78,13 @@ SELECT credential_mode
   FROM mysql.taurusdb_ai_model_config
  WHERE model_name = 'huawei/mtr-plaintext-dev' AND status = 'ACTIVE';
 CALL dbms_ai.delete_model('huawei/mtr-plaintext-dev', 'TEXT_GENERATION');
+--echo # SERVER_PARAMETER keeps Huawei credentials out of the model table.
+CALL dbms_ai.register_model('huawei/mtr-server-parameter', 'TEXT_GENERATION',
+                            'glm-5.2', 'SERVER_PARAMETER', '');
+SELECT credential_mode, credential_ref, api_key_plaintext
+  FROM mysql.taurusdb_ai_model_config
+ WHERE model_name = 'huawei/mtr-server-parameter' AND status = 'ACTIVE';
+CALL dbms_ai.delete_model('huawei/mtr-server-parameter', 'TEXT_GENERATION');
 --echo # The public model list exposes exactly safe lifecycle metadata.
 CALL dbms_ai.show_models();
 CALL dbms_ai.update_model('huawei/mtr-model-admin-generation', 'TEXT_GENERATION',

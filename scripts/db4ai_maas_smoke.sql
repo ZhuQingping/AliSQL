@@ -4,27 +4,23 @@
 --   mysql> source /absolute/path/to/scripts/db4ai_maas_smoke.sql
 --
 -- This file makes billable MaaS calls. It never reads, stores, or prints an
--- API key. Configure active Profiles through dbms_ai first, and run it as an
--- account that has AI_INVOKE.
+-- API key. Before starting mysqld, copy scripts/db4ai_maas_dev.cnf.example to
+-- a private local file, replace the placeholder, and chmod that file to 0600.
+-- Configure active Profiles through dbms_ai first, and run it as an account
+-- that has AI_INVOKE.
 --
 -- One-time profile registration is an AI_ADMIN action. Do not use direct DML
--- against mysql.taurusdb_ai_model_config. For a Debug/development instance,
--- replace <DEVELOPMENT_API_KEY> locally and run the following examples before
--- this smoke test (they are deliberately comments so source never captures a
--- credential in this file):
+-- against mysql.taurusdb_ai_model_config. Huawei development validation uses
+-- the startup-only rds_api_key parameter, so no API key is passed to SQL:
 --
 -- CALL dbms_ai.register_model('huawei/bge-m3', 'TEXT_EMBEDDING', 'bge-m3',
---                             'PLAINTEXT_DEV', '<DEVELOPMENT_API_KEY>');
+--                             'SERVER_PARAMETER', '');
 -- CALL dbms_ai.register_model('huawei/glm-5.2', 'TEXT_GENERATION', 'glm-5.2',
---                             'PLAINTEXT_DEV', '<DEVELOPMENT_API_KEY>');
+--                             'SERVER_PARAMETER', '');
 --
--- In a production/Release instance, the credential value is an existing
--- keyring/CSMS secret reference, never the API key itself:
---
--- CALL dbms_ai.register_model('huawei/bge-m3', 'TEXT_EMBEDDING', 'bge-m3',
---                             'SECRET_REF', '<EXISTING_SECRET_REFERENCE>');
--- CALL dbms_ai.register_model('huawei/glm-5.2', 'TEXT_GENERATION', 'glm-5.2',
---                             'SECRET_REF', '<EXISTING_SECRET_REFERENCE>');
+-- This is development validation only. A future TaurusDB control-plane
+-- encryption and rotation service replaces rds_api_key without changing the
+-- SQL functions, model table, or dbms_ai procedure signatures.
 
 -- Edit these three values for the configured Profiles under test.
 SET @db4ai_embedding_model = 'huawei/bge-m3';

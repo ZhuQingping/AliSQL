@@ -1,0 +1,11 @@
+# rds_api_key is accepted only at server startup and is not exposed to SQL.
+# restart: --rds-api-key=mtr-startup-only-secret
+SHOW GLOBAL VARIABLES LIKE 'rds_api_key';
+Variable_name	Value
+SELECT @@GLOBAL.rds_api_key;
+ERROR HY000: Unknown system variable 'rds_api_key'
+SET GLOBAL rds_api_key = 'sql-must-not-set-this';
+ERROR HY000: Unknown system variable 'rds_api_key'
+SET PERSIST rds_api_key = 'sql-must-not-set-this';
+ERROR HY000: Unknown system variable 'rds_api_key'
+# restart:

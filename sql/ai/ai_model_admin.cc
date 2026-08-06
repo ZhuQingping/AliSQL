@@ -107,10 +107,15 @@ bool SecretReferenceIsReadableInRelease(THD *thd,
 }
 
 bool ValidRequest(THD *thd, const Ai_model_admin_request &request) {
-  if (request.model_name.empty() || request.provider_model_name.empty() ||
-      request.credential_value.empty()) return false;
+  if (request.model_name.empty() || request.provider_model_name.empty())
+    return false;
   if (request.credential_mode != "SECRET_REF" &&
-      request.credential_mode != "PLAINTEXT_DEV") return false;
+      request.credential_mode != "PLAINTEXT_DEV" &&
+      request.credential_mode != "SERVER_PARAMETER")
+    return false;
+  if (request.credential_mode != "SERVER_PARAMETER" &&
+      request.credential_value.empty())
+    return false;
 #ifdef NDEBUG
   // Development plaintext credentials are intentionally absent from release
   // builds. This is enforced at the package boundary, before table access.
@@ -121,7 +126,8 @@ bool ValidRequest(THD *thd, const Ai_model_admin_request &request) {
         (request.capability == Ai_capability::k_text_embedding &&
          request.provider_model_name == "bge-m3")))
     return false;
-  return SecretReferenceIsReadableInRelease(thd, request);
+  return request.credential_mode == "SERVER_PARAMETER" ||
+         SecretReferenceIsReadableInRelease(thd, request);
 }
 void Store(Field *field, const std::string &value) {
   field->store(value.c_str(), value.length(), system_charset_info);
@@ -141,10 +147,15 @@ void WriteRecord(TABLE *table, const Ai_model_admin_request &request, uint64_t v
   if (request.credential_mode == "SECRET_REF") {
     Store(table->field[8], std::string(request.credential_value.view()));
     table->field[9]->set_null();
-  } else {
+  } else if (request.credential_mode == "PLAINTEXT_DEV") {
     table->field[8]->set_null();
     table->field[9]->set_notnull();
     Store(table->field[9], std::string(request.credential_value.view()));
+  } else {
+    // Huawei obtains this credential exclusively from rds_api_key.  Do not
+    // retain a duplicate value or identifier in the model control table.
+    table->field[8]->set_null();
+    table->field[9]->set_null();
   }
   if (request.capability == Ai_capability::k_text_embedding) {
     table->field[10]->set_notnull();

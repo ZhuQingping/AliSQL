@@ -2419,6 +2419,14 @@ static Sys_var_charptr Sys_ai_invoke_audit_log_file(
     READ_ONLY NON_PERSIST GLOBAL_VAR(opt_ai_invoke_audit_log_file),
     CMD_LINE(REQUIRED_ARG), IN_FS_CHARSET, DEFAULT(nullptr));
 
+static Sys_var_charptr Sys_rds_api_key(
+    "rds_api_key",
+    "Huawei MaaS development API key, accepted only at server startup",
+    READ_ONLY NOT_VISIBLE NON_PERSIST SENSITIVE GLOBAL_VAR(opt_rds_api_key),
+    CMD_LINE(REQUIRED_ARG), IN_FS_CHARSET, DEFAULT(nullptr), NO_MUTEX_GUARD,
+    NOT_IN_BINLOG, ON_CHECK(nullptr), ON_UPDATE(nullptr), nullptr,
+    sys_var::PARSE_EARLY);
+
 static Sys_var_ulong Sys_lock_wait_timeout(
     "lock_wait_timeout",
     "Timeout in seconds to wait for a lock before returning an error.",

@@ -1,0 +1,16 @@
+# Development validation only. Copy this file outside the source tree, replace
+# the placeholder, then restrict the copy before starting mysqld:
+#
+#   cp scripts/db4ai_maas_dev.cnf.example /private/path/db4ai_maas_dev.cnf
+#   chmod 600 /private/path/db4ai_maas_dev.cnf
+#   mysqld --defaults-extra-file=/private/path/db4ai_maas_dev.cnf
+#
+# Do not put a real API key in the repository, command line, environment,
+# SQL history, system table, audit file, or test result. rds_api_key is a
+# startup-only, non-persistent, SQL-invisible development parameter. It is
+# plaintext until TaurusDB control-plane encryption and rotation replace it.
+
+[mysqld]
+# rds_ai_maas=ON is reserved for the feature switch implementation. Do not
+# uncomment it until that switch is available in the selected server build.
+rds_api_key=REPLACE_WITH_DEV_KEY
