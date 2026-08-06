@@ -343,6 +343,7 @@ SET(SQL_SHARED_SOURCES
   ai/ai_types.cc
   ai/ai_model_registry.cc
   ai/ai_model_admin.cc
+  ai/ai_provider_endpoint_policy.cc
   ai/ai_http_transport.cc
   ai/ai_huawei_maas_adapter.cc
   ai/ai_file_audit.cc

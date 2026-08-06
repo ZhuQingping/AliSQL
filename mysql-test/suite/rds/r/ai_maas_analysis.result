@@ -1,3 +1,4 @@
+SET GLOBAL rds_ai_maas = ON;
 # AI_ANALYZE requires model_name and prompt, with optional public options.
 SELECT AI_ANALYZE('mtr/fixture-chat');
 ERROR 42000: Incorrect parameter count in the call to native function 'AI_ANALYZE'
@@ -9,8 +10,9 @@ SELECT AI_ANALYZE('mtr/fixture-chat', NULL) AS null_prompt;
 null_prompt
 NULL
 GRANT AI_INVOKE, AI_ADMIN ON *.* TO 'root'@'localhost';
-CALL dbms_ai.register_model('mtr/fixture-chat', 'TEXT_GENERATION',
-'fixture-chat', 'SECRET_REF', 'mtr/not-read');
+CALL dbms_ai.register_model('mtr/fixture-chat', 'TEXT_GENERATION', 'mtr',
+'fixture-chat',
+'https://db4ai-mtr-fixture.invalid/v2/chat/completions', 0, '{}');
 # The two-argument form uses default provider request limits.
 SELECT AI_ANALYZE('mtr/fixture-chat',
 'Summarize the supplied evidence in one sentence.')
@@ -79,3 +81,4 @@ JSON_OBJECT('model_name', 'mtr/fixture-chat',
 'mode', 'analyze'));
 ERROR HY000: Incorrect arguments to ai_analyze
 CALL dbms_ai.delete_model('mtr/fixture-chat', 'TEXT_GENERATION');
+SET GLOBAL rds_ai_maas = OFF;

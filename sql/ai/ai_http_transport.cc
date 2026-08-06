@@ -98,6 +98,11 @@ Ai_error Curl_ai_http_transport::PostJson(const Ai_http_request &request,
   curl_easy_setopt(curl, CURLOPT_URL, request.endpoint.c_str());
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   curl_easy_setopt(curl, CURLOPT_POST, 1L);
+  // Endpoint policy is validated before dispatch.  Following a redirect here
+  // would turn a governed destination into an ungoverned egress route.
+  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
+  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, request.body.data());
   curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE,
                    static_cast<long>(request.body.size()));

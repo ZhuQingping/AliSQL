@@ -1,0 +1,47 @@
+include/master-slave.inc
+Warnings:
+Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+[connection master]
+[connection master]
+SET GLOBAL rds_ai_maas = ON;
+SET GLOBAL ai_invoke_audit = OFF;
+SET GLOBAL vidx_disabled = OFF;
+SET SESSION binlog_format = 'MIXED';
+GRANT AI_ADMIN, AI_INVOKE ON *.* TO 'root'@'localhost';
+CALL dbms_ai.register_model('mtr/fixture-embedding', 'TEXT_EMBEDDING', 'mtr',
+'fixture-embedding',
+'https://db4ai-mtr-fixture.invalid/v1/embeddings', 1024, '{}');
+include/rpl_sync.inc
+[connection slave]
+SET GLOBAL vidx_disabled = OFF;
+[connection master]
+# The unsafe marker makes this MIXED DML a row event before evaluating STORED.
+CREATE TABLE ai_maas_mixed_rpl_probe (
+id INT NOT NULL PRIMARY KEY,
+doc TEXT NOT NULL,
+vec VECTOR(1024)
+AS (AI_EMBEDDING('mtr/fixture-embedding', doc,
+JSON_OBJECT('dimension', 1024))) STORED
+) ENGINE=InnoDB;
+INSERT INTO ai_maas_mixed_rpl_probe (id, doc) VALUES (1, 'replica must not invoke MaaS');
+include/rpl_sync.inc
+[connection slave]
+# The replica keeps its feature switch OFF. Successful apply proves it received a row value.
+SELECT @@GLOBAL.rds_ai_maas AS replica_maas_enabled;
+replica_maas_enabled
+0
+SELECT id, VECTOR_DIM(vec) AS vector_dimension
+FROM ai_maas_mixed_rpl_probe;
+id	vector_dimension
+1	1024
+[connection master]
+DROP TABLE ai_maas_mixed_rpl_probe;
+CALL dbms_ai.delete_model('mtr/fixture-embedding', 'TEXT_EMBEDDING');
+SET GLOBAL vidx_disabled = ON;
+SET GLOBAL ai_invoke_audit = ON;
+include/rpl_sync.inc
+[connection slave]
+SET GLOBAL vidx_disabled = ON;
+include/rpl_end.inc
+SET GLOBAL rds_ai_maas = OFF;

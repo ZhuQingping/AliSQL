@@ -2343,12 +2343,18 @@ bool check_access(THD *thd, Access_bitmask want_access, const char *db,
 */
 static bool is_ai_model_control_write(Access_bitmask access,
                                       const Table_ref *table_ref) {
+  const bool is_control_table =
+      my_strcasecmp(system_charset_info, table_ref->get_table_name(),
+                     "ai_model_config") == 0 ||
+      my_strcasecmp(system_charset_info, table_ref->get_table_name(),
+                     "alisql_ai_model_config") == 0 ||
+      my_strcasecmp(system_charset_info, table_ref->get_table_name(),
+                     "taurusdb_ai_model_config") == 0;
   return (access & (INSERT_ACL | UPDATE_ACL | DELETE_ACL | ALTER_ACL |
                     DROP_ACL | INDEX_ACL)) != 0 &&
          my_strcasecmp(system_charset_info, table_ref->get_db_name(),
                        "mysql") == 0 &&
-         my_strcasecmp(system_charset_info, table_ref->get_table_name(),
-                       "taurusdb_ai_model_config") == 0;
+         is_control_table;
 }
 
 static bool ai_model_control_write_is_server_owned(const THD *thd) {

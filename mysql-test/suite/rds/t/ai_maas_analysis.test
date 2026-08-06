@@ -1,3 +1,4 @@
+SET GLOBAL rds_ai_maas = ON;
 --echo # AI_ANALYZE requires model_name and prompt, with optional public options.
 --error ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT
 SELECT AI_ANALYZE('mtr/fixture-chat');
@@ -7,8 +8,9 @@ SELECT AI_ANALYZE(NULL, 'prompt') AS null_model;
 SELECT AI_ANALYZE('mtr/fixture-chat', NULL) AS null_prompt;
 
 GRANT AI_INVOKE, AI_ADMIN ON *.* TO 'root'@'localhost';
-CALL dbms_ai.register_model('mtr/fixture-chat', 'TEXT_GENERATION',
-                            'fixture-chat', 'SECRET_REF', 'mtr/not-read');
+CALL dbms_ai.register_model('mtr/fixture-chat', 'TEXT_GENERATION', 'mtr',
+                            'fixture-chat',
+                            'https://db4ai-mtr-fixture.invalid/v2/chat/completions', 0, '{}');
 
 --echo # The two-argument form uses default provider request limits.
 SELECT AI_ANALYZE('mtr/fixture-chat',
@@ -77,3 +79,4 @@ SELECT AI_ANALYZE('Summarize only supplied aggregates.',
                               'mode', 'analyze'));
 
 CALL dbms_ai.delete_model('mtr/fixture-chat', 'TEXT_GENERATION');
+SET GLOBAL rds_ai_maas = OFF;

@@ -1,22 +1,28 @@
+SET GLOBAL rds_ai_maas = ON;
 # AI functions preserve NULL input without model resolution or egress.
-SELECT AI_EMBEDDING(NULL, 'mtr/fixture-embedding', 1024);
-AI_EMBEDDING(NULL, 'mtr/fixture-embedding', 1024)
+SELECT AI_EMBEDDING('mtr/fixture-embedding', NULL,
+JSON_OBJECT('dimension', 1024));
+AI_EMBEDDING('mtr/fixture-embedding', NULL,
+JSON_OBJECT('dimension', 1024))
 NULL
 # AI calls require an explicit active Profile and remain offline with fixture credentials.
 GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
-CALL dbms_ai.register_model('mtr/fixture-embedding', 'TEXT_EMBEDDING',
-'fixture-embedding', 'SECRET_REF', 'mtr/not-read');
-CALL dbms_ai.register_model('mtr/fixture-chat', 'TEXT_GENERATION',
-'fixture-chat', 'SECRET_REF', 'mtr/not-read');
-CALL dbms_ai.register_model('huawei/mtr-contract-disabled', 'TEXT_EMBEDDING',
-'bge-m3', 'SECRET_REF', 'mtr/not-read');
+CALL dbms_ai.register_model('mtr/fixture-embedding', 'TEXT_EMBEDDING', 'mtr',
+'fixture-embedding',
+'https://db4ai-mtr-fixture.invalid/v1/embeddings', 1024, '{}');
+CALL dbms_ai.register_model('mtr/fixture-chat', 'TEXT_GENERATION', 'mtr',
+'fixture-chat',
+'https://db4ai-mtr-fixture.invalid/v2/chat/completions', 0, '{}');
+CALL dbms_ai.register_model('huawei/mtr-contract-disabled', 'TEXT_EMBEDDING', 'huawei',
+'bge-m3', 'https://api.modelarts-maas.com/v1/embeddings', 1024, '{}');
 CALL dbms_ai.delete_model('huawei/mtr-contract-disabled', 'TEXT_EMBEDDING');
 GRANT AI_INVOKE ON *.* TO 'root'@'localhost';
 SELECT AI_EMBEDDING('text');
-ERROR HY000: Incorrect arguments to ai_embedding
+ERROR 42000: Incorrect parameter count in the call to native function 'AI_EMBEDDING'
 SELECT AI_ANALYZE('mtr/fixture-chat');
 ERROR 42000: Incorrect parameter count in the call to native function 'AI_ANALYZE'
-SELECT VECTOR_DIM(AI_EMBEDDING('explicit profile', 'mtr/fixture-embedding', 1024))
+SELECT VECTOR_DIM(AI_EMBEDDING('mtr/fixture-embedding', 'explicit profile',
+JSON_OBJECT('dimension', 1024)))
 AS explicit_dimension;
 explicit_dimension
 1024
@@ -29,12 +35,14 @@ AS explicit_model;
 explicit_model
 mtr/fixture-embedding
 # A disabled Profile is rejected locally before credentials or network access.
-SELECT AI_EMBEDDING('disabled', 'huawei/mtr-contract-disabled', 1024);
+SELECT AI_EMBEDDING('huawei/mtr-contract-disabled', 'disabled',
+JSON_OBJECT('dimension', 1024));
 ERROR 42000: This version of MySQL doesn't yet support 'DB4AI model configuration was not found'
 # A Huawei profile without a credential fails locally before transport.
-CALL dbms_ai.register_model('huawei/mtr-no-credential', 'TEXT_EMBEDDING',
-'bge-m3', 'SECRET_REF', 'mtr/not-configured');
-SELECT AI_EMBEDDING('no-credential', 'huawei/mtr-no-credential', 1024);
+CALL dbms_ai.register_model('huawei/mtr-no-credential', 'TEXT_EMBEDDING', 'huawei',
+'bge-m3', 'https://api.modelarts-maas.com/v1/embeddings', 1024, '{}');
+SELECT AI_EMBEDDING('huawei/mtr-no-credential', 'no-credential',
+JSON_OBJECT('dimension', 1024));
 ERROR 42000: This version of MySQL doesn't yet support 'DB4AI credential is unavailable'
 # Registered functions enforce their public arity.
 SELECT AI_EMBEDDING();
@@ -43,6 +51,9 @@ SELECT AI_ANALYZE('task');
 ERROR 42000: Incorrect parameter count in the call to native function 'AI_ANALYZE'
 SELECT AI_MODEL_INFO('a', 'b');
 ERROR 42000: Incorrect parameter count in the call to native function 'AI_MODEL_INFO'
+SELECT AI_MODEL_INFO();
+ERROR 42000: Incorrect parameter count in the call to native function 'AI_MODEL_INFO'
 CALL dbms_ai.delete_model('mtr/fixture-embedding', 'TEXT_EMBEDDING');
 CALL dbms_ai.delete_model('mtr/fixture-chat', 'TEXT_GENERATION');
 CALL dbms_ai.delete_model('huawei/mtr-no-credential', 'TEXT_EMBEDDING');
+SET GLOBAL rds_ai_maas = OFF;

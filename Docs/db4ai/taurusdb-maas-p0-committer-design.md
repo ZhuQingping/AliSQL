@@ -58,26 +58,23 @@ OpenAI-compatible `messages`，从而为后续接入阿里云百炼、字节方�
 
 | 状态 | 范围 |
 | --- | --- |
-| 当前已实现并有离线回归 | 华为 MaaS Adapter、当前 `AI_EMBEDDING(text, model_name [, dimension])`、`AI_ANALYZE(model_name, prompt [, options_json])`、离线 fixture MTR、真实 smoke 脚本、动态权限和追加式审计文件。 |
-| P0 待完成 | 新 Embedding 签名、`rds_ai_maas`、受控 Endpoint/Provider 策略、模型配置版本历史、进程级 Registry、终态审计 fail-open 语义与多 Provider dispatch。 |
-| 上线阻断 | 独立 Endpoint allowlist、凭据轮换、输入/调用数量限制、STORED/复制矩阵、主备验证、审计故障注入和目标环境真实 smoke。 |
+| 当前已实现并有离线回归 | 华为 MaaS Adapter、`AI_EMBEDDING(model_name, text [, options_json])`、`AI_ANALYZE(model_name, prompt [, options_json])`、离线 fixture MTR、真实 smoke 脚本、动态权限、两阶段追加式审计、受控 Profile 与 `rds_ai_maas`。 |
+| P0 待完成 | 管控后台对 `rds_api_key` 密文的真实加解密/轮换接入、进程级 Registry 缓存与多 Provider Adapter。 |
+| 上线阻断 | 主备真实 MaaS 验证、完整 ROW image/故障切换矩阵、目标 Region 网络和日志平台闭环。 |
 
 当前已实现并经过离线回归覆盖的功能包括：
 
 - `AI_EMBEDDING()`：华为 `bge-m3` 文本向量化，固定输出 1024 维，可写入 `VECTOR` 列和
-  `VECTOR INDEX`；`STORED` 生成列的主备/复制交付仍受上线阻断项约束。
+  `VECTOR INDEX`；`STORED` 生成列在 MIXED 主从下强制 ROW，并由从库保留主库向量行镜像而不重复外呼。
 - `AI_ANALYZE(model_name, prompt [, options_json])`：文本生成、RAG 上下文回答、SQL 结果分析和
   只读 DBA 诊断。
 - `dbms_ai`：当前模型注册、更新、删除、展示；目标 Endpoint/Provider/版本管理接口待收敛。
 - 动态权限 `AI_INVOKE`、`AI_ADMIN`，以及脱敏本地审计文件；目标两阶段终态故障语义见 2.1.3.5。
 - Huawei MaaS HTTP/HTTPS Adapter、离线 fixture MTR 和显式授权的真实 MaaS SQL smoke。
 
-接口冻结目标如下：文本生成接口已统一为 `AI_ANALYZE(model_name, prompt [, options_json])`；
-Embedding 接口应迁移为 `AI_EMBEDDING(model_name, text [, options_json])`，使两个 AI 接口都采用
-“模型名、输入、可选 JSON”的一致形式。Embedding 迁移**待实现**：当前源码仍使用
-`AI_EMBEDDING(text, model_name [, dimension])`，在完成 SQL 层、Runtime、MTR、真实 smoke 与文档
-迁移前，不能把新签名视为已交付。迁移完成后旧签名必须在出站前明确失败，不能长期并存或猜测两个
-字符串参数的顺序。
+接口冻结如下：`AI_ANALYZE(model_name, prompt [, options_json])` 与
+`AI_EMBEDDING(model_name, text [, options_json])` 均采用“模型名、输入、可选 JSON”的一致形式。
+旧 Embedding 参数顺序不再兼容，也不会猜测两个字符串参数的含义；错误调用在本地失败。
 
 ## 1.2 竞争力分析 | Competitive Analysis
 
@@ -171,7 +168,7 @@ TaurusDB 不采用 Provider 透传模式。百炼、火山方舟、Bedrock 等�
 | --- | --- | --- |
 | 华为云 MaaS | 提供 `/v1/embeddings`、`/v2/chat/completions` 推理服务、模型准入和配额。 | 没有模型准入、API Key 或服务时不可进行真实调用；离线 MTR fixture 可验证内核路径但不能替代真实服务。 |
 | 租户 VPC、Policy Route、NAT Gateway、EIP、安全组、DNS/TLS | 为 tenant VPC 到 MaaS Endpoint 提供受控 HTTPS 出站和回流。 | 每个 Region 必须验证；缺失时真实调用失败。不能由 mysqld 或 SQL 自动创建，替代是完成云网络部署。 |
-| 开发验证私有配置文件 | 华为 MaaS API Key 以 `rds_api_key` 启动参数明文注入 mysqld；外部 Provider 仍预留 `provider_options.credential_id`。 | 当前仅主机开发验证；参数为空时本地失败且不出站，模型表不保存 API Key。 |
+| TaurusDB 管控后台凭据服务 | P0 通过不可由 SQL 读写的 `rds_api_key` 向 mysqld 注入 Huawei 凭据；生产所需的密文解密、轮换和外部 Provider 凭据引用是后续后台集成。 | 参数为空时本地失败且不出站；模型表不保存明文 Key。 |
 | TaurusDB 日志平台 | 采集、轮转、保留、访问控制和告警本地 JSON Lines 审计文件。 | 仍可写本地文件但不具备集中追溯能力；上线前须完成日志采集和磁盘满告警闭环。 |
 | `libcurl`、TLS/CA、DNS | mysqld 内进程 HTTPS Transport。 | TLS、DNS 或证书异常导致调用失败并记录脱敏终态；不调用 shell `curl`、Python 或 OpenAI SDK。 |
 
@@ -258,7 +255,7 @@ SELECT AI_ANALYZE(
 
 | 模块 | 检查项 | 是否相互影响 | 备注 |
 | ---- | ------ | ------------ | ---- |
-| 基本开关 | `rds_ai_maas` 总开关 | 是 | **待实现。**默认 OFF；开启后才允许数据面和管理写操作。必须在主/只读节点一致生效，关闭时阻断 STORED 向量生成 DML。 |
+| 基本开关 | `rds_ai_maas` 总开关 | 是 | 已实现，默认 OFF；开启后才允许数据面和管理写操作。主/只读一致下发与运行中调用的运维验证仍属于上线验证。 |
 | 基本开关 | binlog | 是 | `dbms_ai` 控制面写入需写 binlog 并被复制 applier 应用；AI 外呼和审计文件不写 binlog。 |
 | 基本开关 | 事务隔离级别 | 是 | 外部调用不参与用户事务原子性；回滚或连接断开后 MaaS 仍可能已计费。 |
 | 基本开关 | 全量 SQL | 是 | 全量 SQL、错误日志和审计不得输出 API Key、Authorization、完整 prompt/response 或原始向量。 |
@@ -319,7 +316,7 @@ Provider JSON 始终由服务端构造和持有。tenant VPC 到 MaaS 的网络�
 
 **调用步骤：**
 
-1. **待实现：**SQL 函数先检查实例级总开关 `rds_ai_maas`。开关为 `OFF` 时立即返回
+1. SQL 函数先检查实例级总开关 `rds_ai_maas`。开关为 `OFF` 时立即返回
    `AI feature is disabled`，不解析 Profile、凭据、审计或网络，也不访问 MaaS。
 2. 客户端执行 `AI_EMBEDDING()` 或 `AI_ANALYZE()`；SQL 函数校验参数、NULL、字符集和 JSON options。
 3. 授权层在解析 Profile、凭据和网络前检查 `AI_INVOKE`；无权限本地失败且不得出站。
@@ -327,15 +324,15 @@ Provider JSON 始终由服务端构造和持有。tenant VPC 到 MaaS 的网络�
    Endpoint 是否符合该 Provider/能力的安全策略。
 5. Runtime 创建 canonical request，并在 `ai_invoke_audit=ON` 时先落盘 `STARTED`；安全落盘失败则
    fail closed，不发送 MaaS 请求。
-6. Huawei Adapter 仅在调用 Huawei Profile 时读取启动参数 `rds_api_key` 的内存明文；其他 Provider 按
-   `provider_options.credential_id` 预留解析受控凭据/IAM Role 的扩展点。在内存中构造 Provider 所需认证信息，
-   不将明文写入表、日志或审计。
+6. Huawei Adapter 仅在调用 Huawei Profile 时读取管控面经受控启动路径注入的 `rds_api_key` 内存值，
+   并在内存中构造认证 Header；P0 不支持其他 Provider。该值不写入表、日志或审计；密文解密和轮换
+   由后续管控面集成负责。
 7. Huawei Adapter 将 canonical request 序列化为 MaaS JSON；HTTP Transport 以 libcurl 发起 HTTPS POST。
 8. Adapter 解析 Provider 响应、usage、request id 和结果；Embedding 校验 1024 维并编码为 `VECTOR`，
    Analyze 提取非空最终文本。
-9. **目标终态策略（待实现）：**Runtime 用相同 `call_id` 写 `SUCCEEDED` 或 `FAILED` 终态；若终态无法落盘，
+9. Runtime 用相同 `call_id` 写 `SUCCEEDED` 或 `FAILED` 终态；若终态无法落盘，
    保留 STARTED 并由日志平台推断 `UNKNOWN`，但不覆盖已获得的 Provider 结果或原始 Provider 失败。
-   当前 Runtime 将终态写失败映射为 SQL 审计错误，必须在 P0 交付前收敛。客户端获得 Provider 结果或脱敏错误。
+   客户端保留 Provider 成功结果或原始 Provider 的脱敏错误，终态审计故障仅作为服务端 DFX 信号。
 
 实线是 mysqld 代码路径；网络图中的虚线表示必须由云网络/运维完成并验收的部署前提。HTTPS 响应
 使用同一 TCP/TLS 连接的反向流量，经 NAT 状态映射返回 tenant VPC，不需要为响应单独配置 DNAT。
@@ -385,7 +382,7 @@ Provider JSON 始终由服务端构造和持有。tenant VPC 到 MaaS 的网络�
 模型管理是低频控制面。`dbms_ai` 是唯一写入口，`mysql.ai_model_config` 是内部控制表；客户端没有
 直接 DML/DDL 管理模型的路径。
 
-本节的版本历史与进程级 Registry 是**目标设计（待实现）**。当前实现每次调用读取控制表并形成单调用
+版本历史已由控制表的 `config_version` 与 ACTIVE/RETIRED 状态实现。当前实现每次调用读取控制表并形成单调用
 快照，不承诺进程级缓存、跨节点同时切换或已发布版本的历史回退。
 
 | 项目 | 设计 |
@@ -408,11 +405,11 @@ Provider JSON 始终由服务端构造和持有。tenant VPC 到 MaaS 的网络�
 
 权限控制不在 Profile 表中维护用户列表，而复用 MySQL 动态权限和实例参数，保持授权模型简单、可升级。
 
-`rds_ai_maas` 与 root 升级补授权是**目标设计（待实现）**；当前动态权限的既有行为以代码和 MTR 为准。
+`rds_ai_maas` 与 root 升级补授权已实现；主备下发和存量升级路径仍以 TaurusDB 升级编排验证为准。
 
 | 控制点 | 接口/对象 | 关键流程 |
 | --- | --- | --- |
-| 总开关 | `rds_ai_maas`（待实现） | 最先检查；OFF 时数据面与管理写操作本地失败，不解析 Profile、凭据、审计或网络。 |
+| 总开关 | `rds_ai_maas` | 最先检查；OFF 时数据面与管理写操作本地失败，不解析 Profile、凭据、审计或网络。 |
 | 调用权限 | `AI_INVOKE`、`mysql.global_grants` | SQL 函数在 Registry 前检查；无权限不会形成 canonical request 或外部请求。 |
 | 管理权限 | `AI_ADMIN`、`mysql.global_grants` | `dbms_ai` 写操作前检查；不等同于普通系统表 DML/DDL 权限。 |
 | 升级授权 | mysql 系统升级/bootstrap | 动态权限注册后，对存量 `root@'%'` 幂等补授予 `AI_INVOKE`、`AI_ADMIN`，不带动态转授权。 |
@@ -430,11 +427,11 @@ Provider JSON 始终由服务端构造和持有。tenant VPC 到 MaaS 的网络�
 | 模块 | 关键对象 | 责任与失败边界 |
 | --- | --- | --- |
 | Model Registry | Profile 的 `endpoint_url`、`config_version` | 校验 Provider、HTTPS Host/路径策略、能力和 Endpoint；普通 SQL 不可覆盖 URL。 |
-| Credential Resolver | Huawei `rds_api_key`；外部 Provider `credential_id` | 当前 Huawei 仅在内存读取开发验证明文参数；外部 Provider 预留后台凭据/IAM Role。参数缺失在出站前失败。 |
+| Credential Resolver | Huawei `rds_api_key` | P0 仅消费管控面注入的内存值并构造 Bearer Header；密文解密、轮换和外部 Provider 凭据解析由管控面后续接入。缺失时出站前失败。 |
 | HTTP Transport | libcurl、TLS/CA、DNS、超时和 1 MiB 响应限制 | 接受已验证的 Endpoint 快照，不接受客户端 URL/Header/Authorization。 |
 
-`rds_api_key` 当前已作为开发验证启动参数实现；Provider 凭据解析器和独立 Endpoint 策略仍为**目标设计
-（待实现）**。当前华为 Endpoint/凭据路径不能据此开放生产 Endpoint 修改。
+`rds_api_key` 敏感参数和 Huawei Endpoint 策略已实现。当前内核不实现管控后台密文的解密或轮换；
+它只消费由受控启动路径注入的内存值，因此该后台集成仍是生产上线前置条件，也不能据此开放生产 Endpoint 修改。
 
 明文 Key、密文、Authorization、完整 HTTP 请求/响应都不得进入系统表、SQL 结果、binlog 或审计日志。
 Endpoint 变更必须经 `dbms_ai` 版本化发布；仅修改 URL 不能绕过 Adapter 协议兼容性验证。
@@ -454,9 +451,8 @@ STARTED 落盘、HTTPS 出站、终态写入与 UNKNOWN 分支的准确时序。
 3. 记录时间、用户、客户端 IP、模型、配置版本、耗时、脱敏 usage、Provider request id 和错误分类；不记录 Key、Authorization、完整 prompt/response 或原始向量。
 4. DFX 以 `call_id` 为主线关联 SQL 错误、审计事件、脱敏错误日志与 Provider request id。`UNKNOWN` 是日志
    平台在观察窗口内发现 `STARTED` 未闭合后的推断状态，不是写入文件的 terminal 枚举。
-5. **目标终态策略（待实现）：**终态写入失败不改变已获得的 Provider 成功结果或原始 Provider 失败；保留
-   `STARTED`、写入脱敏 server warning/指标，由日志平台按 `UNKNOWN` 告警。当前 Runtime 将终态写失败映射为
-   SQL 审计错误，必须在 P0 交付前完成该行为收敛与故障注入 MTR。
+5. 终态写入失败不改变已获得的 Provider 成功结果或原始 Provider 失败；保留
+   `STARTED`、写入脱敏 server warning/指标，由日志平台按 `UNKNOWN` 告警；MTR 通过故障注入覆盖该语义。
 
 #### 2.1.3.6 向量结果与 RAG 边界
 
@@ -483,7 +479,8 @@ CREATE TABLE knowledge_base (
   doc TEXT NOT NULL,
   category VARCHAR(32) NOT NULL DEFAULT 'general',
   vec VECTOR(1024)
-    AS (AI_EMBEDDING(doc, 'mtr/fixture-embedding', 1024)) STORED,
+    AS (AI_EMBEDDING('mtr/fixture-embedding', doc,
+                     JSON_OBJECT('dimension', 1024))) STORED,
   VECTOR INDEX ix_knowledge_vec (vec) M=3 DISTANCE=COSINE
 );
 
@@ -525,13 +522,13 @@ SELECT AI_ANALYZE(
 预期：数据库先按 `tenant_id`、产品线和访问标签筛选资料，再组织 JSON 证据并调用文本生成模型；结果可关联
 `source_id` 和 `chunk_id`。未通过 SQL 过滤的资料不会进入 prompt，模型不能越过数据库的数据范围。
 
-**复制与外呼放大约束（P0 上线阻断）。** 上述示例中的 `AI_EMBEDDING(doc, model, dimension)` 是当前 MTR
-基线的旧签名；迁移到目标签名时必须同步更新示例和 result。包含 AI 函数的写入在
-`binlog_format=STATEMENT` 下必须在出站前拒绝；`MIXED` 必须强制生成 ROW event 或同样拒绝。ROW 复制端
-只能应用主机已经生成的向量值，不能重新调用 MaaS。验收必须覆盖 FULL/MINIMAL/NOBLOB row image、正文/非正文
-更新、主备切换，并断言备机 MaaS 请求数为零。
+**复制与外呼放大约束。** 包含 AI 函数的写入在
+`binlog_format=STATEMENT` 下必须在出站前拒绝；`MIXED` 在 binlog 决策前标记为不安全并生成 ROW event。对
+`STORED + AI_EMBEDDING()`，从库在 after image 带有向量值时保留主库的值并跳过生成列表达式重算，因此不会
+重新调用 MaaS。离线 MTR 已覆盖该 MIXED/FULL 写入链路；MINIMAL/NOBLOB、正文/非正文更新和主备切换仍需上线
+专项验证，并须断言备机 MaaS 请求数为零。
 
-同步外呼还必须在出站前限制单次输入大小、单条语句的最大外呼次数和实例并发外呼数；超限必须本地失败且
+同步外呼在出站前限制单次输入为 1 MiB、单条语句最多 32 次、实例最多 32 个并发调用；超限本地失败且
 零出站。预算和租户配额可后续扩展，但不能替代上述第一版熔断边界。
 
 ### 2.1.4 子模块交互与关键失败边界
@@ -546,7 +543,7 @@ SELECT AI_ANALYZE(
 | Transport | 非 HTTPS、非 Profile Endpoint、Host/路径策略不匹配、连接/总超时、TLS/响应超限 | 请求前或请求中失败 |
 | Adapter/Renderer | HTTP 非 2xx、JSON 错误、无最终内容、维度错误 | 请求可能已发生 |
 | Audit terminal | 终态不可写 | 请求已可能发生；不产生 terminal，日志平台由未闭合 STARTED 推断 `UNKNOWN` |
-| 输入成本保护 | 当前无输入字节/Token 上限 | 当前可能出站；上线前须补充上限与本地拒绝测试 |
+| 输入成本保护 | 单次输入超过 1 MiB、单条语句超过 32 次、实例并发超过 32 | 否；本地拒绝且不写 STARTED/不出站 |
 
 ### 2.1.5 mysqld 与 MaaS 的关键调用协议
 
@@ -624,7 +621,7 @@ Provider 私有请求参数。表中不保存 tenant 或用户到模型的绑定
 
 下面是目标物理表结构。当前 Debug 表中的 `auth_type`、`credential_mode`、`credential_ref`、
 `api_key_plaintext`、`allowed_dimensions`、`model_revision`、`generation_defaults`、
-`generation_limits`、`is_builtin` 和 `is_default` 均为待删除的历史/原型字段；在本次一次性
+`generation_limits`、`is_builtin` 和 `is_default` 均为已删除的历史/原型字段；本次一次性
 数据字典收敛后，后续新增 Provider 不再需要为凭据或 Provider 私有配置修改该表。
 
 ```sql
@@ -668,13 +665,13 @@ CREATE TABLE mysql.ai_model_config (
 {}
 ```
 
-华为 MaaS：开发验证凭据仅位于 mysqld 的 `rds_api_key` 内存参数，因此为空对象。
+华为 MaaS：P0 凭据不进入模型表，`provider_options` 因此必须为空对象。
 
 ```json
 {"credential_id":"bailian-prod"}
 ```
 
-阿里百炼或字节方舟：`credential_id` 是对管控后台加密凭据的逻辑引用，不是 API Key。
+阿里百炼或字节方舟：这是后续 Adapter 的设计示意；`credential_id` 将是管控后台凭据的逻辑引用，不是 API Key。
 
 ```json
 {"credential_id":"aws-bedrock-role-prod","api_family":"converse"}
@@ -689,7 +686,7 @@ AWS Bedrock：引用受控 IAM Role/临时凭据配置；`api_family` 仅在 AWS
 `(model_name, capability)` 的版本集合：停用原 `ACTIVE` 行、插入递增 `config_version` 的新 `ACTIVE` 行，
 再发布 Registry。该过程保证每个逻辑模型/能力在单节点最多一个 `ACTIVE` 版本。回退不重新激活旧行，
 而是复制指定的 `DISABLED` 历史配置形成一个新的 `ACTIVE` 版本；因此审计记录始终能定位到实际调用的
-配置行和版本。该版本历史与唯一键是 P0 待实现的数据字典收敛项。
+配置行和版本。该版本历史与唯一键已在 P0 控制表中实现。
 
 ### 2.2.2 Endpoint 受控配置与切换
 
@@ -723,8 +720,8 @@ SSRF 和业务数据外传。
 ### 2.2.3 当前验证实例的模型 Profile 快照
 
 以下为 3344 Debug 验证实例的非敏感路由/模型信息，按目标表结构转换后的快照。实例当前使用的
-`PLAINTEXT_DEV` 是旧原型调试方式，须迁出模型表；当前开发验证中华为凭据由 mysqld 启动参数
-`rds_api_key` 提供，故 `provider_options` 为 `{}`。所有 Profile 均为 `ACTIVE`、
+`PLAINTEXT_DEV` 是已移除的旧原型调试方式，华为凭据由
+`rds_api_key` 通过受控启动路径注入，故 `provider_options` 为 `{}`。所有 Profile 均为 `ACTIVE`、
 `config_version=1`。
 
 | 逻辑模型名 | 能力 | Provider 模型 | Endpoint | 维度 | `provider_options` |
@@ -751,16 +748,16 @@ P0 不以 `distance_metric` 定义模型契约。余弦或欧氏距离是检索�
 ### 2.3.1 客户 SQL 接口
 
 ```sql
-AI_EMBEDDING(model_name, text [, options_json])  -- 目标接口，待实现
+AI_EMBEDDING(model_name, text [, options_json])
 AI_ANALYZE(model_name, prompt [, options_json])
-AI_MODEL_INFO([model_name])
+AI_MODEL_INFO(model_name)
 ```
 
 | 接口 | 输入与返回 | 兼容性和约束 |
 | --- | --- | --- |
-| `AI_EMBEDDING` | 显式模型、文本、可选 JSON；返回 `VECTOR`。 | **待实现迁移。**`NULL` 文本返回 `NULL`；当前 `bge-m3` 仅允许 1024 维，其他维度在出站前失败。 |
+| `AI_EMBEDDING` | 显式模型、文本、可选 JSON；返回 `VECTOR`。 | `NULL` 文本返回 `NULL`；当前 `bge-m3` 仅允许 1024 维，其他维度在出站前失败。 |
 | `AI_ANALYZE` | 模型、自然语言 prompt、可选 JSON；返回 `utf8mb4` 文本。 | 主参数顺序冻结；旧 `task/input/options` 形态、第三参数 `model_name`、`mode` 和 Provider 私有字段本地拒绝。 |
-| `AI_MODEL_INFO` | 可选逻辑模型名；返回安全元数据。 | 未指定模型名时，每个 `ACTIVE` Profile 返回一行；指定模型名时返回该逻辑模型下各 capability 的行。不返回 status、Endpoint、credential ref 或 API Key。 |
+| `AI_MODEL_INFO` | 显式逻辑模型名；返回一个安全 Profile 元数据对象。 | P0 要求同一逻辑模型名只注册一种能力；不返回 status、Endpoint、credential ref 或 API Key。列举模型使用 `CALL dbms_ai.show_models()`。 |
 
 `AI_ANALYZE` 的 `model_name` 和 `prompt` 必填。客户只写自然语言请求；数据库内部将固定
 system policy 与客户 prompt 构造成 Provider 所需的 `system` / `user` messages。`options_json`
@@ -783,8 +780,7 @@ system policy 与客户 prompt 构造成 Provider 所需的 `system` / `user` me
 
 ```json
 {
-  "dimension": 1024,
-  "timeout_ms": 30000
+  "dimension": 1024
 }
 ```
 
@@ -793,7 +789,7 @@ system policy 与客户 prompt 构造成 Provider 所需的 `system` / `user` me
 `allowed_dimensions` 系统表字段。Endpoint、API Key、凭据引用、Header、Provider 原始 JSON 和未知
 options 均必须在出站前拒绝。
 
-**迁移约束（待实现）：**旧签名与新签名的前两个参数均为字符串，无法安全自动识别顺序。因此必须
+**迁移约束：**旧签名与新签名的前两个参数均为字符串，无法安全自动识别顺序。因此不支持
 在一次接口迁移中同步修改 SQL 函数、Runtime 调用、所有 MTR/result、真实 smoke、RAG 示例和用户
 文档；旧签名不可作为长期兼容别名。
 
@@ -801,39 +797,38 @@ options 均必须在出站前拒绝。
 
 ```sql
 CALL dbms_ai.register_model(
-  'huawei/bge-m3', 'huawei', 'TEXT_EMBEDDING', 'bge-m3',
+  'huawei/bge-m3', 'TEXT_EMBEDDING', 'huawei', 'bge-m3',
   'https://api.modelarts-maas.com/v1/embeddings',
-  1024, JSON_OBJECT());
+  1024, '{}');
 CALL dbms_ai.update_model(
-  'huawei/glm-5.2', 'huawei', 'TEXT_GENERATION', 'glm-5.2',
+  'huawei/glm-5.2', 'TEXT_GENERATION', 'huawei', 'glm-5.2',
   'https://api.modelarts-maas.com/v2/chat/completions',
-  NULL, JSON_OBJECT());
+  NULL, '{}');
 CALL dbms_ai.delete_model('huawei/glm-5.2', 'TEXT_GENERATION');
 CALL dbms_ai.show_models();
 ```
 
-外部 Provider 的受控注册示例为：
+未来外部 Provider Adapter 落地后，管理接口仍沿用相同顺序；以下仅为设计示意，当前 P0 会在发布前拒绝：
 
 ```sql
 CALL dbms_ai.register_model(
-  'bailian/text-embedding-v4', 'bailian', 'TEXT_EMBEDDING', 'text-embedding-v4',
+  'bailian/text-embedding-v4', 'TEXT_EMBEDDING', 'bailian', 'text-embedding-v4',
   'https://<approved-bailian-endpoint>/v1/embeddings',
-  1024, JSON_OBJECT('credential_id', 'bailian-prod'));
+  1024, '{"credential_id":"bailian-prod"}');
 ```
 
-上述 `register_model` / `update_model` 的 `provider`、Endpoint、维度和 `provider_options` 参数是目标接口：
-当前实现尚未接收这些参数，且会硬编码华为生产 Endpoint。`provider` 不得由模型名前缀隐式猜测；它用于
-选择 Adapter、Endpoint 策略与凭据解析器。实现须在不允许普通客户 SQL 传 URL 或凭据的前提下完成管理
-接口扩展、配置版本发布、回退和 MTR 覆盖。
+`register_model` / `update_model` 已接收 `provider`、Endpoint、维度和 `provider_options` 参数；P0 仅允许
+Huawei 的精确 Endpoint 与空 `provider_options`，以确保模型表不成为凭据或 Provider 私有 Header 的存储通道。
+`provider` 不得由模型名前缀隐式猜测；后续 Adapter 必须连同严格的 options Schema 和独立凭据解析器一起启用。
 
-**总开关语义（待实现）：**`rds_ai_maas=OFF` 时，`register_model`、`update_model`、`delete_model`
+**总开关语义：**`rds_ai_maas=OFF` 时，`register_model`、`update_model`、`delete_model`
 必须在写系统表/binlog 前失败；只读 `show_models()` 保持可用，只返回脱敏 Profile 元数据，便于
 管理员在关闭状态下检查或准备配置。设置 `rds_ai_maas` 本身不受该开关阻断。
 
 `AI_ADMIN` 是上述过程的前置权限。即使账号同时具备 `AI_ADMIN` 和控制表 DML/DDL 权限，直接
 `INSERT`、`UPDATE`、`DELETE`、`ALTER`、`DROP` 仍由授权层拒绝；管理包经受控系统表访问发布
 版本。当前保护不拒绝 `SELECT`，因此控制表 SELECT 只能授予受信任 server admin；收敛后的表
-不保存明文 Key，但 `endpoint_url` 和 `provider_options.credential_id` 仍属于受控运维元数据。
+不保存明文 Key；`endpoint_url` 是受控运维元数据，P0 的 `provider_options` 固定为空对象。
 
 ### 2.3.3 权限接口
 
@@ -845,7 +840,7 @@ CALL dbms_ai.register_model(
 当前实现实例级授权。按 `user@host -> model/capability`、预算、配额和多租户授权需要明确业务诉求后
 另行设计，不能在 `model_config` 中塞用户列表。
 
-**开发者 root 账号升级授权（待实现）：**TaurusDB 为开发者提供的 `root@'%'` 是受限 root，不能假定
+**开发者 root 账号升级授权：**TaurusDB 为开发者提供的 `root@'%'` 是受限 root，不能假定
 其既有静态 `GRANT OPTION` 自动覆盖新增动态权限。升级必须在 AI 动态权限完成注册后，为已存在的
 `root@'%'` 幂等补授予 `AI_INVOKE`、`AI_ADMIN`，且 `WITH_GRANT_OPTION='N'`；这允许开发者调用
 模型和管理 Profile，但不能向其他账号扩散 AI 权限。
@@ -877,20 +872,19 @@ TaurusDB 管控面/具备系统变量管理权限的管理员控制。总开关�
 
 | 参数 | 含义 | 是否开放到 Console | 是否对接 OPS |
 | --- | --- | --- | --- |
-| `rds_ai_maas` | **待实现。**实例级 AI MaaS 总开关，`GLOBAL` 动态参数，默认 `OFF`。`OFF` 时阻断新的 Embedding/Analyze 调用和模型管理写操作；保留 `show_models()` 只读 DFX。 | 是，管理员级；开启/关闭需变更审计。 | 是；管控必须向主机和所有只读节点一致下发并确认生效。 |
-| `rds_api_key` | **当前为开发验证明文模式。**仅用于华为 MaaS，`READ_ONLY + NOT_VISIBLE + NON_PERSIST` 启动参数；Huawei Adapter 仅在内存中将其作为 Bearer Token 使用。它不适用于阿里百炼、字节方舟或 AWS 等外部 Provider。 | 否。普通 SQL 不能设置、读取或通过 `SHOW VARIABLES` 获取该值；从权限为 0600 的本地私有配置文件启动时注入。 | 当前只支持主机开发验证；不写 binlog、不下发备机。 |
+| `rds_ai_maas` | 已实现的实例级 AI MaaS 总开关，`GLOBAL` 动态参数，默认 `OFF`。`OFF` 时阻断新的 Embedding/Analyze 调用和模型管理写操作；保留 `show_models()` 只读 DFX。 | 是，管理员级；开启/关闭需变更审计。 | 是；管控必须向主机和所有只读节点一致下发并确认生效。 |
+| `rds_api_key` | 已实现的华为 MaaS 敏感启动参数。当前内核提供不可由 SQL 读取或设置的受控接入点；后台密文加解密、轮换与节点一致下发仍需 TaurusDB 管控面接入。它不适用于阿里百炼、字节方舟或 AWS 等外部 Provider。 | 否。客户、DBA 和普通 SQL 均不能设置、读取或通过 `SHOW VARIABLES` 获取该值；仅管控后台可下发、轮换或清空。 | 是；主机和所有只读节点必须使用同一密文版本。 |
 | `ai_invoke_audit` | 全局动态开关，默认 `ON`。控制后续新调用是否写两阶段 AI 审计；仅管理员可修改，不支持 `SET SESSION`。 | 是，管理员级；关闭必须有变更记录和告警。 | 是；需鉴权、审计和告警联动。 |
 | `ai_invoke_audit_log_file` | 只读启动参数，默认 `<datadir>/ai_invoke_audit.jsonl`，指定追加式审计文件。 | 否；避免租户任意指定文件路径。 | 是；通过启动配置、日志采集和目录权限管理。 |
 
-`rds_api_key` 的明文仅在 mysqld 内存中供 Huawei Adapter 构造 `Authorization: Bearer` 请求头；参数为空时，
-调用必须在 MaaS 出站前失败。它不得出现在 `SHOW VARIABLES`、Performance Schema、general/slow/error log、
-binlog、AI 审计文件或 SQL 错误消息中。当前模式仅用于开发验证；后续由管控面加解密和轮换替换，且不改变
-SQL 接口、模型表或 `dbms_ai` 接口。
+TaurusDB 管控面下发的 `rds_api_key` 只在 mysqld 内存中为 Huawei Adapter 构造 `Authorization: Bearer` 请求头；
+参数为空时调用必须在 MaaS 出站前失败。当前内核不执行密文解密或版本校验，生产环境必须由管控后台在
+启动前完成解密、轮换和节点一致下发。该参数的值、密文和解密错误详情均不得出现在 `SHOW VARIABLES`、
+Performance Schema、general/slow/error log、binlog、AI 审计文件或 SQL 错误消息中。
 
 `timeout_ms`、`max_output_tokens` 和 Embedding 的 `dimension` 属于 SQL 函数的 `options_json`，
-见 2.3 接口描述，不属于本节实例参数。当前没有输入字节/Token 上限、并发、速率或预算类实例参数；
-这是成本、内存和 worker 阻塞风险。上线前需补齐服务端上限和“超限无出站”回归后，再确定是否开放为
-Console/OPS 参数。
+见 2.3 接口描述，不属于本节实例参数。服务端固定输入和调用上限为 1 MiB、每语句 32 次、实例并发 32；
+预算、Token 限制与配额类参数仍由后续版本决定是否开放为 Console/OPS 参数。
 
 ## 2.5 升级回退 | Upgrade and Rollback
 
@@ -900,9 +894,8 @@ Console/OPS 参数。
 升级期间新旧节点共存时，必须满足以下要求：
 
 1. 升级脚本可幂等执行，模型配置迁移失败可重试，不产生重复 ACTIVE Profile。
-2. 当前华为开发验证凭据由主机私有配置文件注入 `rds_api_key`，不写 binlog 或下发备机；后续迁入
-   管控面加密配置。外部 Provider 凭据也由后台加密配置并以 `credential_id` 引用。旧明文 Key 必须单独
-   迁移、轮换或吊销，不能作为常规升级数据复制。
+2. 华为凭据迁入 `rds_api_key` 的受控加密配置；外部 Provider 凭据迁入后台加密配置并由
+   `credential_id` 引用。旧明文 Key 必须单独迁移、轮换或吊销，不能作为常规升级数据复制。
 3. AI 动态权限注册完成后，升级脚本必须仅对已存在的 `root@'%'` 幂等写入 `AI_INVOKE`、`AI_ADMIN`，
    且两项 `WITH_GRANT_OPTION` 均为 `N`。账号不存在时升级继续成功；升级后新建的开发者 root 由
    初始化/管控流程执行标准 `GRANT`。不得用普通 SQL 会话直接写 `mysql.global_grants`。
@@ -924,9 +917,9 @@ binlog 与 row-event flags。这些 flags 会影响所有使用该 command 的�
 
 - **本地 fail-fast：** 参数、权限、Profile、能力、维度、凭据、Endpoint、审计 STARTED 等可
   本地判断的失败必须在出站前结束。
-- **特性总开关（待实现）：**`rds_ai_maas=OFF` 必须先于 SQL 权限、Profile、凭据和审计检查生效；
+- **特性总开关：**`rds_ai_maas=OFF` 先于 SQL 权限、Profile、凭据和审计检查生效；
   不出站、不产生新的调用审计，也不写模型控制表。主机和只读节点必须保持同一开关状态。
-- **审计 fail closed / fail open（目标策略，待实现）：** `ai_invoke_audit=ON` 时 STARTED 写入并安全落盘失败，
+- **审计 fail closed / fail open：** `ai_invoke_audit=ON` 时 STARTED 写入并安全落盘失败，
   调用失败且不得出站；终态写失败时不覆盖已获得的 Provider 结果，保留 STARTED 并由日志平台按 `UNKNOWN` 处置。
 - **无伪原子性承诺：** MaaS 外呼不能加入 MySQL 用户事务。事务回滚、网络中断和客户端断开后，
   远端可能已经接收请求并产生费用；P0 默认不自动重试，以避免重复收费/重复推理。
@@ -971,7 +964,7 @@ P0 是功能验证版本，不提供 P50/P95/P99、QPS、并发或吞吐承诺�
 资源和性能边界如下：
 
 - **CPU/内存：** 每个同步调用占用连接对应的执行资源；prompt、Provider 响应和向量编码均在
-  mysqld 内存中处理。响应上限为 1 MiB；当前没有输入上限，必须补齐。
+  mysqld 内存中处理。输入和响应上限均为 1 MiB；单语句与实例并发上限均为 32。
 - **网络：** 每次调用为 tenant VPC 经受控出口到 MaaS 的 HTTPS 请求；网络抖动、DNS/TLS 和
   NAT/EIP 容量影响端到端时延。
 - **存储：** 模型配置低频写入系统表；审计为追加式 JSONL，容量受调用量、日志轮转和保留策略影响。
@@ -1006,7 +999,7 @@ SRE 和安全 SE 共同确认后定稿。
 
 | 检查项 | 是/否满足 | 说明 |
 | --- | --- | --- |
-| 有特性开关且动态生效 | 待实现 | `rds_ai_maas` 设计为默认 OFF 的全局动态总开关，统一阻断数据面与管理写操作；需验证主/只读节点一致生效和正在执行调用的终态行为。 |
+| 有特性开关且动态生效 | 部分满足 | `rds_ai_maas` 已实现为默认 OFF 的全局动态总开关，统一阻断数据面与管理写操作；主/只读一致下发和正在执行调用的终态行为仍需目标环境验证。 |
 | 不影响兼容性 | 部分满足 | 新增函数、权限、系统表和过程；不修改既有客户 SQL。旧 AI 原型三参数接口不兼容，需明确迁移。 |
 | 不影响版本升级/回退 | 待验证 | 新表、权限、`dbms_ai` 和共享 `SQLCOM_ADMIN_PROC` flags 需完成升级/回退及既有过程回归。 |
 | 不影响故障快速恢复（5 分钟内） | 待验证 | Runtime 无持久调用队列；日志、Secret、网络和 Profile 恢复时间需在目标环境演练。 |
@@ -1021,7 +1014,7 @@ SRE 和安全 SE 共同确认后定稿。
 | 自检项 | 是否涉及 | 备注 |
 | --- | --- | --- |
 | 通信矩阵变化 | 是 | 新增 tenant VPC 到 MaaS 的 HTTPS 出站、DNS、TLS、Policy Route/NAT/EIP、安全组和回流验证。 |
-| 新增/减少安全凭据 | 是 | 当前华为 API Key 通过 0600 私有启动配置明文注入 `rds_api_key`；外部 Provider 的 API Key/IAM Role 后续由管控后台加密保存，模型表仅存非敏感 `credential_id`。 |
+| 新增/减少安全凭据 | 是 | P0 使用不可由 SQL 读取的 `rds_api_key` 向 mysqld 注入华为凭据；管控后台密文解密/轮换和外部 Provider 的 `credential_id` 解析仍是后续上线前置集成。 |
 | 安全凭据新用途或新权限 | 是 | 凭据仅供对应 Provider Adapter 的出站认证使用；模型控制表 SELECT 仅授予受信任管理员。 |
 | 权限变化 | 是 | 新增 `AI_INVOKE`、`AI_ADMIN`；审计开关仅管理员可改。 |
 | 新加解密场景 | 否 | P0 复用 HTTPS/TLS 与既有 Secret 机制，不新增自定义加密算法。 |
@@ -1049,7 +1042,7 @@ cd build-debug/mysql-test
 | 序号 | 用例场景 | 前置条件 | 测试步骤 | 预期结果 |
 | --- | --- | --- | --- | --- |
 | 1 | SQL 契约与本地失败 | fixture Profile、测试账号 | 调用 NULL、空模型、非法 arity、旧 Analyze/Embedding 签名、禁用模型和错误 options。 | SQL 失败或按契约返回 NULL；本地失败不访问 fixture/真实 MaaS。 |
-| 2 | Embedding 与 VECTOR | `mtr/fixture-embedding`、VECTOR 能力 | 迁移完成后使用新签名生成 1024 维向量；在迁移前保留旧签名基线。覆盖省略/显式 `dimension`、`timeout_ms`、未知 option、向量转换、余弦/欧氏距离和向量索引。 | 向量可写入/检索；错误维度或 options 本地失败；旧签名在迁移后本地失败且零出站。 |
+| 2 | Embedding 与 VECTOR | `mtr/fixture-embedding`、VECTOR 能力 | 使用新签名生成 1024 维向量；覆盖省略/显式 `dimension`、未知 option、向量转换、余弦/欧氏距离和向量索引。 | 向量可写入/检索；错误维度或 options 本地失败；旧签名本地失败且零出站。 |
 | 3 | Analyze 新接口 | `mtr/fixture-generation` | 覆盖 2/3 参数、`max_output_tokens`、`timeout_ms`、未知/旧/Provider 私有字段和无最终内容。 | 新签名返回 fixture 内容；非法参数或无最终 content 失败且无不受控出站。 |
 | 4 | 模型控制面与 Endpoint 切换 | `AI_ADMIN` 账号、内部控制表、Provider URL fixture | `dbms_ai` 注册/更新/删除/展示；更新已验证 V1/V2 URL；尝试直接 DML/DDL、普通 SQL options 传 URL、非法 Host/端口/路径。 | 管理包以新 `config_version` 发布已验证 URL；直接写表和普通 SQL URL 均拒绝；非法 URL 本地失败且不出站。 |
 | 5 | 权限与审计 | `AI_INVOKE`、审计开关、临时日志文件 | 无权限调用、尝试 Session 关闭审计、STARTED/终态写失败与敏感字段检查。 | 无权限不出站；无 Session 开关；STARTED 失败 fail closed；日志无 Key/prompt/response/vector。 |
@@ -1057,16 +1050,16 @@ cd build-debug/mysql-test
 | 7 | 复制与主备 | row-based replication 测试环境 | 在主节点执行受控模型管理变更，观察只读节点；主/只读分别调用并检查审计。 | Profile 配置复制；执行节点均写本地审计；不要求只读写系统表。 |
 | 8 | 总开关 | 主机和只读节点均启动，分别授予 `AI_INVOKE`、`AI_ADMIN`。 | 默认 OFF 下调用 AI 函数和管理写过程；开启后验证调用/写入；关闭后验证 `show_models()`、STORED DML 和已开始调用。 | OFF 时数据面与管理写均在本地失败、无 MaaS 请求/新调用审计；`show_models()` 可读；触发 STORED 向量生成的 DML 失败；主/只读一致生效。 |
 | 9 | 开发者 root 升级授权 | 创建含/不含 `root@'%'` 的存量实例，完成 AI 动态权限注册。 | 执行升级脚本；检查 `mysql.global_grants` 和 `SHOW GRANTS`；升级后创建 `root@'%'` 并走初始化授权。 | 存量 root 获得 `AI_INVOKE`、`AI_ADMIN` 且无动态权限转授权；不存在 root 时升级成功；新建 root 获得相同权限；不自动获得总开关管理权限。 |
-| 10 | 华为 API Key 参数 | 主机以私有 0600 配置文件提供有效或为空的 `rds_api_key`。 | 验证启动、Embedding/Analyze、本地缺失凭据失败，以及 `SHOW`、`@@GLOBAL`、`SET`、`SET PERSIST` 均不可读取或设置。 | 有效参数可调用；为空时出站前失败；Key 不出现在可查询变量、日志、binlog 或审计中。备机、复制、加解密和轮换不在当前范围。 |
+| 10 | 华为 API Key 参数 | 配置有效、为空、不可解密和轮换后的 `rds_api_key` 密文。 | 分别调用 Huawei Embedding/Analyze；检查请求结果和各类日志/审计；在主机、只读节点验证一致性。 | 有效密文可调用；为空/解密失败均在出站前失败；轮换仅影响后续调用；密文和明文均不出现在可查询变量、日志或审计中。 |
 
 ### 5.1.1 RAG 测试入口
 
 图示、关键 SQL 和预期结果见 [2.1.3.6 向量结果与 RAG 边界](#2136-向量结果与-rag-边界)；可复跑实现为
 [`ai_maas_rag.test`](../../mysql-test/suite/rds/t/ai_maas_rag.test)。本节不重复 SQL，避免设计说明与用例分叉。
 
-当前基线已验证离线 RDS MTR 与 shutdown report。`ai_maas_rds_api_key.test` 覆盖启动参数接受以及 SQL
-不可读、不可设置和不可持久化。现有 `ai_maas_model_admin_release.test` 覆盖旧 keyring 路径；后续管控面
-加解密、轮换和外部 Provider 凭据解析必须新增独立回归，不能以旧 keyring fixture 代替目标环境集成验证。
+当前基线已验证 8 个 RDS MTR 用例及 shutdown report 通过。`ai_maas_model_admin_release.test`
+不再依赖 Debug fixture 或 keyring，覆盖生产控制表无凭据字段与受控 Endpoint 发布；TaurusDB 后台密文
+解密、轮换和失效仍必须在目标环境以真实管控面集成验证。
 
 **真实 MaaS smoke（管理员显式授权、专用 schema、可撤销凭据）：**
 

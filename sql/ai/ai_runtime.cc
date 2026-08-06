@@ -36,4 +36,23 @@ Ai_error Ai_runtime::ParseAnalyzeOptions(const std::string &json,
   }
   return ValidateAnalyzeOptions(*out);
 }
+
+Ai_error Ai_runtime::ParseEmbeddingOptions(
+    const std::string &json, Ai_embedding_options *out) const {
+  if (out == nullptr || json.empty()) return Ai_error::k_invalid_options;
+  *out = Ai_embedding_options{};
+  rapidjson::Document doc;
+  if (doc.Parse(json.c_str()).HasParseError() || !doc.IsObject())
+    return Ai_error::k_invalid_options;
+  std::set<std::string> seen_keys;
+  for (auto it = doc.MemberBegin(); it != doc.MemberEnd(); ++it) {
+    const std::string key(it->name.GetString(), it->name.GetStringLength());
+    if (!seen_keys.insert(key).second) return Ai_error::k_invalid_options;
+    if (key != "dimension" || !it->value.IsUint() ||
+        it->value.GetUint() == 0)
+      return Ai_error::k_invalid_options;
+    out->dimension = it->value.GetUint();
+  }
+  return Ai_error::k_ok;
+}
 }  // namespace alisql::ai

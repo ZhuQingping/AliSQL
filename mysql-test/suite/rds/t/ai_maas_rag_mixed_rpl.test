@@ -1,0 +1,47 @@
+--source include/have_binlog_format_mixed_or_row.inc
+--source include/master-slave.inc
+
+--source include/rpl_connection_master.inc
+SET GLOBAL rds_ai_maas = ON;
+SET GLOBAL ai_invoke_audit = OFF;
+SET GLOBAL vidx_disabled = OFF;
+--disable_warnings
+SET SESSION binlog_format = 'MIXED';
+--enable_warnings
+GRANT AI_ADMIN, AI_INVOKE ON *.* TO 'root'@'localhost';
+CALL dbms_ai.register_model('mtr/fixture-embedding', 'TEXT_EMBEDDING', 'mtr',
+                            'fixture-embedding',
+                            'https://db4ai-mtr-fixture.invalid/v1/embeddings', 1024, '{}');
+--source include/rpl_sync.inc
+
+--source include/rpl_connection_slave.inc
+SET GLOBAL vidx_disabled = OFF;
+--source include/rpl_connection_master.inc
+
+--echo # The unsafe marker makes this MIXED DML a row event before evaluating STORED.
+CREATE TABLE ai_maas_mixed_rpl_probe (
+  id INT NOT NULL PRIMARY KEY,
+  doc TEXT NOT NULL,
+  vec VECTOR(1024)
+    AS (AI_EMBEDDING('mtr/fixture-embedding', doc,
+                     JSON_OBJECT('dimension', 1024))) STORED
+) ENGINE=InnoDB;
+INSERT INTO ai_maas_mixed_rpl_probe (id, doc) VALUES (1, 'replica must not invoke MaaS');
+--source include/rpl_sync.inc
+
+--source include/rpl_connection_slave.inc
+--echo # The replica keeps its feature switch OFF. Successful apply proves it received a row value.
+SELECT @@GLOBAL.rds_ai_maas AS replica_maas_enabled;
+SELECT id, VECTOR_DIM(vec) AS vector_dimension
+  FROM ai_maas_mixed_rpl_probe;
+
+--source include/rpl_connection_master.inc
+DROP TABLE ai_maas_mixed_rpl_probe;
+CALL dbms_ai.delete_model('mtr/fixture-embedding', 'TEXT_EMBEDDING');
+SET GLOBAL vidx_disabled = ON;
+SET GLOBAL ai_invoke_audit = ON;
+--source include/rpl_sync.inc
+--source include/rpl_connection_slave.inc
+SET GLOBAL vidx_disabled = ON;
+--source include/rpl_end.inc
+SET GLOBAL rds_ai_maas = OFF;

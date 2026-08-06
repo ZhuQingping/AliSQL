@@ -8107,6 +8107,17 @@ int Rows_log_event::unpack_current_row(const Relay_log_info *const rli,
           this->m_table,
           [=](TABLE const *table, size_t column_index) -> bool {
             auto field = table->field[column_index];
+            // An unsafe stored generated expression is evaluated only on the
+            // source.  When its value is present in the after image, retaining
+            // that value is the only safe replica behavior: recomputing it
+            // can repeat an external side effect (for example AI_EMBEDDING).
+            // The source-side unsafe flag also makes MIXED choose ROW before
+            // the expression is evaluated.
+            if (is_after_image && field->stored_in_db &&
+                (field->gcol_info->get_stmt_unsafe_flags() &
+                 (1U << LEX::BINLOG_STMT_UNSAFE_SYSTEM_FUNCTION)) != 0 &&
+                bitmap_is_set(cols, column_index))
+              return true;
             if (field->is_field_for_functional_index())  // Always exclude
                                                          // functional indexes
               return true;

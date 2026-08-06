@@ -1585,61 +1585,40 @@ ALTER TABLE mysql.procs_priv DROP PRIMARY KEY,
 -- Migrate DB4AI to the instance-level control plane. Legacy tables are not
 -- dropped here: they are retained for backup and rollback until an explicit
 -- operational cleanup, but the new runtime does not read them.
-SET @cmd = "CREATE TABLE IF NOT EXISTS mysql.taurusdb_ai_model_config (
+SET @cmd = "CREATE TABLE IF NOT EXISTS mysql.ai_model_config (
   Id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   model_name VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   provider VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   capability ENUM('TEXT_EMBEDDING','TEXT_GENERATION') NOT NULL,
   provider_model_name VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  endpoint_url TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  auth_type VARCHAR(64) CHARACTER SET ascii NOT NULL DEFAULT 'BEARER_API_KEY',
-  credential_mode ENUM('SECRET_REF','PLAINTEXT_DEV','SERVER_PARAMETER','AWS_IAM_ROLE') NOT NULL DEFAULT 'SECRET_REF',
-  credential_ref VARCHAR(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
-  api_key_plaintext BLOB DEFAULT NULL,
-  default_dimension INT UNSIGNED DEFAULT NULL,
-  allowed_dimensions JSON DEFAULT NULL,
-  model_revision VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
-  generation_defaults JSON DEFAULT NULL,
-  generation_limits JSON DEFAULT NULL,
-  is_builtin BOOLEAN NOT NULL DEFAULT TRUE,
-  is_default BOOLEAN NOT NULL DEFAULT FALSE,
+  endpoint_url VARCHAR(512) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  dimension INT UNSIGNED DEFAULT NULL,
+  provider_options JSON NOT NULL,
   status ENUM('ACTIVE','DISABLED','RETIRED') NOT NULL DEFAULT 'ACTIVE',
   config_version BIGINT UNSIGNED NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY(Id),
   UNIQUE KEY uq_ai_model_config(model_name, capability, config_version),
-  KEY ix_ai_model_active(model_name, capability, status),
-  KEY ix_ai_model_default(capability, is_default, status)) ENGINE=InnoDB
+  KEY ix_ai_model_active(model_name, capability, status)) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4 STATS_PERSISTENT=0 ROW_FORMAT=DYNAMIC";
 SET @str = CONCAT(@cmd, " ENCRYPTION='", @is_mysql_encrypted, "'");
 PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
 
--- Existing instances need the server-startup credential mode as well.  The
--- value itself is never written to this table; Huawei reads rds_api_key only
--- from server memory during development validation.
-ALTER TABLE mysql.taurusdb_ai_model_config
-  MODIFY credential_mode
-    ENUM('SECRET_REF','PLAINTEXT_DEV','SERVER_PARAMETER','AWS_IAM_ROLE')
-    NOT NULL DEFAULT 'SECRET_REF';
-
 SET @has_legacy_ai_model_config =
   (SELECT COUNT(*) FROM information_schema.tables
    WHERE table_schema = 'mysql' AND table_name = 'alisql_ai_model_config');
-SET @cmd = "INSERT INTO mysql.taurusdb_ai_model_config
+SET @cmd = "INSERT INTO mysql.ai_model_config
   (model_name, provider, capability, provider_model_name, endpoint_url,
-   auth_type, credential_mode, credential_ref, api_key_plaintext,
-   default_dimension, model_revision, is_builtin, is_default, status,
-   config_version, created_at, updated_at)
+   dimension, provider_options, status, config_version, created_at, updated_at)
  SELECT legacy.model_name, legacy.provider, legacy.capability, legacy.provider_model_name,
-        endpoint, 'BEARER_API_KEY', credential_kind, credential_ref,
-        api_key_plaintext, dimension, model_revision, TRUE, FALSE,
-        IF(active, 'ACTIVE', 'DISABLED'), config_version, created_at, updated_at
+        endpoint, dimension, JSON_OBJECT(), IF(active, 'ACTIVE', 'DISABLED'),
+        config_version, created_at, updated_at
    FROM mysql.alisql_ai_model_config AS legacy
   WHERE NOT EXISTS (
-    SELECT 1 FROM mysql.taurusdb_ai_model_config AS target
+    SELECT 1 FROM mysql.ai_model_config AS target
      WHERE target.model_name = legacy.model_name
        AND target.capability = legacy.capability
        AND target.config_version = legacy.config_version)";
@@ -1648,16 +1627,55 @@ PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
 
--- Give each capability an instance default only when exactly one ACTIVE
--- migrated Profile exists. Multiple profiles require an administrator choice.
-UPDATE mysql.taurusdb_ai_model_config c
-JOIN (
-  SELECT capability, MIN(Id) AS Id
-    FROM mysql.taurusdb_ai_model_config
-   WHERE status = 'ACTIVE'
-   GROUP BY capability
-  HAVING COUNT(*) = 1
-) only_profile ON only_profile.Id = c.Id
-SET c.is_default = TRUE;
+-- The first instance-level prototype used a wider temporary table.  Preserve
+-- its non-sensitive Profile history while intentionally dropping all legacy
+-- credential/default/metric fields during the upgrade.
+SET @has_previous_ai_model_config =
+  (SELECT COUNT(*) FROM information_schema.tables
+   WHERE table_schema = 'mysql' AND table_name = 'taurusdb_ai_model_config');
+SET @cmd = "INSERT INTO mysql.ai_model_config
+  (model_name, provider, capability, provider_model_name, endpoint_url,
+   dimension, provider_options, status, config_version, created_at, updated_at)
+ SELECT model_name, provider, capability, provider_model_name, endpoint_url,
+        default_dimension, JSON_OBJECT(), status, config_version,
+        created_at, updated_at
+   FROM mysql.taurusdb_ai_model_config AS previous
+  WHERE NOT EXISTS (
+    SELECT 1 FROM mysql.ai_model_config AS target
+     WHERE target.model_name = previous.model_name
+       AND target.capability = previous.capability
+       AND target.config_version = previous.config_version)";
+SET @str = IF(@has_previous_ai_model_config, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+-- Legacy plaintext credentials must not survive the control-plane migration.
+-- Profile metadata above is sufficient for rollback; the API Key itself must
+-- be re-injected through the protected TaurusDB control-plane channel.
+SET @cmd = "UPDATE mysql.alisql_ai_model_config
+               SET api_key_plaintext = NULL
+             WHERE api_key_plaintext IS NOT NULL";
+SET @str = IF(@has_legacy_ai_model_config, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+SET @cmd = "UPDATE mysql.taurusdb_ai_model_config
+               SET api_key_plaintext = NULL
+             WHERE api_key_plaintext IS NOT NULL";
+SET @str = IF(@has_previous_ai_model_config, @cmd, "SET @dummy = 0");
+PREPARE stmt FROM @str;
+EXECUTE stmt;
+DROP PREPARE stmt;
+
+-- TaurusDB's restricted developer root is not a MySQL superuser.  Grant only
+-- the two MaaS dynamic privileges to an existing root@'%' during upgrade;
+-- do not grant dynamic-privilege delegation or variable-administration power.
+INSERT IGNORE INTO mysql.global_grants (USER, HOST, PRIV, WITH_GRANT_OPTION)
+SELECT 'root', '%', 'AI_INVOKE', 'N'
+  FROM mysql.user WHERE User = 'root' AND Host = '%';
+INSERT IGNORE INTO mysql.global_grants (USER, HOST, PRIV, WITH_GRANT_OPTION)
+SELECT 'root', '%', 'AI_ADMIN', 'N'
+  FROM mysql.user WHERE User = 'root' AND Host = '%';
 
 SET @@session.sql_mode = @old_sql_mode;

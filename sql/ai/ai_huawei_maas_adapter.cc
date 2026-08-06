@@ -35,8 +35,7 @@ void AddUsage(const rapidjson::Value &usage, Ai_usage *out) {
 Ai_error Post(Ai_http_transport *transport, const Ai_canonical_request &request,
               std::string_view token, const std::string &body,
               Ai_http_response *http_response) {
-  if (transport == nullptr || token.empty() || request.model.provider != "huawei" ||
-      request.model.endpoint_type != "HTTPS_JSON")
+  if (transport == nullptr || token.empty() || request.model.provider != "huawei")
     return Ai_error::k_provider_error;
   Ai_http_request http_request;
   http_request.endpoint = request.model.endpoint;

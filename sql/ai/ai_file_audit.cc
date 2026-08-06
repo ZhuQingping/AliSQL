@@ -5,12 +5,18 @@
 #include <chrono>
 #include <cstring>
 #include <fcntl.h>
+#include <sys/stat.h>
+
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 #include <my_rapidjson_size_t.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
 #include "my_io.h"
+#include "my_dir.h"
 #include "my_dbug.h"
 #include "my_systime.h"
 #include "my_sys.h"
@@ -61,6 +67,9 @@ const char *ErrorName(Ai_error error) {
     case Ai_error::k_rate_limited: return "RATE_LIMITED";
     case Ai_error::k_protocol_mismatch: return "PROTOCOL_MISMATCH";
     case Ai_error::k_audit_unavailable: return "AUDIT_UNAVAILABLE";
+    case Ai_error::k_feature_disabled: return "FEATURE_DISABLED";
+    case Ai_error::k_replication_unsafe: return "REPLICATION_UNSAFE";
+    case Ai_error::k_request_too_large: return "REQUEST_TOO_LARGE";
   }
   return "PROVIDER_ERROR";
 }
@@ -148,13 +157,19 @@ Ai_error Ai_file_audit_sink::Append(const char *event_type, uint64_t call_id,
   std::string line(buffer.GetString(), buffer.GetSize());
   line.push_back('\n');
 
-  const File file = my_open(path_.c_str(), O_WRONLY | O_CREAT | O_APPEND,
+  const File file = my_open(path_.c_str(),
+                            O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW,
                             MYF(MY_WME));
   if (file < 0) return Ai_error::k_audit_unavailable;
-  // Restrict the file before the first event is written. A permission failure
-  // means the event is not safely persisted, so pre-egress callers fail
-  // closed instead of dispatching an unaudited request.
-  if (my_chmod(path_.c_str(), USER_READ | USER_WRITE, MYF(0))) {
+  // Validate the opened descriptor instead of its path.  This prevents a
+  // symlink swap from redirecting audit output or chmod to another file.
+  MY_STAT stat_info;
+  if (my_fstat(file, &stat_info) != 0 || !S_ISREG(stat_info.st_mode)
+#ifndef _WIN32
+      || stat_info.st_uid != geteuid() ||
+      fchmod(file, S_IRUSR | S_IWUSR) != 0
+#endif
+  ) {
     (void)my_close(file, MYF(0));
     return Ai_error::k_audit_unavailable;
   }

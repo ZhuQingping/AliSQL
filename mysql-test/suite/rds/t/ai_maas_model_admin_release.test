@@ -1,61 +1,24 @@
---echo # Release publishes only Secret references that the configured keyring can read.
-let $have_debug = `SELECT VERSION() LIKE '%debug%'`;
-if ($have_debug)
-{
-  --skip Test requires a non-Debug Release build
-}
-
---echo # Seed one governed profile through a real keyring, then remove its
---echo # reference to model a production secret becoming unavailable.
---source include/have_component_keyring_file.inc
---let PLUGIN_DIR_OPT = $KEYRING_FILE_COMPONENT_OPT
---let CURRENT_DATADIR = `SELECT @@datadir`
---let COMPONENT_LIBRARY = `SELECT SUBSTRING_INDEX('$KEYRING_FILE_COMPONENT_LOAD', '=', -1)`
---let COMPONENT_DIR = $KEYRING_FILE_COMPONENT_DIR
---let COMPONENT_NAME = `SELECT SUBSTRING_INDEX('$COMPONENT_LIBRARY', '.', 1)`
---let KEYRING_FILE_PATH = `SELECT CONCAT('$MYSQLTEST_VARDIR', '/ai_maas_release_keyring')`
---let KEYRING_CONFIG_CONTENT = `SELECT CONCAT('{ "path": "', '$KEYRING_FILE_PATH', '", "read_only": false }')`
---source include/keyring_tests/helper/local_keyring_create_config.inc
---perl
-  use strict;
-  open(my $fh, '>', $ENV{'KEYRING_FILE_PATH'}) or die;
-  print $fh '{"version":"1.0","elements":[{"user":"","data_id":"ai-maas-release-readable","data_type":"SECRET","data":"746573742D6F6E6C792D6E6F742D612D7265616C2D6170692D6B6579","extension":[]}]}' or die;
-  close($fh);
-EOF
---let LOCAL_MANIFEST_CONTENT = `SELECT CONCAT('{ "components": "file://', '$COMPONENT_NAME', '" }')`
---source include/keyring_tests/helper/instance_create_manifest.inc
---source include/keyring_tests/helper/start_server_with_manifest.inc
-
+--echo # This test deliberately has no Debug fixture or keyring dependency.
+--echo # It validates the production control-plane shape in every build type.
+SET GLOBAL rds_ai_maas = ON;
 GRANT AI_ADMIN ON *.* TO 'root'@'localhost';
-CALL dbms_ai.register_model('huawei/release-existing-secret', 'TEXT_EMBEDDING',
-                            'bge-m3', 'SECRET_REF', 'ai-maas-release-readable');
-SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/release-existing-secret'), '$.config_version');
 
---perl
-  use strict;
-  open(my $fh, '>', $ENV{'KEYRING_FILE_PATH'}) or die;
-  print $fh '{"version":"1.0","elements":[]}' or die;
-  close($fh);
-EOF
-let $restart_parameters = restart: $PLUGIN_DIR_OPT;
---source include/restart_mysqld_no_echo.inc
+--echo # Publishing a Huawei Profile stores no credential with the model.
+CALL dbms_ai.register_model('huawei/release-control-plane', 'TEXT_EMBEDDING',
+                            'huawei', 'bge-m3',
+                            'https://api.modelarts-maas.com/v1/embeddings', 1024, '{}');
+SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/release-control-plane'), '$.config_version');
+--error ER_BAD_FIELD_ERROR
+SELECT api_key_plaintext FROM mysql.ai_model_config;
 
---echo # An unreadable reference rejects update before the active version changes.
+--echo # An endpoint outside the provider allowlist cannot be published.
 --error ER_WRONG_ARGUMENTS
-CALL dbms_ai.update_model('huawei/release-existing-secret', 'TEXT_EMBEDDING',
-                          'bge-m3', 'SECRET_REF', 'ai-maas-release-readable');
-CALL dbms_ai.show_models();
-SELECT JSON_EXTRACT(AI_MODEL_INFO('huawei/release-existing-secret'), '$.config_version');
-
---echo # An unreadable reference rejects registration before any active row is published.
---error ER_WRONG_ARGUMENTS
-CALL dbms_ai.register_model('huawei/release-unreadable-secret', 'TEXT_EMBEDDING',
-                            'bge-m3', 'SECRET_REF', 'mtr/not-configured');
+CALL dbms_ai.register_model('huawei/release-bad-endpoint', 'TEXT_GENERATION',
+                            'huawei', 'glm-5.2',
+                            'https://api.modelarts-maas.com/v1/embeddings', 0, '{}');
 CALL dbms_ai.show_models();
 --error ER_NOT_SUPPORTED_YET
-SELECT AI_MODEL_INFO('huawei/release-unreadable-secret');
+SELECT AI_MODEL_INFO('huawei/release-bad-endpoint');
 
---source include/keyring_tests/helper/instance_remove_manifest.inc
---source include/keyring_tests/helper/local_keyring_file_remove.inc
---source include/keyring_tests/helper/local_keyring_remove_config.inc
---source include/keyring_tests/helper/cleanup_server_with_manifest.inc
+CALL dbms_ai.delete_model('huawei/release-control-plane', 'TEXT_EMBEDDING');
+SET GLOBAL rds_ai_maas = OFF;

@@ -4333,6 +4333,14 @@ void TABLE::bind_value_generators_to_fields() {
       assert((*val_generator)->gcol_info &&
              (*val_generator)->gcol_info->expr_item);
       bind_fields((*val_generator)->gcol_info->expr_item);
+      // Generated expressions are parsed when the TABLE is opened, not when
+      // each INSERT/UPDATE is parsed. Restore their saved statement-safety
+      // flags on the current statement before decide_logging_format() so a
+      // stored generated column containing an external AI function is never
+      // replicated as a statement in MIXED mode.
+      if (in_use != nullptr && in_use->lex != nullptr)
+        in_use->lex->set_stmt_unsafe_flags(
+            (*val_generator)->gcol_info->get_stmt_unsafe_flags());
     }
   }
 

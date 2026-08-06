@@ -17,8 +17,6 @@ Ai_model_profile MakeProfile(const char *model_name, Ai_capability capability,
   profile.capability = capability;
   profile.provider = "huawei";
   profile.provider_model_name = "provider-model";
-  profile.model_revision = "2026-07";
-  profile.endpoint_type = "HTTPS_JSON";
   profile.endpoint = "https://maas.example.invalid";
   profile.active = true;
   return profile;
@@ -34,7 +32,7 @@ TEST(AiModelRegistryTest, ResolvesActiveInstanceProfileAndFreezesVersion) {
   Ai_resolved_model out;
 
   EXPECT_EQ(Ai_error::k_ok,
-            registry.ResolveForTest(0, profile.model_name,
+            registry.ResolveForTest(profile.model_name,
                                     Ai_capability::k_text_embedding, &out));
   EXPECT_EQ(7U, out.config_version);
   EXPECT_EQ(107U, out.config_id);
@@ -50,56 +48,20 @@ TEST(AiModelRegistryTest, ResolvesLatestActiveExplicitProfileVersion) {
   Ai_resolved_model out;
 
   EXPECT_EQ(Ai_error::k_ok,
-            registry.ResolveForTest(0, "mtr/versioned",
+            registry.ResolveForTest("mtr/versioned",
                                     Ai_capability::k_text_embedding, &out));
   EXPECT_EQ(2U, out.config_version);
 }
 
-TEST(AiModelRegistryTest, ResolvesLatestActiveDefaultProfileVersion) {
-  Ai_model_registry registry;
-  auto first =
-      MakeProfile("mtr/default-v1", Ai_capability::k_text_embedding, 1);
-  auto second =
-      MakeProfile("mtr/default-v2", Ai_capability::k_text_embedding, 2);
-  first.is_default = true;
-  second.is_default = true;
-  registry.AddProfileForTest(first);
-  registry.AddProfileForTest(second);
-  Ai_resolved_model out;
-
-  EXPECT_EQ(Ai_error::k_ok,
-            registry.ResolveForTest(0, "", Ai_capability::k_text_embedding,
-                                    &out));
-  EXPECT_EQ(2U, out.config_version);
-}
-
-TEST(AiModelRegistryTest, ResolvesOnlyTheProfileMarkedAsDefault) {
+TEST(AiModelRegistryTest, RejectsAnOmittedModelName) {
   Ai_model_registry registry;
   auto profile = MakeProfile("huawei/bge-m3",
                              Ai_capability::k_text_embedding, 9);
-  profile.is_default = true;
   registry.AddProfileForTest(profile);
   Ai_resolved_model out;
 
-  EXPECT_EQ(Ai_error::k_ok,
-            registry.ResolveForTest(0, "",
-                                    Ai_capability::k_text_embedding, &out));
-  EXPECT_EQ(109U, out.config_id);
-  EXPECT_EQ(9U, out.config_version);
-}
-
-TEST(AiModelRegistryTest, RejectsAmbiguousDefaultProfiles) {
-  Ai_model_registry registry;
-  auto first = MakeProfile("mtr/first", Ai_capability::k_text_embedding, 1);
-  auto second = MakeProfile("mtr/second", Ai_capability::k_text_embedding, 1);
-  first.is_default = true;
-  second.is_default = true;
-  registry.AddProfileForTest(first);
-  registry.AddProfileForTest(second);
-  Ai_resolved_model out;
-
   EXPECT_EQ(Ai_error::k_model_not_found,
-            registry.ResolveForTest(0, "", Ai_capability::k_text_embedding,
+            registry.ResolveForTest("", Ai_capability::k_text_embedding,
                                     &out));
 }
 
@@ -112,7 +74,7 @@ TEST(AiModelRegistryTest, DoesNotUseInactiveOrWrongCapabilityProfile) {
   Ai_resolved_model out;
 
   EXPECT_NE(Ai_error::k_ok,
-            registry.ResolveForTest(0, inactive.model_name,
+            registry.ResolveForTest(inactive.model_name,
                                     Ai_capability::k_text_embedding, &out));
 }
 
@@ -135,7 +97,7 @@ TEST(AiModelRegistryTest, RejectsUnsupportedEndpointBeforeDispatch) {
   Ai_resolved_model out;
 
   EXPECT_EQ(Ai_error::k_model_not_found,
-            registry.ResolveForTest(0, profile.model_name,
+            registry.ResolveForTest(profile.model_name,
                                     Ai_capability::k_text_embedding, &out));
 }
 
@@ -147,49 +109,6 @@ TEST(AiModelRegistryTest, CredentialResolverRejectsUnconfiguredSecret) {
   EXPECT_EQ(Ai_error::k_credential_unavailable,
             resolver.ReadSecret(nullptr, model, &secret));
   EXPECT_TRUE(secret.empty());
-}
-
-TEST(AiCredentialResolverTest, PlaintextDevRequiresDebugPolicy) {
-  Ai_credential_resolver resolver;
-  Secure_string credential;
-
-  EXPECT_EQ(Ai_error::k_credential_unavailable,
-            resolver.ReadPlaintextDevForTest(false, "PLAINTEXT_DEV",
-                                             "unit-token", &credential));
-  EXPECT_TRUE(credential.empty());
-}
-
-TEST(AiCredentialResolverTest, PlaintextDevReturnsOnlyNonemptyValue) {
-  Ai_credential_resolver resolver;
-  Secure_string credential;
-
-  EXPECT_EQ(Ai_error::k_ok,
-            resolver.ReadPlaintextDevForTest(true, "PLAINTEXT_DEV",
-                                             "unit-token", &credential));
-  EXPECT_EQ("unit-token", credential.view());
-}
-
-TEST(AiCredentialResolverTest, PlaintextDevRejectsEmptyValue) {
-  Ai_credential_resolver resolver;
-  Secure_string credential;
-
-  EXPECT_EQ(Ai_error::k_credential_unavailable,
-            resolver.ReadPlaintextDevForTest(true, "PLAINTEXT_DEV", "",
-                                             &credential));
-  EXPECT_TRUE(credential.empty());
-}
-
-TEST(AiCredentialResolverTest, PlaintextDevRequiresExactActiveConfig) {
-  Ai_credential_resolver resolver;
-
-  EXPECT_TRUE(resolver.IsPlaintextDevConfigForTest(
-      9, 3, 9, 3, true, "PLAINTEXT_DEV"));
-  EXPECT_FALSE(resolver.IsPlaintextDevConfigForTest(
-      9, 3, 9, 4, true, "PLAINTEXT_DEV"));
-  EXPECT_FALSE(resolver.IsPlaintextDevConfigForTest(
-      9, 3, 9, 3, false, "PLAINTEXT_DEV"));
-  EXPECT_FALSE(resolver.IsPlaintextDevConfigForTest(
-      9, 3, 9, 3, true, "SECRET_REF"));
 }
 
 }  // namespace alisql::ai
