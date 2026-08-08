@@ -1,84 +1,94 @@
 # AliSQL DB4AI MaaS P0 验证状态
 
-更新日期：2026-08-05。本文是当前 `ai_maas` 分支的证据清单，不以设计文档、
-mock 或成功编译替代真实云端验收。
+> **文档角色：指定代码提交的验证证据，不定义目标接口或设计。** 目标契约见
+> [`taurusdb-maas-p0-committer-design.md`](taurusdb-maas-p0-committer-design.md)，未闭环事项见
+> [`taurusdb-maas-commercialization-backlog.md`](taurusdb-maas-commercialization-backlog.md)。
 
-## 已验证
+**更新日期：** 2026-08-08
 
-| 范围 | 证据 | 结果 |
-|---|---|---|
-| Debug 服务端 | `cmake --build build-control-audit --target mysqld ai_file_audit-t ai_model_registry-t --parallel 8` | 通过 |
-| 规范响应 | `runtime_output_directory/ai_types-t` | reasoning-only、length finish 和空 final 均拒绝 |
-| Profile 解析 | `runtime_output_directory/ai_model_registry-t` | active/capability、实例默认、1024 维 bge-m3、端点、Debug plaintext 策略和凭据 fail-closed 均覆盖 |
-| Huawei Adapter | `runtime_output_directory/ai_huawei_maas_adapter-t` | embedding/chat payload、final-only、超时/输出限制、HTTP 403/429/404 分类、协议不匹配和 request ID 覆盖 |
-| Runtime options | `runtime_output_directory/ai_runtime-t` | 白名单选项和私有厂商参数拒绝覆盖 |
-| 文件审计 | `runtime_output_directory/ai_file_audit-t` + `rds.ai_maas_governance` | 出站前 `STARTED`、终态、JSON Lines 脱敏字段、文件安全权限与全局动态开关覆盖 |
-| VECTOR 编码 | `runtime_output_directory/ai_vector_codec-t` | native float VECTOR 编码、维度和非有限数拒绝覆盖 |
-| SQL/MTR 契约 | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_contract ai_maas_embedding ai_maas_analysis ai_maas_governance ai_maas_rag ai_maas_model_admin ai_maas_model_admin_rpl` | 7 个 RDS 用例和 shutdown report 通过；覆盖 SQL arity、NULL 无 egress、`AI_INVOKE`、显式模型选择、维度失败和脱敏元数据 |
-| 控制面权限 | `rds.ai_maas_model_admin` | 普通客户端即使拥有 `AI_ADMIN` 和表 DML/DDL 权限也不能直接修改控制表；仅 `dbms_ai` 可发布、更新和停用 Profile，复制 applier 覆盖见 `ai_maas_model_admin_rpl` |
-| 受控 RAG | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_rag` | Debug 离线 fixture 经实际 `AI_EMBEDDING` 写入 VECTOR INDEX；tenant/业务/embedding-space 过滤、schema contract 拒绝，以及把 SQL 筛选资料拼入新 prompt 的范式覆盖 |
-| 分析与只读诊断 | `cd build-debug/mysql-test && ./mtr --suite=rds ai_maas_analysis` | `AI_ANALYZE(model_name, prompt [, options_json])`、NULL 短路、旧字段/私有 provider options 拒绝覆盖；fixture 不读取 secret、不发起 HTTP |
-| Release 凭据门禁 | `rds.ai_maas_model_admin_release`（隔离 component keyring 的 Release MTR） | 先发布可读的 fake `SECRET_REF`，移除后 `update_model()` 失败且原 active 版本保持不变；未知引用的 `register_model()` 失败且不发布新行 |
+**代码提交：** `6307be989878b06d0b6b2aa2ac108ff5ab1241f0`
 
-默认 Debug 测试均使用 mock transport 或精确的 `mtr/fixture-*` 离线 Profile；它们通过
-`dbms_ai` 注册、不会加载 keyring，也不会发送真实 HTTP 请求。Release MTR 使用隔离的
-component keyring 和假的测试数据验证发布前探测及 fail-closed，不等同于目标环境 keyring 的
-成功验收。
+**分支：** `ai_maas`
 
-## 真实 MaaS 的 opt-in 检查
+## 1. 本次重新验证结果
 
-脚本 [`scripts/db4ai_maas_smoke.sh`](../../scripts/db4ai_maas_smoke.sh) 只在
-生产运维人员已经为服务器配置 keyring `SECRET_REF`，或本地 Debug 运维人员在已授权
-实例中配置临时 `PLAINTEXT_DEV` Profile、批准 endpoint、tenant Profile 和 `AI_INVOKE`
-后执行。它仅输出向量维度和生成长度，不输出 key、prompt、completion 或 embedding。
-2026-07-30 已在隔离的本地 Debug mysqld 完成一次显式授权检查：临时
-`PLAINTEXT_DEV` embedding 与 generation Profile 仅在该实例中存在，执行
-`scripts/db4ai_maas_smoke.sh` 后得到向量维度 `1024` 和非空生成长度 `38`。检查前已
-完成全部离线 GUnit/MTR；检查后已删除临时 Profile、binding 和测试 schema，并移除
-临时数据目录。该结果只验证当前凭据的 MaaS 可达性和协议兼容性，不构成生产部署验收。
+| 范围 | 命令或入口 | 结果 |
+| --- | --- | --- |
+| Debug 服务端构建 | `cmake --build build-debug --target mysqld --parallel 8` | 通过；存在 1 条与本特性无关的既有编译 Warning。 |
+| 合并单测构建 | `cmake --build build-debug --target merge_small_tests-t --parallel 8` | 通过。 |
+| AI 相关 GUnit | `merge_small_tests-t --gtest_filter='Ai*:*Ai*'` | 7 个 suite、26 个测试通过。 |
+| Huawei Adapter GUnit | `merge_small_tests-t --gtest_filter='HuaweiMaaSTest.*'` | 10 个测试通过。 |
+| DB4AI MTR | 见下方命令 | 10 个特性用例全部通过；测试框架报告 11/11，含 `shutdown_report`；耗时 34 秒。 |
 
-## 明确未完成的生产门禁
+MTR 复验命令：
 
-- 审计写入本地受控文件；日志采集、保留、磁盘满告警和运维平台查询由 TaurusDB 日志平台
-  提供，不在 P0 SQL 面交付。
-- `mysql.ai_model_config` 是内部控制表，不支持客户直接 DML/DDL；Profile 发布、更新
-  和停用必须经 `dbms_ai`，其变更进入 binlog。生产发布还需在目标环境以实际 keyring 引用
-  验证 reader 可读、轮换及权限配置。
-- embedding-space、distance metric 和 index compatibility 已在 RAG schema/查询
-  示例中强制过滤；服务器尚未把它们做成 Profile 元数据和通用写入时强制校验。
-- 百炼、Bedrock、方舟 Adapter 仅由 canonical Adapter 边界预留，P0 只实现华为
-  MaaS HTTPS JSON embedding 与 V2 Chat。
-- `PLAINTEXT_DEV` 仅限 Debug 本地联调且不提供静态加密、轮换或生产安全保证；Release
-  构建拒绝该 kind，生产凭据仍需要 keyring `SECRET_REF`。
-- PolarDB MySQL 的比较只陈述本分支可验证的 AliSQL 证据，未进行外部实测，不做
-  兼容性或性能等价声明；详见
-  [`alisql-vs-polardb-ai-capability.md`](alisql-vs-polardb-ai-capability.md)。
-
-## 交付前复验命令
-
-```text
-cmake --build build-control-audit --target mysqld ai_types-t ai_model_registry-t \
-  ai_huawei_maas_adapter-t ai_file_audit-t ai_runtime-t ai_vector_codec-t --parallel 8
-build-control-audit/runtime_output_directory/ai_types-t
-build-control-audit/runtime_output_directory/ai_model_registry-t
-build-control-audit/runtime_output_directory/ai_huawei_maas_adapter-t
-build-control-audit/runtime_output_directory/ai_file_audit-t
-build-control-audit/runtime_output_directory/ai_runtime-t
-build-control-audit/runtime_output_directory/ai_vector_codec-t
-cd build-control-audit && perl mysql-test/mysql-test-run.pl --suite=rds \
-  ai_maas_contract ai_maas_governance ai_maas_rag ai_maas_analysis vidx_func
+```bash
+cd build-debug
+perl mysql-test/mysql-test-run.pl --suite=rds \
+  ai_maas_analysis ai_maas_contract ai_maas_embedding ai_maas_governance \
+  ai_maas_model_admin ai_maas_model_admin_release ai_maas_model_admin_rpl \
+  ai_maas_rag ai_maas_rag_mixed_rpl ai_maas_rds_api_key
 ```
 
-## Release 明文门禁复验
+当前 10 个 MTR 覆盖：SQL 参数个数和 NULL 短路、Embedding、Analyze、动态权限、总开关、模型管理、
+两阶段审计、VECTOR/RAG、STORED 生成列、MIXED 转 ROW、模型配置复制，以及当前 `rds_api_key` 的 SQL
+不可见/不可设置行为。
 
-以 `-DCMAKE_BUILD_TYPE=Release` 配置一个仓库外临时构建目录（并指定本仓库
-`extra/boost` 和系统 curl），构建 `mysqld`。在 `--skip-networking` 的临时 datadir
-初始化该服务器，通过受控管理路径发布仅含 `UNHEX('00')` fixture 的
-`PLAINTEXT_DEV` embedding Profile 并授予 `AI_INVOKE`，然后执行：
+## 2. 本次通过结果不能证明的能力
 
-```text
-SELECT AI_EMBEDDING('release-gate');
-```
+默认 MTR 使用 `mtr/fixture-*` 精确离线 Profile。fixture 会绕过真实凭据和 HTTP，因此本次 10 个 MTR
+通过不等于下列能力已经闭环：
 
-期望在调用前得到 `DB4AI credential is unavailable`，不配置真实 endpoint 或密钥，
-并在验证结束后关闭临时服务器、删除 datadir 和构建目录。
+- Huawei 请求中的 `dimensions`、`max_completion_tokens` 等目标协议字段；
+- libcurl 连接/上传/等待/下载阶段的目标超时与 `KILL QUERY`；
+- SCC/Secret 密文凭据、真实 TLS/网络、MaaS 限流、内容安全、Token 计费或模型退市；
+- 主备切换、节点替换、备份恢复、日志平台、目标 Region 和长稳容量。
+
+已有真实 smoke 脚本覆盖 `bge-m3` Embedding、`glm-5.2` Analyze、向量写入/索引/STORED/RAG，并提供
+多个文本生成模型的人工对比入口。历史开发环境曾成功调用 `bge-m3` 和 `glm-5.2`；本次文档差距复核
+没有重新产生付费 MaaS 请求，因此该历史证据不应用于关闭目标代码提交上的协议或商用门禁。
+
+## 3. 已确认的当前实现差距
+
+以下是事实，不是新增产品规格：
+
+1. Runtime 仍硬编码每语句最多 32 次、实例最多 32 个在途 AI 调用；目标设计要求删除，并新增按分钟
+   调用频率参数。
+2. libcurl 当前默认连接超时 5 秒、总超时 30 秒；Analyze 最大 60 秒；Embedding 尚无 `timeout_ms`；
+   `KILL QUERY` 尚不能中断 libcurl。
+3. `AI_EMBEDDING()` 返回元数据仍固定为 `VECTOR(1024)`；Huawei 请求不发送 `dimensions`，并会本地拒绝
+   非 1024 的 BGE-M3 结果。
+4. `AI_ANALYZE()` 当前发送 `max_tokens`，而目标契约是 `max_completion_tokens`；reasoning/cached Token
+   的 Provider 嵌套明细尚未正确解析。
+5. 模型表仍是多版本多行结构；尚无 `disable_model()`；update 不能重新启用 DISABLED/RETIRED 行。
+6. 系统变量仍为 `rds_api_key`、`ai_invoke_audit`、`ai_invoke_audit_log_file`；目标统一为
+   `rds_ai_maas_*` 命名。
+7. root 当前不能按目标仅转授 `AI_INVOKE`；多数失败仍映射为通用 `ER_NOT_SUPPORTED_YET`。
+8. HTTP Response Body 已有 1 MiB 硬上限，但最终 content 和 Provider request id 尚缺独立长度边界。
+
+详细实现任务、优先级和关闭证据见 Backlog 的“2026-08-08 代码—设计差距复核”。
+
+## 4. 下一轮自动化测试入口
+
+目标实现落地时至少新增以下自动化，不能只更新现有 result：
+
+1. 删除两个 32 硬限制后，大于 32 次顺序调用成功；按分钟限频的默认 0、动态升降、并发准确性和拒绝零出站。
+2. Embedding/Analyze 目标默认和最大超时，连接/上传/等待/下载阶段 `KILL QUERY`，取消后的审计终态。
+3. 维度省略、显式透传、Provider 拒绝、成功维度偏差 Warning、实际 VECTOR 维度和固定列写入失败。
+4. 单行模型表 register/update/disable/delete 状态机、版本递增、并发快照和数据字典升级。
+5. 新系统变量名、旧名消失、root 仅转授 `AI_INVOKE`、稳定 SQLSTATE/errno 和脱敏错误信息。
+6. `1 MiB-1`、恰好 1 MiB、`1 MiB+1` 的 HTTP Body/final content，超长 request id，嵌套 Token usage。
+7. ROW `FULL/MINIMAL/NOBLOB`、STORED 正文/非正文更新、备机零外呼的复制矩阵。
+
+## 5. 商用前集成验证
+
+以下只能在 TaurusDB 集成或目标云环境完成：
+
+- SCC/Secret Key 下发、轮换、吊销和节点一致性；
+- 每个上线 Region 的 DNS、TLS、Policy Route/NAT/EIP、安全组、Endpoint 和模型配额；
+- 日志轮转、采集、保留、权限、磁盘水位、告警和 STARTED 未闭合追溯；
+- 新建/升级/混部/回退/备份恢复、主备切换和节点替换；
+- 真实 MaaS 协议、401/403/404/429/5xx、内容安全、Token 对账、性能容量和长稳。
+
+任一项缺少环境或外部依赖时，应在 Backlog 保持“未开始/验证中”，不能以离线 MTR 或单次 Demo 成功
+标记为已关闭。
